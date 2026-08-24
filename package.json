@@ -1,0 +1,16 @@
+{
+  "name": "marketplace-api-v2",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Marketplace API contract: OpenAPI spec + Pact consumer test",
+  "scripts": {
+    "lint": "redocly lint openapi/openapi.yaml",
+    "bundle": "redocly bundle openapi/openapi.yaml -o spec.json",
+    "docs": "redocly build-docs openapi/openapi.yaml -o docs.html",
+    "test:contract": "node --test consumer.pact.test.mjs"
+  },
+  "devDependencies": {
+    "@pact-foundation/pact": "17.1.0",
+    "@redocly/cli": "2.46.0"
+  }
+}

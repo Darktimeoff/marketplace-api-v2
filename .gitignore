@@ -1,0 +1,5 @@
+node_modules/
+pacts/
+logs/
+spec.json
+docs.html

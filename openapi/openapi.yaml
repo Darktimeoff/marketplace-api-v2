@@ -1,0 +1,529 @@
+openapi: 3.0.3
+info:
+  title: Marketplace API
+  version: 1.0.0
+  description: >
+    Контракт Marketplace API: категорії (дерево), каталог товарів у категорії
+    (cursor-пагінація) та товари (створення з Idempotency-Key). Усі відповіді
+    використовують єдину обгортку `{ data, error }`: на успіху `error` є
+    `null`, на помилці `data` є `null`, а `error` містить problem+json-об'єкт
+    (RFC 7807-подібний, схема `Problem`).
+  license:
+    name: UNLICENSED
+security: []
+servers:
+  - url: https://marketplace-api.internal/v1
+    description: Продакшн
+tags:
+  - name: category
+    description: Категорії каталогу (дерево, створення)
+  - name: catalog
+    description: Список товарів у межах категорії (cursor-пагінація)
+  - name: products
+    description: Товари
+
+paths:
+  /category:
+    get:
+      operationId: listCategoryTree
+      tags: [category]
+      summary: Отримати повне дерево категорій
+      description: >
+        Повертає кореневі категорії разом з усіма нащадками (поле
+        `childrens`) рекурсивно, в одному запиті — без пагінації.
+      responses:
+        '200':
+          description: Дерево категорій
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryListEnvelope'
+        '500':
+          description: Внутрішня помилка сервера
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createCategory
+      tags: [category]
+      summary: Створити категорію
+      description: Створює нову категорію, за потреби — дочірню до `parentId`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+      responses:
+        '201':
+          description: Категорію створено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryEnvelope'
+        '400':
+          description: Некоректне тіло запиту
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Категорія з таким slug вже існує
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /category/{id}:
+    get:
+      operationId: getTreeById
+      tags: [category]
+      summary: Отримати піддерево категорії за id
+      description: >
+        Повертає категорію за `id` разом з усіма її нащадками (поле
+        `childrens`), тобто піддерево дерева категорій, що починається з
+        цього вузла.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Ідентифікатор категорії
+      responses:
+        '200':
+          description: Піддерево категорії
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryEnvelope'
+        '404':
+          description: Категорію не знайдено
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /catalog/category/{id}:
+    get:
+      operationId: getCatalogByCategory
+      tags: [catalog]
+      summary: Отримати категорію, breadcrumbs та сторінку товарів у ній
+      description: >
+        Повертає саму категорію, її breadcrumbs (шлях від кореня) та
+        cursor-пагіновану сторінку товарів, що належать цій категорії.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Ідентифікатор категорії
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Максимальна кількість товарів на сторінці
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >
+            Опаковий (opaque) токен курсора з попередньої відповіді
+            (`pagination.next_cursor`). Клієнт не повинен парсити чи
+            інтерпретувати його вміст — лише передавати назад як є. Відсутній
+            параметр означає першу сторінку.
+      responses:
+        '200':
+          description: Категорія, breadcrumbs і сторінка товарів
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogEnvelope'
+        '400':
+          description: Некоректний cursor або limit
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Категорію не знайдено
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /products:
+    post:
+      operationId: createProduct
+      tags: [products]
+      summary: Створити товар
+      description: >
+        Створює товар. Потребує заголовок `Idempotency-Key` (див. параметр
+        нижче) для безпечного повтору запиту без дублювання товару.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: >
+            Унікальний ключ повтору, який генерує клієнт (наприклад, UUID) до
+            першого запиту. Повторний запит з тим самим ключем і тим самим
+            тілом повертає ту саму відповідь, що й перший запит, без
+            повторного створення товару. Той самий ключ з іншим тілом
+            вважається конфліктом.
+        - name: Content-Type
+          in: header
+          required: false
+          schema:
+            type: string
+            default: application/json
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: Товар створено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductEnvelope'
+        '400':
+          description: Некоректне тіло запиту
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: Той самий Idempotency-Key вже використано з іншим тілом запиту
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /products/{id}:
+    get:
+      operationId: getProduct
+      tags: [products]
+      summary: Отримати товар разом з breadcrumbs його категорії
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Ідентифікатор товару
+      responses:
+        '200':
+          description: Товар і breadcrumbs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetailEnvelope'
+        '404':
+          description: Товар не знайдено
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+components:
+  schemas:
+    Problem:
+      type: object
+      description: Об'єкт помилки у стилі RFC 7807 (problem+json).
+      required: [type, title, status, detail, instance]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI, що ідентифікує тип помилки
+        title:
+          type: string
+          description: Коротка людиночитана назва типу помилки
+        status:
+          type: integer
+          description: HTTP-код відповіді
+        detail:
+          type: string
+          description: Детальне пояснення саме цього випадку помилки
+        instance:
+          type: string
+          format: uri
+          description: Посилання на конкретний випадок помилки
+
+    Category:
+      type: object
+      required: [id, slug, name, childrens]
+      properties:
+        id:
+          type: integer
+        slug:
+          type: string
+        name:
+          type: string
+        childrens:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+
+    CategoryBreadcrumb:
+      type: object
+      required: [id, slug, name]
+      properties:
+        id:
+          type: integer
+        slug:
+          type: string
+        name:
+          type: string
+
+    CreateCategoryRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        parentId:
+          type: integer
+          nullable: true
+
+    Brand:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+
+    Media:
+      type: object
+      required: [url, format, type]
+      properties:
+        url:
+          type: string
+          format: uri
+        format:
+          type: string
+          enum: [JPEG, PNG, WEBP]
+        type:
+          type: string
+          enum: [IMAGE, VIDEO]
+
+    Product:
+      type: object
+      required: [title, price_cents, media]
+      properties:
+        title:
+          type: string
+        slug:
+          type: string
+          nullable: true
+        price_cents:
+          type: integer
+          minimum: 0
+          description: Ціна товару в цілих копійках (без плаваючої крапки)
+        oldPrice_cents:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: Попередня ціна в цілих копійках, якщо є знижка
+        brand:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Brand'
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/Media'
+
+    CreateProductRequest:
+      type: object
+      required: [title, price_cents, media]
+      properties:
+        title:
+          type: string
+        slug:
+          type: string
+        price_cents:
+          type: integer
+          minimum: 0
+        oldPrice_cents:
+          type: integer
+          nullable: true
+          minimum: 0
+        brandId:
+          type: integer
+          nullable: true
+        categoryId:
+          type: integer
+        media:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Media'
+
+    Pagination:
+      type: object
+      description: >
+        Метадані пагінації у стилі "Showing 1–25 of 12,450 goods": курсор для
+        завантаження наступної сторінки (`next_cursor`) плюс приблизні
+        загальні показники для UI-індикатора, без точних номерів сторінок.
+      required:
+        - limit
+        - has_more
+        - next_cursor
+        - prev_cursor
+        - total_count
+        - total_pages
+        - current_page_estimate
+      properties:
+        limit:
+          type: integer
+          example: 25
+        has_more:
+          type: boolean
+          description: Чи є ще товари після поточної сторінки
+          example: true
+        next_cursor:
+          type: string
+          nullable: true
+          description: >
+            Опаковий (opaque) токен наступної сторінки. `null` означає, що
+            сторінок більше немає (кнопка "Load more" приховується).
+          example: eyJpZCI6InByb2RfMiJ9
+        prev_cursor:
+          type: string
+          nullable: true
+          description: >
+            Опаковий (opaque) токен попередньої сторінки. `null` означає, що
+            це перша сторінка.
+          example: eyJpZCI6InByb2RfMSJ9
+        total_count:
+          type: integer
+          minimum: 0
+          description: Загальна (можливо приблизна) кількість товарів у категорії
+          example: 1245
+        total_pages:
+          type: integer
+          minimum: 0
+          description: Приблизна кількість сторінок при поточному `limit`
+          example: 50
+        current_page_estimate:
+          type: integer
+          minimum: 1
+          description: >
+            Приблизний номер поточної сторінки — лише орієнтир для UI, не
+            використовується для запиту наступної сторінки (для цього є
+            `next_cursor`)
+          example: 1
+
+    CatalogData:
+      type: object
+      required: [category, breadcrumbs, products, pagination]
+      properties:
+        category:
+          $ref: '#/components/schemas/Category'
+        breadcrumbs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryBreadcrumb'
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    ProductDetailData:
+      type: object
+      required: [product, breadcrumbs]
+      properties:
+        product:
+          $ref: '#/components/schemas/Product'
+        breadcrumbs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryBreadcrumb'
+
+    CategoryEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: '#/components/schemas/Category'
+        error:
+          type: object
+          nullable: true
+          description: Завжди `null` для успішної відповіді
+
+    CategoryListEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        error:
+          type: object
+          nullable: true
+          description: Завжди `null` для успішної відповіді
+
+    CatalogEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: '#/components/schemas/CatalogData'
+        error:
+          type: object
+          nullable: true
+          description: Завжди `null` для успішної відповіді
+
+    ProductEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: '#/components/schemas/Product'
+        error:
+          type: object
+          nullable: true
+          description: Завжди `null` для успішної відповіді
+
+    ProductDetailEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: '#/components/schemas/ProductDetailData'
+        error:
+          type: object
+          nullable: true
+          description: Завжди `null` для успішної відповіді
+
+    ErrorEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          type: object
+          nullable: true
+          description: Завжди `null` для помилкової відповіді
+        error:
+          $ref: '#/components/schemas/Problem'

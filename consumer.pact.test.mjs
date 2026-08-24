@@ -45,7 +45,7 @@ test('GET /products/{id} returns the product together with its category breadcru
             ]),
           },
           breadcrumbs: like([
-            { id: integer(1), slug: like('phones'), name: like('Телефони') },
+            { id: integer(1), slug: like('phones'), name: like('Phones') },
           ]),
         },
         error: null,

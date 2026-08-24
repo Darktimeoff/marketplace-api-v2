@@ -30,8 +30,8 @@ test('GET /product/{id} returns the product together with its category breadcrum
           product: {
             title: like('iPhone 15'),
             slug: like('iphone-15'),
-            price_cents: integer(2600000),
-            oldPrice_cents: null,
+            priceCents: integer(2600000),
+            oldPriceCents: null,
             brand: {
               name: like('Apple'),
               slug: like('apple'),

@@ -25,7 +25,13 @@ response shape for the client across every endpoint.
 
 Cursor pagination lives on `GET /catalog/category/{id}`: query parameters
 `limit`, `cursor` (opaque token), response contains `data.products[]` and
-`data.pagination.next_cursor` (nullable; `null` = no more pages).
+`data.pagination.nextCursor` (nullable; `null` = no more pages).
+
+**Naming trade-off:** all multi-word JSON fields use camelCase
+(`nextCursor`, `prevCursor`, `hasMore`, `totalCount`, `priceCents`) for
+consistency with the rest of the API, instead of the snake_case
+(`next_cursor`) used in the original assignment example — a deliberate
+choice for this project.
 
 ## Visualizing the spec
 
@@ -59,7 +65,7 @@ console.log('Idempotency-Key: required =',idem?.required,'· description length 
 grep -c 'Idempotency-Key' openapi/openapi.yaml
 
 # 4. Cursor pagination is in the contract
-grep -c 'next_cursor' openapi/openapi.yaml
+grep -c 'nextCursor' openapi/openapi.yaml
 
 # 5. problem+json is used for every error
 grep -c 'application/problem+json' openapi/openapi.yaml

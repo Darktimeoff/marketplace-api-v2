@@ -138,7 +138,7 @@ paths:
             type: string
           description: >
             Opaque cursor token from a previous response
-            (`pagination.next_cursor`). The client must not parse or
+            (`pagination.nextCursor`). The client must not parse or
             interpret its contents — only pass it back as-is. Omitting
             this parameter requests the first page.
       responses:
@@ -328,18 +328,18 @@ components:
 
     Product:
       type: object
-      required: [title, price_cents, media]
+      required: [title, priceCents, media]
       properties:
         title:
           type: string
         slug:
           type: string
           nullable: true
-        price_cents:
+        priceCents:
           type: integer
           minimum: 0
           description: Product price in integer cents (no floating point)
-        oldPrice_cents:
+        oldPriceCents:
           type: integer
           nullable: true
           minimum: 0
@@ -356,16 +356,16 @@ components:
 
     CreateProductRequest:
       type: object
-      required: [title, price_cents, media]
+      required: [title, priceCents, media]
       properties:
         title:
           type: string
         slug:
           type: string
-        price_cents:
+        priceCents:
           type: integer
           minimum: 0
-        oldPrice_cents:
+        oldPriceCents:
           type: integer
           nullable: true
           minimum: 0
@@ -388,33 +388,33 @@ components:
         UI indicator, without exact page numbers.
       required:
         - limit
-        - has_more
-        - next_cursor
-        - prev_cursor
-        - total_count
+        - hasMore
+        - nextCursor
+        - prevCursor
+        - totalCount
       properties:
         limit:
           type: integer
           example: 20
-        has_more:
+        hasMore:
           type: boolean
           description: Whether more products exist after the current page
           example: true
-        next_cursor:
+        nextCursor:
           type: string
           nullable: true
           description: >
             Opaque token for the next page. `null` means there are no more
             pages (the "Load more" button should be hidden).
           example: ZXlKaFpDSTZPakV6Tl
-        prev_cursor:
+        prevCursor:
           type: string
           nullable: true
           description: >
             Opaque token for the previous page. `null` means this is the
             first page.
           example: ZGN0aW9uOjE=
-        total_count:
+        totalCount:
           type: integer
           minimum: 0
           description: Total (possibly approximate) number of products in the category

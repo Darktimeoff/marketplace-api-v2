@@ -13,13 +13,13 @@ const provider = new PactV3({
   dir: path.resolve(dirname, 'pacts'),
 })
 
-test('GET /products/{id} returns the product together with its category breadcrumbs', async () => {
+test('GET /product/{id} returns the product together with its category breadcrumbs', async () => {
   provider
     .given('product 1 exists in category "phones"')
     .uponReceiving('a request for product 1')
     .withRequest({
       method: 'GET',
-      path: '/products/1',
+      path: '/product/1',
       headers: { Accept: 'application/json' },
     })
     .willRespondWith({
@@ -53,7 +53,7 @@ test('GET /products/{id} returns the product together with its category breadcru
     })
 
   await provider.executeTest(async (mockServer) => {
-    const response = await fetch(`${mockServer.url}/products/1`, {
+    const response = await fetch(`${mockServer.url}/product/1`, {
       headers: { Accept: 'application/json' },
     })
     const body = await response.json()

@@ -13,8 +13,8 @@ Course project homework #1: OpenAPI contract for the Marketplace API
 | category   | `POST /category` — create a category                                                         | `createCategory`       |
 | category   | `GET /category/{id}` — subtree by id                                                         | `getTreeById`           |
 | catalog    | `GET /catalog/category/{id}` — category + breadcrumbs + a cursor-paginated page of products  | `getCatalogByCategory` |
-| products   | `POST /products` — create a product (Idempotency-Key)                                        | `createProduct`        |
-| products   | `GET /products/{id}` — product + breadcrumbs                                                 | `getProduct`            |
+| products   | `POST /product` — create a product (Idempotency-Key)                                        | `createProduct`        |
+| products   | `GET /product/{id}` — product + breadcrumbs                                                 | `getProduct`            |
 
 All responses (2xx and 4xx) use a single `{ data, error }` envelope: on
 success `data` is populated and `error: null`; on failure `data: null` and

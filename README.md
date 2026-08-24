@@ -12,7 +12,7 @@ Course project homework #1: OpenAPI contract for the Marketplace API
 | category   | `GET /category` — category tree                                                              | `listCategoryTree`     |
 | category   | `POST /category` — create a category                                                         | `createCategory`       |
 | category   | `GET /category/{id}` — subtree by id                                                         | `getTreeById`           |
-| catalog    | `GET /catalog/category/{id}` — category + breadcrumbs + a cursor-paginated page of products  | `getCatalogByCategory` |
+| catalog    | `GET /catalog/category/{id}` — breadcrumbs + a cursor-paginated page of products              | `getCatalogByCategory` |
 | products   | `POST /product` — create a product (Idempotency-Key)                                        | `createProduct`        |
 | products   | `GET /product/{id}` — product + breadcrumbs                                                 | `getProduct`            |
 

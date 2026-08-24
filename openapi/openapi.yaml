@@ -110,11 +110,11 @@ paths:
     get:
       operationId: getCatalogByCategory
       tags: [catalog]
-      summary: Get a category, its breadcrumbs, and a page of its products
+      summary: Get a category's breadcrumbs and a page of its products
       description: >
-        Returns the category itself, its breadcrumbs (path from the root),
-        and a cursor-paginated page of products that belong to this
-        category.
+        Returns the category's breadcrumbs (path from the root, ending with
+        this category) and a cursor-paginated page of products that belong
+        to this category.
       parameters:
         - name: id
           in: path
@@ -143,7 +143,7 @@ paths:
             this parameter requests the first page.
       responses:
         '200':
-          description: Category, breadcrumbs, and a page of products
+          description: Breadcrumbs and a page of products
           content:
             application/json:
               schema:
@@ -436,10 +436,8 @@ components:
 
     CatalogData:
       type: object
-      required: [category, breadcrumbs, products, pagination]
+      required: [breadcrumbs, products, pagination]
       properties:
-        category:
-          $ref: '#/components/schemas/Category'
         breadcrumbs:
           type: array
           items:

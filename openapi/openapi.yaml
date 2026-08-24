@@ -384,20 +384,18 @@ components:
       type: object
       description: >
         Pagination metadata in the "Showing 1–25 of 12,450 goods" style: a
-        cursor for loading the next page (`next_cursor`) plus approximate
-        overall figures for a UI indicator, without exact page numbers.
+        cursor for loading the next/previous page plus a total count for a
+        UI indicator, without exact page numbers.
       required:
         - limit
         - has_more
         - next_cursor
         - prev_cursor
         - total_count
-        - total_pages
-        - current_page_estimate
       properties:
         limit:
           type: integer
-          example: 25
+          example: 20
         has_more:
           type: boolean
           description: Whether more products exist after the current page
@@ -408,31 +406,19 @@ components:
           description: >
             Opaque token for the next page. `null` means there are no more
             pages (the "Load more" button should be hidden).
-          example: eyJpZCI6InByb2RfMiJ9
+          example: ZXlKaFpDSTZPakV6Tl
         prev_cursor:
           type: string
           nullable: true
           description: >
             Opaque token for the previous page. `null` means this is the
             first page.
-          example: eyJpZCI6InByb2RfMSJ9
+          example: ZGN0aW9uOjE=
         total_count:
           type: integer
           minimum: 0
           description: Total (possibly approximate) number of products in the category
           example: 1245
-        total_pages:
-          type: integer
-          minimum: 0
-          description: Approximate number of pages at the current `limit`
-          example: 50
-        current_page_estimate:
-          type: integer
-          minimum: 1
-          description: >
-            Approximate current page number — a UI hint only, not used to
-            request the next page (use `next_cursor` for that)
-          example: 1
 
     CatalogData:
       type: object

@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit, OnApplicationShutdown, Logger } from "@nestjs/common";
 import { ConfigEnvironmentService } from "../config/config-environment.module.js";
-import { Pool } from "pg";
+import { Pool, QueryConfigValues } from "pg";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getDirname } from "../util/get-dirname.util.js";
@@ -22,6 +22,23 @@ export class DBService implements OnModuleInit, OnApplicationShutdown  {
         return fileContent.trim();
       }
     })
+  }
+
+  async query<T extends string[]>(query: string, params?: QueryConfigValues<T>) {
+    let client
+    
+    try {
+      client = await this.pool.connect();
+    } catch (e) {
+      console.error(e)
+      throw e
+    }
+    
+    try {
+      return await client.query(query, params);
+    } finally {
+      client.release();
+    }
   }
 
   async onModuleInit() {

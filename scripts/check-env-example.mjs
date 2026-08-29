@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const rootDir = path.resolve(fileURLToPath(import.meta.url), '../..');
-const schemaPath = path.join(rootDir, 'src/generic/config/config-environment.schema.ts');
+const schemaPath = path.join(rootDir, 'src/generic/environment/environment.schema.ts');
 const envExamplePath = path.join(rootDir, '.env.example');
 
 function extractSchemaKeys(source) {
@@ -59,7 +59,7 @@ const missingFromEnvExample = [...schemaKeys].filter((key) => !envExampleKeys.ha
 const staleInEnvExample = [...envExampleKeys].filter((key) => !schemaKeys.has(key));
 
 if (missingFromEnvExample.length > 0 || staleInEnvExample.length > 0) {
-  console.error('.env.example is out of sync with config-environment.schema.ts');
+  console.error('.env.example is out of sync with environment.schema.ts');
   if (missingFromEnvExample.length > 0) {
     console.error(`  missing from .env.example: ${missingFromEnvExample.join(', ')}`);
   }

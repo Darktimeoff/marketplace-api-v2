@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit, OnApplicationShutdown, Logger } from "@nestjs/common";
-import { ConfigEnvironmentService } from "../config/config-environment.module.js";
+import { EnvironmentService } from "../environment/environment.module.js";
 import { Pool, QueryConfigValues } from "pg";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -11,7 +11,7 @@ export class DBService implements OnModuleInit, OnApplicationShutdown  {
   private readonly pool: Pool
   private readonly logger = new Logger(DBService.name)
   
-  constructor(private readonly environment: ConfigEnvironmentService) {
+  constructor(private readonly environment: EnvironmentService) {
     this.pool = new Pool({
       host: this.environment.get('DBHOST'),
       user: this.environment.get('DBUSER'),

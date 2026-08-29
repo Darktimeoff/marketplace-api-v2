@@ -58,7 +58,7 @@ npm run test:e2e    # e2e tests
 ## Configuration
 
 Environment variables are validated at startup with zod
-(`src/generic/config/config-environment.schema.ts`) — the app exits
+(`src/generic/environment/environment.schema.ts`) — the app exits
 immediately with a validation error if any are missing or invalid.
 
 | Variable  | Required | Default | Description                          |

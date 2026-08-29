@@ -22,6 +22,10 @@ export class DBService implements OnModuleInit, OnApplicationShutdown  {
         return fileContent.trim();
       }
     })
+
+    this.pool.on('error', (error) => {
+      this.logger.error(`Idle client error: ${error.message}`);
+    });
   }
 
   async query<T extends string[]>(query: string, params?: QueryConfigValues<T>) {

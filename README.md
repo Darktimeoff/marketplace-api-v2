@@ -55,6 +55,58 @@ npm run test        # unit tests (vitest)
 npm run test:e2e    # e2e tests
 ```
 
+## Configuration
+
+Environment variables are validated at startup with zod
+(`src/generic/config/config-environment.schema.ts`) — the app exits
+immediately with a validation error if any are missing or invalid.
+
+| Variable  | Required | Default | Description                          |
+|-----------|----------|---------|---------------------------------------|
+| `PORT`    | no       | `3000`  | HTTP port the Nest app listens on     |
+| `DBHOST`  | yes      | —       | Postgres host                         |
+| `DBPORT`  | no       | `3000`  | Postgres port (host-mapped, see `docker-compose.yml`) |
+| `DBUSER`  | yes      | —       | Postgres role/user                    |
+| `DBNAME`  | yes      | —       | Postgres database name                |
+
+The database password is **not** an environment variable — it's read from
+`secrets/db_password.txt` (git- and docker-ignored; only `secrets/*.example`
+templates are tracked). `docker-compose.yml` feeds the same file to Postgres
+via `POSTGRES_PASSWORD_FILE`, so both the app and the database read one
+shared secret.
+
+`.env.example` mirrors the schema and is checked against it in CI/locally:
+
+```bash
+npm run check:env   # fails with exit 1 if .env.example drifts from the schema
+```
+
+### Running locally
+
+```bash
+cp .env.example .env                        # fill in real values
+cp secrets/db_password.txt.example secrets/db_password.txt   # then edit it
+
+docker compose up -d db                     # start Postgres
+npm install
+npm run start:dev                           # watch mode
+```
+
+### Rotating the database password
+
+```bash
+npm run rotate:db-password
+```
+
+This connects to Postgres with the current password from
+`secrets/db_password.txt`, runs `ALTER USER ... PASSWORD`, writes the new
+password back to that file (atomically), and terminates any other open
+sessions for that role so nothing keeps running on the old credential. The
+app itself needs no restart — `DBService` reads the password file fresh on
+every new pool connection and has a `pool.on('error', ...)` handler so a
+terminated idle connection is logged and replaced instead of crashing the
+process.
+
 ## Checks (acceptance criteria)
 
 ```bash

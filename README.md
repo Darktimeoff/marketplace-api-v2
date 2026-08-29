@@ -36,7 +36,7 @@ choice for this project.
 ## Visualizing the spec
 
 ```bash
-npm run docs
+npm run spec:docs
 ```
 
 Generates `docs.html` (Redoc) with interactive documentation — open it in a browser.
@@ -45,6 +45,14 @@ Generates `docs.html` (Redoc) with interactive documentation — open it in a br
 
 ```bash
 npm install
+```
+
+## Running the API (NestJS)
+
+```bash
+npm run start:dev   # watch mode
+npm run test        # unit tests (vitest)
+npm run test:e2e    # e2e tests
 ```
 
 ## Checks (acceptance criteria)

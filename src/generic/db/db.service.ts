@@ -1,0 +1,38 @@
+import { Injectable, OnModuleInit, OnApplicationShutdown, Logger } from "@nestjs/common";
+import { ConfigEnvironmentService } from "../config/config-environment.module.js";
+import { Pool } from "pg";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { getDirname } from "../util/get-dirname.util.js";
+
+@Injectable()
+export class DBService implements OnModuleInit, OnApplicationShutdown  {
+  private readonly PASSWORD_FILE = join(getDirname(), '..', '..', '..', 'secrets', 'db_password.txt');
+  private readonly pool: Pool
+  private readonly logger = new Logger(DBService.name)
+  
+  constructor(private readonly environment: ConfigEnvironmentService) {
+    this.pool = new Pool({
+      host: this.environment.get('DBHOST'),
+      user: this.environment.get('DBUSER'),
+      port: this.environment.get('DBPORT'),
+      database: this.environment.get('DBNAME'),
+      password: async () => {
+        const fileContent = await readFile(this.PASSWORD_FILE, 'utf8');
+        return fileContent.trim();
+      }
+    })
+  }
+
+  async onModuleInit() {
+    const client = await this.pool.connect();
+    this.logger.log('Connected to db')
+        
+    client.release();
+  }
+
+  async onApplicationShutdown() {
+    await this.pool.end()
+    this.logger.log('Terminal connection to db')
+  }
+}

@@ -1,7 +1,11 @@
 import * as z from "zod"; 
 
 const configEnvironmentSchema = z.object({
-  PORT: z.coerce.number().int().min(1).max(65535).default(3000)
+  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  DBPORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  DBHOST: z.string().min(1),
+  DBUSER: z.string().min(1),
+  DBNAME: z.string().min(1)
 })
 
 export type ConfigEnvironmentType = z.infer<typeof configEnvironmentSchema>

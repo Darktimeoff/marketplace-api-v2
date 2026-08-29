@@ -1,0 +1,30 @@
+version: '3.8'
+
+services: 
+  db: 
+    image: postgres:18
+    restart: always
+    environment: 
+      POSTGRES_DB: ${DBNAME:-postgres}
+      POSTGRES_USER: ${DBUSER:-postgres}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    ports: 
+       - "${DBPORT}:5432"
+    secrets:
+      - db_password
+      
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s      
+      timeout: 5s        
+      retries: 5         
+      start_period: 10s  
+
+volumes:
+  postgres_data:
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt

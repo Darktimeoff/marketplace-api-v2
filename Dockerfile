@@ -23,5 +23,8 @@ RUN npm ci --omit=dev
 
 USER appuser
 
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -qO- "http://localhost:${PORT:-3000}/health" || exit 1
+
 CMD ["node", "dist/main.js"]
 

@@ -1,0 +1,515 @@
+openapi: 3.0.3
+info:
+  title: Marketplace API
+  version: 1.0.0
+  description: >
+    Marketplace API contract: categories (tree), a category's product
+    catalog (cursor pagination), and products (creation with
+    Idempotency-Key). Every response uses a single `{ data, error }`
+    envelope: on success `error` is `null`, on failure `data` is `null` and
+    `error` holds a problem+json object (RFC 7807-like, `Problem` schema).
+  license:
+    name: UNLICENSED
+security: []
+servers:
+  - url: https://marketplace-api.internal/v1
+    description: Production
+tags:
+  - name: category
+    description: Catalog categories (tree, creation)
+  - name: catalog
+    description: Products listed within a category (cursor pagination)
+  - name: products
+    description: Products
+
+paths:
+  /category:
+    get:
+      operationId: listCategoryTree
+      tags: [category]
+      summary: Get the full category tree
+      description: >
+        Returns root categories together with all descendants (the
+        `childrens` field) recursively, in a single request — no
+        pagination.
+      responses:
+        '200':
+          description: Category tree
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryListEnvelope'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createCategory
+      tags: [category]
+      summary: Create a category
+      description: Creates a new category, optionally as a child of `parentId`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+      responses:
+        '201':
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryEnvelope'
+        '400':
+          description: Invalid request body
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: A category with this slug already exists
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /category/{id}:
+    get:
+      operationId: getTreeById
+      tags: [category]
+      summary: Get a category subtree by id
+      description: >
+        Returns the category identified by `id` together with all of its
+        descendants (the `childrens` field) — i.e. the subtree of the
+        category tree rooted at this node.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Category identifier
+      responses:
+        '200':
+          description: Category subtree
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryEnvelope'
+        '404':
+          description: Category not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /catalog/category/{id}:
+    get:
+      operationId: getCatalogByCategory
+      tags: [catalog]
+      summary: Get a category's breadcrumbs and a page of its products
+      description: >
+        Returns the category's breadcrumbs (path from the root, ending with
+        this category) and a cursor-paginated page of products that belong
+        to this category.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Category identifier
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Maximum number of products per page
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >
+            Opaque cursor token from a previous response
+            (`pagination.nextCursor`). The client must not parse or
+            interpret its contents — only pass it back as-is. Omitting
+            this parameter requests the first page.
+      responses:
+        '200':
+          description: Breadcrumbs and a page of products
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogEnvelope'
+        '400':
+          description: Invalid cursor or limit
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: Category not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /product:
+    post:
+      operationId: createProduct
+      tags: [products]
+      summary: Create a product
+      description: >
+        Creates a product. Requires the `Idempotency-Key` header (see the
+        parameter below) for a safe request retry without duplicating the
+        product.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: >
+            A unique retry key generated by the client (e.g. a UUID) before
+            the first request. A repeated request with the same key and the
+            same body returns the same response as the first request,
+            without creating the product again. The same key with a
+            different body is treated as a conflict.
+        - name: Content-Type
+          in: header
+          required: false
+          schema:
+            type: string
+            default: application/json
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: Product created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductEnvelope'
+        '400':
+          description: Invalid request body
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '409':
+          description: The same Idempotency-Key was already used with a different body
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /product/{id}:
+    get:
+      operationId: getProduct
+      tags: [products]
+      summary: Get a product together with its category breadcrumbs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Product identifier
+      responses:
+        '200':
+          description: Product and breadcrumbs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetailEnvelope'
+        '404':
+          description: Product not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+components:
+  schemas:
+    Problem:
+      type: object
+      description: RFC 7807-style error object (problem+json).
+      required: [type, title, status, detail, instance]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI identifying the error type
+        title:
+          type: string
+          description: Short, human-readable summary of the error type
+        status:
+          type: integer
+          description: HTTP status code of the response
+        detail:
+          type: string
+          description: Detailed explanation specific to this occurrence of the error
+        instance:
+          type: string
+          format: uri
+          description: Reference identifying this specific occurrence of the error
+
+    Category:
+      type: object
+      required: [id, slug, name, childrens]
+      properties:
+        id:
+          type: integer
+        slug:
+          type: string
+        name:
+          type: string
+        childrens:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+
+    CategoryBreadcrumb:
+      type: object
+      required: [id, slug, name]
+      properties:
+        id:
+          type: integer
+        slug:
+          type: string
+        name:
+          type: string
+
+    CreateCategoryRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        parentId:
+          type: integer
+          nullable: true
+
+    Brand:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+
+    Media:
+      type: object
+      required: [url, format, type]
+      properties:
+        url:
+          type: string
+          format: uri
+        format:
+          type: string
+          enum: [JPEG, PNG, WEBP]
+        type:
+          type: string
+          enum: [IMAGE, VIDEO]
+
+    Product:
+      type: object
+      required: [title, priceCents, media]
+      properties:
+        title:
+          type: string
+        slug:
+          type: string
+          nullable: true
+        priceCents:
+          type: integer
+          minimum: 0
+          description: Product price in integer cents (no floating point)
+        oldPriceCents:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: Previous price in integer cents, when the product is discounted
+        brand:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Brand'
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/Media'
+
+    CreateProductRequest:
+      type: object
+      required: [title, priceCents, media]
+      properties:
+        title:
+          type: string
+        slug:
+          type: string
+        priceCents:
+          type: integer
+          minimum: 0
+        oldPriceCents:
+          type: integer
+          nullable: true
+          minimum: 0
+        brandId:
+          type: integer
+          nullable: true
+        categoryId:
+          type: integer
+        media:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Media'
+
+    Pagination:
+      type: object
+      description: >
+        Pagination metadata in the "Showing 1–25 of 12,450 goods" style: a
+        cursor for loading the next/previous page plus a total count for a
+        UI indicator, without exact page numbers.
+      required:
+        - limit
+        - hasMore
+        - nextCursor
+        - prevCursor
+        - totalCount
+      properties:
+        limit:
+          type: integer
+          example: 20
+        hasMore:
+          type: boolean
+          description: Whether more products exist after the current page
+          example: true
+        nextCursor:
+          type: string
+          nullable: true
+          description: >
+            Opaque token for the next page. `null` means there are no more
+            pages (the "Load more" button should be hidden).
+          example: ZXlKaFpDSTZPakV6Tl
+        prevCursor:
+          type: string
+          nullable: true
+          description: >
+            Opaque token for the previous page. `null` means this is the
+            first page.
+          example: ZGN0aW9uOjE=
+        totalCount:
+          type: integer
+          minimum: 0
+          description: Total (possibly approximate) number of products in the category
+          example: 1245
+
+    CatalogData:
+      type: object
+      required: [breadcrumbs, products, pagination]
+      properties:
+        breadcrumbs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryBreadcrumb'
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    ProductDetailData:
+      type: object
+      required: [product, breadcrumbs]
+      properties:
+        product:
+          $ref: '#/components/schemas/Product'
+        breadcrumbs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryBreadcrumb'
+
+    CategoryEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: '#/components/schemas/Category'
+        error:
+          type: object
+          nullable: true
+          description: Always `null` for a successful response
+
+    CategoryListEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        error:
+          type: object
+          nullable: true
+          description: Always `null` for a successful response
+
+    CatalogEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: '#/components/schemas/CatalogData'
+        error:
+          type: object
+          nullable: true
+          description: Always `null` for a successful response
+
+    ProductEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: '#/components/schemas/Product'
+        error:
+          type: object
+          nullable: true
+          description: Always `null` for a successful response
+
+    ProductDetailEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          $ref: '#/components/schemas/ProductDetailData'
+        error:
+          type: object
+          nullable: true
+          description: Always `null` for a successful response
+
+    ErrorEnvelope:
+      type: object
+      required: [data, error]
+      properties:
+        data:
+          type: object
+          nullable: true
+          description: Always `null` for an error response
+        error:
+          $ref: '#/components/schemas/Problem'

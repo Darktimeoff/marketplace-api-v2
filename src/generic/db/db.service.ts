@@ -1,26 +1,20 @@
 import { Injectable, OnModuleInit, OnApplicationShutdown, Logger } from "@nestjs/common";
 import { EnvironmentService } from "../environment/environment.module.js";
 import { Pool, QueryConfigValues } from "pg";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { getDirname } from "../util/get-dirname.util.js";
+import { SecretManagerService } from "../secret-manager/secret-manager.service.js";
 
 @Injectable()
 export class DBService implements OnModuleInit, OnApplicationShutdown  {
-  private readonly PASSWORD_FILE = join(getDirname(), '..', '..', '..', 'secrets', 'db_password.txt');
   private readonly pool: Pool
   private readonly logger = new Logger(DBService.name)
   
-  constructor(private readonly environment: EnvironmentService) {
+  constructor(private readonly environment: EnvironmentService, secrets: SecretManagerService) {
     this.pool = new Pool({
       host: this.environment.get('DBHOST'),
       user: this.environment.get('DBUSER'),
       port: this.environment.get('DBPORT'),
       database: this.environment.get('DBNAME'),
-      password: async () => {
-        const fileContent = await readFile(this.PASSWORD_FILE, 'utf8');
-        return fileContent.trim();
-      }
+      password:  () => secrets.get('DBPASSWORD')
     })
 
     this.pool.on('error', (error) => {

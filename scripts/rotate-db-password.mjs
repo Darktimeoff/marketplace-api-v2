@@ -14,14 +14,24 @@ function generatePassword() {
   return randomBytes(24).toString('base64url');
 }
 
-async function pushPasswordToInfisical(env, newPassword) {
-  const client = await createAuthenticatedInfisicalClient(env, rootDir);
-
-  await client.secrets().updateSecret('DBPASSWORD', {
+async function getSecret(infisical, env, secretName) {
+  const secret = await infisical.secrets().getSecret({
     projectId: env.INFISICAL_PROJECT_ID,
     environment: env.INFISICAL_ENVIRONMENT,
-    secretValue: newPassword,
+    secretName,
   });
+  return secret.secretValue;
+}
+
+async function readCurrentPassword(infisical, env) {
+  try {
+    return await getSecret(infisical, env, 'DBPASSWORD');
+  } catch (error) {
+    console.error(
+      `Could not read the current DBPASSWORD from Infisical (${error.message}); falling back to ${path.relative(rootDir, secretPath)}.`,
+    );
+    return (await readFile(secretPath, 'utf8')).trim();
+  }
 }
 
 async function main() {
@@ -31,21 +41,37 @@ async function main() {
   const user = env.DBUSER;
   const database = env.DBNAME;
 
-  const oldPassword = (await readFile(secretPath, 'utf8')).trim();
+  const infisical = await createAuthenticatedInfisicalClient(env, rootDir);
+
+  const oldPassword = await readCurrentPassword(infisical, env);
   const newPassword = generatePassword();
 
   const client = new Client({ host, port, user, database, password: oldPassword });
   await client.connect();
 
-  let terminatedCount = 0;
   try {
     await client.query(`ALTER USER "${user}" WITH PASSWORD '${newPassword}'`);
 
-    // Write the new secret to disk before terminating other sessions, so that
-    // any pool which reconnects immediately reads the already-updated password.
     const tmpPath = `${secretPath}.tmp`;
     await writeFile(tmpPath, newPassword, { mode: 0o600 });
     await rename(tmpPath, secretPath);
+
+    console.log(`Rotated password for role "${user}" and updated ${path.relative(rootDir, secretPath)}.`);
+
+    try {
+      await infisical.secrets().updateSecret('DBPASSWORD', {
+        projectId: env.INFISICAL_PROJECT_ID,
+        environment: env.INFISICAL_ENVIRONMENT,
+        secretValue: newPassword,
+      });
+    } catch (error) {
+      throw new Error(
+        `Rotated the db password locally, but failed to sync it to Infisical: ${error.message}. ` +
+          `Infisical's DBPASSWORD secret is now stale - update it manually, then re-run this script ` +
+          `to terminate the remaining old-password sessions.`,
+      );
+    }
+    console.log(`Synced the new password to Infisical (${env.INFISICAL_ENVIRONMENT}) secret "DBPASSWORD".`);
 
     const { rows } = await client.query(
       `SELECT pg_terminate_backend(pid) AS terminated
@@ -53,28 +79,14 @@ async function main() {
        WHERE usename = $1 AND pid <> pg_backend_pid()`,
       [user],
     );
-    terminatedCount = rows.filter((row) => row.terminated).length;
+    const terminatedCount = rows.filter((row) => row.terminated).length;
+    console.log(`Terminated ${terminatedCount} existing session(s) for role "${user}".`);
   } finally {
     await client.end();
   }
-
-  console.log(
-    `Rotated password for role "${user}", updated ${path.relative(rootDir, secretPath)}, and terminated ${terminatedCount} existing session(s).`,
-  );
-
-  try {
-    await pushPasswordToInfisical(env, newPassword);
-  } catch (error) {
-    console.error(
-      `Rotated the db password locally, but failed to sync it to Infisical: ${error.message}. Infisical's DBPASSWORD secret is now stale - update it manually.`,
-    );
-    process.exit(1);
-  }
-
-  console.log(`Synced the new password to Infisical (${env.INFISICAL_ENVIRONMENT}) secret "DBPASSWORD".`);
 }
 
 main().catch((error) => {
-  console.error('Failed to rotate the db password:', error.message);
+  console.error(error.message);
   process.exit(1);
 });

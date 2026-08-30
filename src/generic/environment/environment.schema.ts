@@ -5,7 +5,11 @@ const environmentSchema = z.object({
   DBPORT: z.coerce.number().int().min(1).max(65535).default(3000),
   DBHOST: z.string().min(1),
   DBUSER: z.string().min(1),
-  DBNAME: z.string().min(1)
+  DBNAME: z.string().min(1),
+  INFISICAL_SITE_URL: z.string().min(1),
+  INFISICAL_CLIENT_ID: z.string().min(1),
+  INFISICAL_PROJECT_ID: z.string().min(1),
+  INFISICAL_ENVIRONMENT: z.enum(['dev', 'stagin', 'prod'])
 })
 
 export type EnvironmentType = z.infer<typeof environmentSchema>

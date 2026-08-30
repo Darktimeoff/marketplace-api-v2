@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { parse as parseEnvFile } from 'dotenv';
 import { Client } from 'pg';
+import { createAuthenticatedInfisicalClient } from './lib/infisical.mjs';
 
 const rootDir = path.resolve(fileURLToPath(import.meta.url), '../..');
 const envPath = path.join(rootDir, '.env');
@@ -11,6 +12,16 @@ const secretPath = path.join(rootDir, 'secrets', 'db_password.txt');
 
 function generatePassword() {
   return randomBytes(24).toString('base64url');
+}
+
+async function pushPasswordToInfisical(env, newPassword) {
+  const client = await createAuthenticatedInfisicalClient(env, rootDir);
+
+  await client.secrets().updateSecret('DBPASSWORD', {
+    projectId: env.INFISICAL_PROJECT_ID,
+    environment: env.INFISICAL_ENVIRONMENT,
+    secretValue: newPassword,
+  });
 }
 
 async function main() {
@@ -50,6 +61,17 @@ async function main() {
   console.log(
     `Rotated password for role "${user}", updated ${path.relative(rootDir, secretPath)}, and terminated ${terminatedCount} existing session(s).`,
   );
+
+  try {
+    await pushPasswordToInfisical(env, newPassword);
+  } catch (error) {
+    console.error(
+      `Rotated the db password locally, but failed to sync it to Infisical: ${error.message}. Infisical's DBPASSWORD secret is now stale - update it manually.`,
+    );
+    process.exit(1);
+  }
+
+  console.log(`Synced the new password to Infisical (${env.INFISICAL_ENVIRONMENT}) secret "DBPASSWORD".`);
 }
 
 main().catch((error) => {

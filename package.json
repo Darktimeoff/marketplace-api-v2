@@ -17,6 +17,7 @@
     "lint": "oxlint src/ test/",
     "check:env": "node scripts/check-env-example.mjs",
     "rotate:db-password": "node scripts/rotate-db-password.mjs",
+    "bootstrap:secrets": "node scripts/bootstrap-secrets.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
@@ -28,6 +29,7 @@
     "test:contract": "node --test consumer.pact.test.mjs"
   },
   "dependencies": {
+    "@infisical/sdk": "^5.0.2",
     "@nestjs/common": "^12.0.1",
     "@nestjs/config": "^12.0.0",
     "@nestjs/core": "^12.0.1",

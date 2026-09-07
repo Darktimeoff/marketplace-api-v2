@@ -21,12 +21,13 @@ Course project homework #1: OpenAPI contract for the Marketplace API
 ### Поднять Postgres — одна команда
 
 ```bash
-cp secrets/db_password.txt.example secrets/db_password.txt && docker compose up -d --wait db
+cp .env.example .env && cp secrets/db_password.txt.example secrets/db_password.txt && docker compose up -d --wait db
 ```
 
-Пароль базы читается из `secrets/db_password.txt` через `POSTGRES_PASSWORD_FILE` — файл
-в gitignore с ДЗ #11, поэтому в клоне его нет и его надо создать из шаблона. Это первая
-половина команды выше; в шаблоне лежит `changeme`.
+Два `cp` в начале — потому что `.env` и `secrets/db_password.txt` в gitignore с ДЗ #11,
+и в клоне их нет. Шаблоны обоих лежат в репозитории и содержат рабочие дев-значения,
+править их не нужно. Без `.env` база поднимется как `postgres`/`postgres` на случайном
+порту, и команды ниже не сработают.
 
 Эта команда поднимает базу **уже со схемой и данными**: `db/schema.sql` и `db/seed.sql`
 накатываются автоматически при первом старте пустого volume (через
@@ -45,10 +46,9 @@ cp secrets/db_password.txt.example secrets/db_password.txt && docker compose up 
 docker compose exec db psql -U root -d api
 ```
 
-Креденшелы стенда: пользователь `root`, база `api`, порт хоста `5500`, пароль — содержимое
-`secrets/db_password.txt` (`changeme`, если скопирован из шаблона). Имя пользователя, базы
-и порт заданы дефолтами в `docker-compose.yml`; локальный `.env`, если он есть, их
-переопределяет.
+Креденшелы стенда после этих `cp`: пользователь `root`, база `api`, порт хоста `33310`,
+пароль `changeme`. Имя пользователя, базы и порт берутся из `.env`, пароль — из
+`secrets/db_password.txt` через `POSTGRES_PASSWORD_FILE`.
 
 Каталог `db/` смонтирован внутрь контейнера как `/db` (read-only), поэтому все `.sql`
 доступны и снаружи (`db/schema.sql`), и изнутри (`/db/schema.sql`).
@@ -108,9 +108,9 @@ docker compose exec -T db psql -U root -d api -Atc "SELECT 1"
 
 ```bash
 export PGPASSWORD=changeme
-psql -h localhost -p 5500 -U root -d api -Atc "SELECT 1"
-psql -h localhost -p 5500 -U root -d api -v ON_ERROR_STOP=1 -f db/schema.sql
-psql -h localhost -p 5500 -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q1.sql)"
+psql -h localhost -p 33310 -U root -d api -Atc "SELECT 1"
+psql -h localhost -p 33310 -U root -d api -v ON_ERROR_STOP=1 -f db/schema.sql
+psql -h localhost -p 33310 -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q1.sql)"
 ```
 
 ### Файлы

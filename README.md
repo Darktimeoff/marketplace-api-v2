@@ -21,8 +21,12 @@ Course project homework #1: OpenAPI contract for the Marketplace API
 ### Поднять Postgres — одна команда
 
 ```bash
-docker compose up -d --wait db
+cp secrets/db_password.txt.example secrets/db_password.txt && docker compose up -d --wait db
 ```
+
+Пароль базы читается из `secrets/db_password.txt` через `POSTGRES_PASSWORD_FILE` — файл
+в gitignore с ДЗ #11, поэтому в клоне его нет и его надо создать из шаблона. Это первая
+половина команды выше; в шаблоне лежит `changeme`.
 
 Эта команда поднимает базу **уже со схемой и данными**: `db/schema.sql` и `db/seed.sql`
 накатываются автоматически при первом старте пустого volume (через
@@ -41,9 +45,10 @@ docker compose up -d --wait db
 docker compose exec db psql -U root -d api
 ```
 
-Креденшелы стенда: пользователь `root`, база `api`, пароль `devpassword`, порт хоста `5500`.
-Они лежат дефолтами прямо в `docker-compose.yml` — это не секрет, а то, чем база
-поднимается из свежего клона. Локальный `.env`, если он есть, их переопределяет.
+Креденшелы стенда: пользователь `root`, база `api`, порт хоста `5500`, пароль — содержимое
+`secrets/db_password.txt` (`changeme`, если скопирован из шаблона). Имя пользователя, базы
+и порт заданы дефолтами в `docker-compose.yml`; локальный `.env`, если он есть, их
+переопределяет.
 
 Каталог `db/` смонтирован внутрь контейнера как `/db` (read-only), поэтому все `.sql`
 доступны и снаружи (`db/schema.sql`), и изнутри (`/db/schema.sql`).
@@ -102,7 +107,7 @@ docker compose exec -T db psql -U root -d api -Atc "SELECT 1"
 ### Если удобнее psql с хоста, а не через контейнер
 
 ```bash
-export PGPASSWORD=devpassword
+export PGPASSWORD=changeme
 psql -h localhost -p 5500 -U root -d api -Atc "SELECT 1"
 psql -h localhost -p 5500 -U root -d api -v ON_ERROR_STOP=1 -f db/schema.sql
 psql -h localhost -p 5500 -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q1.sql)"
@@ -203,14 +208,7 @@ npm run start:dev                           # watch mode
 npm run rotate:db-password
 ```
 
-> **Начиная с ДЗ #12** контейнер Postgres инициализируется паролём из
-> `POSTGRES_PASSWORD` в `docker-compose.yml` (по умолчанию `devpassword`), а не из
-> `secrets/db_password.txt` через `POSTGRES_PASSWORD_FILE` — иначе свежий клон без
-> gitignore-нутого файла-секрета не поднимался бы, а это требование грейдера.
-> На саму ротацию это не влияет: скрипт берёт текущий пароль из Infisical
-> (файл — только fallback) и делает `ALTER USER` на живой базе. Значение
-> `POSTGRES_PASSWORD` учитывается **лишь при инициализации пустого volume**,
-> поэтому пересоздание тома через `down -v` вернёт базу к `devpassword`.
+
 
 This connects to Postgres with the current password from
 `secrets/db_password.txt`, runs `ALTER USER ... PASSWORD`, writes the new

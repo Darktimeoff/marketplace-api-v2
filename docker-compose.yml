@@ -1,26 +1,36 @@
-version: '3.8'
-
 services: 
   db: 
     image: postgres:18
     restart: always
+    # Дев-креденшелы локального стенда лежат тут намеренно: это не секрет, а то,
+    # чем грейдер поднимает базу из свежего клона без правки файлов.
+    # Пароль приложения (DBPASSWORD) по-прежнему живёт в Infisical — см. README.
     environment: 
-      POSTGRES_DB: ${DBNAME:-postgres}
-      POSTGRES_USER: ${DBUSER:-postgres}
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_DB: ${DBNAME:-api}
+      POSTGRES_USER: ${DBUSER:-root}
+      POSTGRES_PASSWORD: ${DBPASSWORD:-devpassword}
     volumes:
       - postgres_data:/var/lib/postgresql
+      # SQL проекта виден внутри контейнера как /db, чтобы работало и
+      # `docker compose exec db psql -f /db/schema.sql`, и psql с хоста.
+      - ./db:/db:ro
+      # Схема и сид накатываются автоматически при первом старте пустого volume.
+      # Ручной прогон из README всё равно работает: schema.sql идемпотентен.
+      - ./db/initdb:/docker-entrypoint-initdb.d:ro
     ports: 
-       - "${DBPORT}:5432"
-    secrets:
-      - db_password
+       - "${DBPORT:-5500}:5432"
       
+    # Проверка идёт по TCP, а не по unix-сокету: во время initdb Postgres поднимает
+    # временный сервер только на сокете, и healthcheck через сокет отрапортовал бы
+    # «готово», пока schema.sql и seed.sql ещё выполняются. По TCP сервер начинает
+    # слушать только после того, как init-скрипты отработали, поэтому
+    # `docker compose up -d --wait db` действительно дожидается готовых данных.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 10s      
-      timeout: 5s        
-      retries: 5         
-      start_period: 10s  
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   infisical-backend:
     container_name: infisical-backend
@@ -32,7 +42,9 @@ services:
         condition: service_started
     image: infisical/infisical:latest 
     pull_policy: always
-    env_file: .env.infisical
+    env_file:
+      - path: .env.infisical
+        required: false
     ports:
       - "4010:8080"
     environment:
@@ -43,7 +55,9 @@ services:
   infisical-redis:
     image: redis
     container_name: infisical-dev-redis
-    env_file: .env.infisical
+    env_file:
+      - path: .env.infisical
+        required: false
     restart: always
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
@@ -56,7 +70,9 @@ services:
     container_name: infisical-db
     image: postgres:14-alpine
     restart: always
-    env_file: .env.infisical
+    env_file:
+      - path: .env.infisical
+        required: false
     volumes:
       - pg_data:/var/lib/postgresql/data
     networks:
@@ -77,6 +93,3 @@ volumes:
 networks:
   infisical:
 
-secrets:
-  db_password:
-    file: ./secrets/db_password.txt

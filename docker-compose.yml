@@ -1,26 +1,26 @@
-version: '3.8'
-
 services: 
   db: 
     image: postgres:18
     restart: always
     environment: 
-      POSTGRES_DB: ${DBNAME:-postgres}
-      POSTGRES_USER: ${DBUSER:-postgres}
+      POSTGRES_DB: ${DBNAME:-api}
+      POSTGRES_USER: ${DBUSER:-root}
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     volumes:
       - postgres_data:/var/lib/postgresql
+      - ./db:/db:ro
+      - ./db/initdb:/docker-entrypoint-initdb.d:ro
     ports: 
-       - "${DBPORT}:5432"
+       - "${DBPORT:-5500}:5432"
     secrets:
       - db_password
       
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 10s      
-      timeout: 5s        
-      retries: 5         
-      start_period: 10s  
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   infisical-backend:
     container_name: infisical-backend
@@ -32,7 +32,9 @@ services:
         condition: service_started
     image: infisical/infisical:latest 
     pull_policy: always
-    env_file: .env.infisical
+    env_file:
+      - path: .env.infisical
+        required: false
     ports:
       - "4010:8080"
     environment:
@@ -43,7 +45,9 @@ services:
   infisical-redis:
     image: redis
     container_name: infisical-dev-redis
-    env_file: .env.infisical
+    env_file:
+      - path: .env.infisical
+        required: false
     restart: always
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
@@ -56,7 +60,9 @@ services:
     container_name: infisical-db
     image: postgres:14-alpine
     restart: always
-    env_file: .env.infisical
+    env_file:
+      - path: .env.infisical
+        required: false
     volumes:
       - pg_data:/var/lib/postgresql/data
     networks:

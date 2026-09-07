@@ -5,33 +5,142 @@ Course project homework #1: OpenAPI contract for the Marketplace API
 
 **Chosen contract-test option: A — consumer-driven Pact.**
 
-## Resources and operations
+---
 
-| Resource   | Operation                                                                                   | operationId            |
-|------------|-----------------------------------------------------------------------------------------------|-------------------------|
-| category   | `GET /category` — category tree                                                              | `listCategoryTree`     |
-| category   | `POST /category` — create a category                                                         | `createCategory`       |
-| category   | `GET /category/{id}` — subtree by id                                                         | `getTreeById`           |
-| catalog    | `GET /catalog/category/{id}` — breadcrumbs + a cursor-paginated page of products              | `getCatalogByCategory` |
-| products   | `POST /product` — create a product (Idempotency-Key)                                        | `createProduct`        |
-| products   | `GET /product/{id}` — product + breadcrumbs                                                 | `getProduct`            |
+## Database (HW #12)
 
-All responses (2xx and 4xx) use a single `{ data, error }` envelope: on
-success `data` is populated and `error: null`; on failure `data: null` and
-`error` is a `Problem` object. **Deliberate trade-off:** because of this,
-the `application/problem+json` body is not a "flat" RFC 7807 object — it's
-wrapped as `{ data: null, error: Problem }`, in favor of one uniform
-response shape for the client across every endpoint.
+Всё, что нужно грейдеру, — в этом разделе. Свежий клон, ничего доустанавливать не надо,
+файлы править не надо. Нужен только Docker.
 
-Cursor pagination lives on `GET /catalog/category/{id}`: query parameters
-`limit`, `cursor` (opaque token), response contains `data.products[]` and
-`data.pagination.nextCursor` (nullable; `null` = no more pages).
+**Главная таблица — `"Order"`, 120 000 строк после сида.**
 
-**Naming trade-off:** all multi-word JSON fields use camelCase
-(`nextCursor`, `prevCursor`, `hasMore`, `totalCount`, `priceCents`) for
-consistency with the rest of the API, instead of the snake_case
-(`next_cursor`) used in the original assignment example — a deliberate
-choice for this project.
+> ⚠️ Идентификаторы схемы в camelCase, поэтому в SQL они **всегда в двойных кавычках**:
+> `SELECT count(*) FROM "Order";` — не `FROM Order`. Слово `order` вдобавок
+> зарезервировано в SQL, без кавычек будет синтаксическая ошибка.
+
+### Поднять Postgres — одна команда
+
+```bash
+cp secrets/db_password.txt.example secrets/db_password.txt && docker compose up -d --wait db
+```
+
+Пароль базы читается из `secrets/db_password.txt` через `POSTGRES_PASSWORD_FILE` — файл
+в gitignore с ДЗ #11, поэтому в клоне его нет и его надо создать из шаблона. Это первая
+половина команды выше; в шаблоне лежит `changeme`.
+
+Эта команда поднимает базу **уже со схемой и данными**: `db/schema.sql` и `db/seed.sql`
+накатываются автоматически при первом старте пустого volume (через
+`/docker-entrypoint-initdb.d`). Занимает около 7 секунд, и `--wait` дожидается конца
+сида, а не только старта сервера. После неё можно сразу делать `EXPLAIN` — индексов
+оптимизации в базе на этот момент ещё нет, они лежат отдельно в `db/indexes.sql`.
+
+Ручной прогон из блока «Полный цикл» ниже при этом остаётся рабочим: `db/schema.sql`
+идемпотентен (начинается с пересоздания схемы `public`), поэтому применять его повторно
+на живой базе безопасно и он не падает с `already exists`. `NOTICE: drop cascades to ...`
+в выводе — это не ошибка, а перечисление сносимых объектов.
+
+### Подключиться — одна команда
+
+```bash
+docker compose exec db psql -U root -d api
+```
+
+Креденшелы стенда: пользователь `root`, база `api`, порт хоста `5500`, пароль — содержимое
+`secrets/db_password.txt` (`changeme`, если скопирован из шаблона). Имя пользователя, базы
+и порт заданы дефолтами в `docker-compose.yml`; локальный `.env`, если он есть, их
+переопределяет.
+
+Каталог `db/` смонтирован внутрь контейнера как `/db` (read-only), поэтому все `.sql`
+доступны и снаружи (`db/schema.sql`), и изнутри (`/db/schema.sql`).
+
+### Полный цикл: чистый volume → schema → seed → EXPLAIN до → indexes → EXPLAIN после
+
+Каждая строка самодостаточна, копируется по одной или блоком целиком:
+
+```bash
+docker compose down -v db
+docker compose up -d --wait db
+
+docker compose exec -T db psql -U root -d api -v ON_ERROR_STOP=1 -f /db/schema.sql
+docker compose exec -T db psql -U root -d api -v ON_ERROR_STOP=1 -f /db/seed.sql
+
+# EXPLAIN «до» — в каждом плане есть Seq Scan
+docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q1.sql)"
+docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q2.sql)"
+docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q3.sql)"
+
+docker compose exec -T db psql -U root -d api -v ON_ERROR_STOP=1 -f /db/indexes.sql
+docker compose exec -T db psql -U root -d api -c "ANALYZE;"
+
+# EXPLAIN «после» — Seq Scan нет, есть Bitmap Index Scan
+docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q1.sql)"
+docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q2.sql)"
+docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q3.sql)"
+```
+
+Сид отрабатывает примерно за 7 секунд. Разбор планов — в [`db/OPTIMIZATIONS.md`](db/OPTIMIZATIONS.md).
+
+### Проверка критериев и ожидаемый вывод
+
+```bash
+# схема применилась, FOREIGN KEY >= 3
+docker compose exec -T db psql -U root -d api -Atc "SELECT count(*) FROM information_schema.table_constraints WHERE constraint_type='FOREIGN KEY' AND table_schema='public';"
+# -> 17
+
+# объём главной таблицы >= 100000
+docker compose exec -T db psql -U root -d api -Atc 'SELECT count(*) FROM "Order";'
+# -> 120000
+
+# partial или expression индекс присутствует >= 1
+docker compose exec -T db psql -U root -d api -Atc "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND (indexdef ILIKE '% WHERE %' OR indexdef ~ '\((\w+)\(');"
+# -> 2
+
+# отчёт полный, >= 6
+grep -c 'Execution Time' db/OPTIMIZATIONS.md
+# -> 7
+
+# база отвечает на свежем клоне
+docker compose exec -T db psql -U root -d api -Atc "SELECT 1"
+# -> 1
+```
+
+### Если удобнее psql с хоста, а не через контейнер
+
+```bash
+export PGPASSWORD=changeme
+psql -h localhost -p 5500 -U root -d api -Atc "SELECT 1"
+psql -h localhost -p 5500 -U root -d api -v ON_ERROR_STOP=1 -f db/schema.sql
+psql -h localhost -p 5500 -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q1.sql)"
+```
+
+### Файлы
+
+| Файл | Назначение |
+|---|---|
+| [`db/schema.sql`](db/schema.sql) | таблицы, типы, констрейнты (17 FOREIGN KEY). Индексов оптимизации намеренно нет — на этой схеме все три запроса дают `Seq Scan` |
+| [`db/seed.sql`](db/seed.sql) | данные через `generate_series`, перекошенные распределения, `VACUUM (ANALYZE)` в конце |
+| [`db/queries/q1.sql`](db/queries/q1.sql) | заказы покупателя за период |
+| [`db/queries/q2.sql`](db/queries/q2.sql) | проблемные оплаты за 30 дней (`status = 'failed_payment'`) |
+| [`db/queries/q3.sql`](db/queries/q3.sql) | поиск товара по названию без учёта регистра |
+| [`db/indexes.sql`](db/indexes.sql) | три индекса: b-tree, **partial**, **expression** |
+| [`db/OPTIMIZATIONS.md`](db/OPTIMIZATIONS.md) | `EXPLAIN (ANALYZE, BUFFERS)` до/после + разбор каждого плана |
+| [`db/marketplace.dbml`](db/marketplace.dbml) | та же схема в DBML для dbdiagram.io |
+| [`db/initdb/`](db/initdb) | обёртки автоната при первом старте контейнера: `01-schema.sql`, `02-seed.sql` |
+
+### Решения по схеме
+
+- **Деньги — `numeric(12,2)`**, не `float`. Через домен `amount` с `CHECK (VALUE >= 0)`.
+- **Время — `timestamptz`** везде, кроме `dateOfBirth`: там `date`, потому что день рождения
+  это календарная дата, а не момент времени.
+- **Вместо `unsigned int`** (которого в Postgres нет) — домен `uint AS integer CHECK (VALUE > 0)`
+  на всех FK и `quantity`. На PK его нет: `GENERATED ALWAYS AS IDENTITY` не принимает
+  доменный тип и всё равно стартует с 1.
+- **PK — `integer GENERATED ALWAYS AS IDENTITY`**, не `serial` (см. «Don't Do This»).
+- **Снапшоты заказа**: `OrderRecipient` хранит копию получателя на момент заказа —
+  новые строки `Phone` и `DeliveryAddress`, поэтому связи 1:1, а `Phone."fullNumber"`
+  намеренно не уникален (снапшоты дублируют номер покупателя).
+
+---
 
 ## Visualizing the spec
 
@@ -69,11 +178,13 @@ immediately with a validation error if any are missing or invalid.
 | `DBUSER`  | yes      | —       | Postgres role/user                    |
 | `DBNAME`  | yes      | —       | Postgres database name                |
 
-The database password is **not** an environment variable — it's read from
-`secrets/db_password.txt` (git- and docker-ignored; only `secrets/*.example`
-templates are tracked). `docker-compose.yml` feeds the same file to Postgres
-via `POSTGRES_PASSWORD_FILE`, so both the app and the database read one
-shared secret.
+Секрет подключения к базе живёт **в хранилище секретов из ДЗ #11**, а не в env-файле:
+пароль `DBPASSWORD` `SecretManagerService` читает из Infisical (окружения `dev` и
+`prod`), остальные параметры подключения — обычные несекретные переменные выше.
+Код подключения в ДЗ #12 не менялся.
+
+Дев-креденшелы контейнера Postgres — отдельная история: они не секрет и лежат
+дефолтами прямо в `docker-compose.yml`, чтобы база поднималась из свежего клона.
 
 `.env.example` mirrors the schema and is checked against it in CI/locally:
 
@@ -85,9 +196,8 @@ npm run check:env   # fails with exit 1 if .env.example drifts from the schema
 
 ```bash
 cp .env.example .env                        # fill in real values
-cp secrets/db_password.txt.example secrets/db_password.txt   # then edit it
 
-docker compose up -d db                     # start Postgres
+docker compose up -d --wait db              # start Postgres (дефолты уже рабочие)
 npm install
 npm run start:dev                           # watch mode
 ```
@@ -97,6 +207,8 @@ npm run start:dev                           # watch mode
 ```bash
 npm run rotate:db-password
 ```
+
+
 
 This connects to Postgres with the current password from
 `secrets/db_password.txt`, runs `ALTER USER ... PASSWORD`, writes the new

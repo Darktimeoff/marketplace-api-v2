@@ -17,7 +17,7 @@ CREDS="$ROOT/secrets/infisical.env"
 if [ ! -f "$CREDS" ]; then
   echo "Не найден $CREDS — файл с креденшелами хранилища лежит вне git." >&2
   echo "Либо создай его из secrets/infisical.env.example, либо запусти с SKIP_VAULT=1," >&2
-  echo "предварительно выставив DB_* вручную (см. README, раздел Grading)." >&2
+  echo "предварительно выставив DB-переменные вручную (см. README, раздел Grading)." >&2
   exit 1
 fi
 
@@ -25,6 +25,17 @@ set -a
 # shellcheck disable=SC1090
 . "$CREDS"
 set +a
+
+# Тот же сплит, что и в приложении: несекретная конфигурация (DBHOST/DBPORT/DBNAME)
+# живёт в .env, а секрет (DBPASSWORD) — в хранилище. `infisical run` подставляет только
+# секреты и пробрасывает родительское окружение, .env он не читает, поэтому загружаем его
+# здесь. Уже выставленные вручную переменные не перетираем.
+if [ -f "$ROOT/.env" ]; then
+  while IFS='=' read -r key value; do
+    case "$key" in ''|\#*) continue ;; esac
+    [ -n "${!key-}" ] || export "$key=$value"
+  done < "$ROOT/.env"
+fi
 
 exec infisical run \
   --projectId "$INFISICAL_PROJECT_ID" \

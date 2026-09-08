@@ -20,7 +20,7 @@ cp .env.example .env
 cp secrets/db_password.txt.example secrets/db_password.txt
 docker compose up -d --wait db
 
-export DB_HOST=127.0.0.1 DB_PORT=33310 DB_USER=root DB_PASSWORD=changeme DB_NAME=api
+export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
 export SKIP_VAULT=1    # у грейдера нет доступа к хранилищу
 
 npm ci
@@ -56,7 +56,13 @@ npm-скриптов, так что префиксов набирать не н�
 ```
 
 Обёртка отдаёт значения из Infisical (окружения `dev` и `prod`) в `process.env`, откуда их
-и берёт `src/data-source.ts` — ни хоста, ни пароля в коде нет. Для грейдера предусмотрен
+и берёт `src/data-source.ts` — ни хоста, ни пароля в коде нет.
+
+Имена переменных — те же, что в проекте с ДЗ #11, а не выдуманные под это ДЗ:
+`DBHOST`/`DBPORT`/`DBUSER`/`DBNAME` описаны в `.env.example` и zod-схеме, `DBPASSWORD`
+лежит в хранилище (см. `SecretsInterface`). Отдельный набор вида `DB_*` означал бы, что
+значения из хранилища не подхватываются вообще: `infisical run` подставляет `DBPASSWORD`,
+и DataSource падал бы на «DB_PASSWORD is not set». Для грейдера предусмотрен
 аварийный вход: при `SKIP_VAULT=1` обёртка сразу выполняет команду, считая, что значения
 уже в окружении. Проверка `if` стоит **после** `shift`, иначе обёртка съела бы первый
 аргумент и попыталась выполнить слово `dev` как команду (`exec: dev: not found`, exit 127).

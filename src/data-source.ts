@@ -54,12 +54,14 @@ function required(name: string): string {
 
 /**
  * Никаких зашитых хостов и паролей: всё приходит из process.env, который наполняет
- * обёртка scripts/with-secrets.sh из хранилища ДЗ #11. Поддержаны обе формы —
- * одна строка DB_URL или отдельные DB_*.
+ * обёртка scripts/with-secrets.sh из хранилища ДЗ #11.
+ *
+ * Имена переменных — те же, что уже используются в проекте с ДЗ #11: DBHOST/DBPORT/
+ * DBUSER/DBNAME описаны в .env.example и zod-схеме, DBPASSWORD лежит в Infisical
+ * (см. SecretsInterface). Отдельный набор DB_* здесь означал бы, что значения из
+ * хранилища не подхватываются вообще.
  */
 function connectionOptions(): DataSourceOptions {
-  const url = process.env.DB_URL;
-
   const base = {
     type: 'postgres',
     entities,
@@ -72,18 +74,14 @@ function connectionOptions(): DataSourceOptions {
     logging: false as const,
   } satisfies Partial<DataSourceOptions>;
 
-  if (url) {
-    return { ...base, url } as DataSourceOptions;
-  }
-
   return {
     ...base,
-    host: required('DB_HOST'),
-    port: Number(required('DB_PORT')),
+    host: required('DBHOST'),
+    port: Number(required('DBPORT')),
     // pg ждёт user, TypeORM — username; здесь именно username.
-    username: required('DB_USER'),
-    password: required('DB_PASSWORD'),
-    database: required('DB_NAME'),
+    username: required('DBUSER'),
+    password: required('DBPASSWORD'),
+    database: required('DBNAME'),
   } as DataSourceOptions;
 }
 

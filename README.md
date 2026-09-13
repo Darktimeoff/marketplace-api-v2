@@ -133,6 +133,48 @@ npm-скриптов, так что префиксов набирать не н�
 только этот проект, а в `up()` оно создаётся через `IF NOT EXISTS`, так что повторный
 `npm run migrate` проходит.
 
+### Диф-миграция: quantity, Transaction, BackgroundJob
+
+`src/migrations/1789306283697-AddQuantityTransactionsBackgroundJobs.ts` — второй пример
+миграции, поверх `InitSchema`, а не с нуля: `ProductOffer` получает остаток `quantity`,
+плюс две новые таблицы — `Transaction` (денежные проводки пользователя) и `BackgroundJob`
+(очередь фоновых задач, пока только тип `ORDER`).
+
+Тоже получена через `migration:generate` и тоже урезана руками — по той же причине, что и
+`InitSchema`: генератор не узнал свои же старые имена FK (`Xxx_fkey`) в живой базе и выдал
+`DROP`+`ADD` на все 17 существующих внешних ключей, ни один из которых не менялся, плюс
+пересоздал `fullName` и дефолт `publicId` без единого содержательного изменения. Ниже — то,
+что от диф-миграции реально осталось: одна `ALTER TABLE ADD COLUMN`, четыре `CREATE TYPE`,
+две `CREATE TABLE`, два новых FK.
+
+Решения по этому дифу (расходятся с исходным ДЗ, отмечены заранее в цепочке правок):
+
+- **`quantity` — `integer`, не домен `amount`.** В черновике схемы колонка была типа
+  `amount` (домен для денег), но это остаток товара на складе, а не деньги: `quantity=1.50`
+  бессмысленно для штучного товара.
+- **`quantity` — `CHECK (>= 0)`, не домен `uint`.** `uint` запрещает `0` (`CHECK VALUE > 0`),
+  а распроданный оффер (`quantity = 0`) — нормальное состояние.
+- **`quantity` физически последняя колонка** и в миграции, и в `db/schema.sql`: `ALTER TABLE
+  ADD COLUMN` всегда добавляет колонку в конец таблицы, а не туда, где она стоит в
+  `CREATE TABLE`, поэтому `db/schema.sql` тоже держит её последней — иначе `pg_dump` двух
+  путей (миграция vs `schema.sql`) не совпадал бы даже при одинаковом смысле схемы.
+- **`BackgroundJob.dedupeKey` — `UNIQUE`.** Название поля говорит про дедупликацию — без
+  ограничения это была бы просто ещё одна колонка, а дедуп пришлось бы делать вручную на
+  каждый `INSERT`.
+- **`BackgroundJob.payload` — `jsonb`, не `json`.** Единственная причина вообще выбирать
+  между ними в Postgres: `jsonb` поддерживает индексацию и containment-запросы (`@>`).
+- **`onDelete: 'RESTRICT'` у обоих новых FK** (`Transaction.userId → User`,
+  `BackgroundJob.orderId → Order`) — та же политика, что и у остальных 13 FK в схеме:
+  soft delete везде, физическое удаление аварийное, `RESTRICT` не даёт молча снести
+  финансовую историю или задачи.
+- **`Transaction.amount` — всегда неотрицательная величина** (домен `amount`, как и
+  везде), направление денег кодирует `type` (`DEPOSIT`/`PAYMENT`/`WITHDRAWAL`), а не знак
+  числа.
+
+После применения обеих миграций `pg_dump --schema-only` снова сверен с обновлённым
+`db/schema.sql`: **126 идентичных стейтментов**, расхождений ноль. Откат (`migrate:revert`)
+проверен дважды подряд до пустой базы (остаются только служебные таблицы TypeORM) и обратно.
+
 ### Деньги: расхождение с заданием
 
 Задание просит хранить деньги как `integer` в минорных единицах. В схеме ДЗ #12 они —
@@ -151,7 +193,7 @@ join-entity с составным PK, а не `@ManyToMany`: на связи в�
 | Стратегия | Где | Почему |
 |---|---|---|
 | `CASCADE` | `BrandTranslation`, `CategoryTranslation`, `ProductTranslation` → родитель; `OrderProduct` → `Order` | Перевод без бренда/категории/товара и позиция без заказа не существуют как самостоятельные сущности |
-| `RESTRICT` | все остальные 13 FK | В схеме везде soft delete, физическое удаление — аварийный сценарий, и `RESTRICT` не даст молча снести половину каталога |
+| `RESTRICT` | все остальные 15 FK (включая `Transaction.userId`, `BackgroundJob.orderId`) | В схеме везде soft delete, физическое удаление — аварийный сценарий, и `RESTRICT` не даст молча снести половину каталога |
 
 Отдельно: `OrderProduct → ProductOffer` — именно `RESTRICT`, хотя рядом
 `OrderProduct → Order` это `CASCADE`. Удаление оффера не должно вычищать позиции из уже
@@ -193,24 +235,30 @@ Product → Category → CategoryTranslation`. Через `find()` это не �
 ### Идемпотентность seed
 
 `src/seed.ts` детерминирован: ни `random()`, ни `Date.now()`, каждая строка ищется по
-естественному ключу (`slug`, `email`, `(sellerId, sku)`, `publicId`) и создаётся, только
-если её нет. Проверка:
+естественному ключу (`slug`, `email`, `(sellerId, sku)`, `publicId`, `dedupeKey`) и
+создаётся, только если её нет. Проверка:
 
 ```bash
 npm run seed && npm run seed
 docker compose exec -T db psql -U root -d api -Atc \
   'SELECT (SELECT count(*) FROM "Category") || \'/\' || (SELECT count(*) FROM "Product") || \'/\' ||
           (SELECT count(*) FROM "ProductOffer") || \'/\' || (SELECT count(*) FROM "Order") || \'/\' ||
-          (SELECT count(*) FROM "OrderProduct")'
-# 6/8/10/10/20 — одинаково после первого и после второго прогона
+          (SELECT count(*) FROM "OrderProduct") || \'/\' || (SELECT count(*) FROM "Transaction") || \'/\' ||
+          (SELECT count(*) FROM "BackgroundJob")'
+# 6/8/10/10/20/10/10 — одинаково после первого и после второго прогона
 ```
+
+`Transaction` и `BackgroundJob` заводятся по одному на заказ: `Transaction` — снимок
+оплаты (`status = SUCCESS`, если статус заказа уже в числе «оплачен/отгружен/доставлен/
+завершён», иначе `PENDING`), `BackgroundJob` — задача обработки этого заказа с
+`dedupeKey = order:<publicId>` — тем же ключом идемпотентности, что и у самого заказа.
 
 ### Файлы
 
 | Файл | Назначение |
 |---|---|
-| `src/entities/` | 14 entities схемы ДЗ #12 + enum-типы и transformer для денег |
-| `src/migrations/` | начальная миграция |
+| `src/entities/` | 16 entities (14 из ДЗ #12 + `Transaction`, `BackgroundJob`) + enum-типы и transformer для денег |
+| `src/migrations/` | `InitSchema` + диф-миграция (`quantity`, `Transaction`, `BackgroundJob`) |
 | `src/data-source.ts` | DataSource: `synchronize: false`, параметры только из `process.env` |
 | `src/seed.ts` | детерминированный идемпотентный seed |
 | `src/demo-nplus1.ts` | демо N+1 «до/после» со счётчиком запросов |

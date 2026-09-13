@@ -46,3 +46,29 @@ export enum StatusEnum {
   canceled = 'canceled',
   refunded = 'refunded',
 }
+
+// Направление денег кодирует TransactionType; amount у Transaction — всегда
+// неотрицательная величина (тот же домен "amount", что и у денег в остальной схеме).
+export enum TransactionTypeEnum {
+  DEPOSIT = 'DEPOSIT',
+  PAYMENT = 'PAYMENT',
+  WITHDRAWAL = 'WITHDRAWAL',
+}
+
+export enum TransactionStatusEnum {
+  PENDING = 'PENDING',
+  FAILED = 'FAILED',
+  SUCCESS = 'SUCCESS',
+}
+
+export enum BackgroundJobTypeEnum {
+  ORDER = 'ORDER',
+}
+
+export enum BackgroundJobStatusEnum {
+  QUEUED = 'QUEUED',
+  PROCESSING = 'PROCESSING',
+  READY = 'READY',
+  FAILED = 'FAILED',
+  INTERRUPTED = 'INTERRUPTED',
+}

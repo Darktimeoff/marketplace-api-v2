@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import { Order } from '../entity/order.entity.js';
 import { CurrencyEnum } from '../../entities/enums.js';
 
@@ -13,9 +13,10 @@ export interface CreateOrderInput {
 
 @Injectable()
 export class OrderRepository {
-  constructor(@InjectRepository(Order) private readonly orders: Repository<Order>) {}
+  constructor(private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>) {}
 
   create(input: CreateOrderInput): Promise<Order> {
-    return this.orders.save(this.orders.create(input));
+    const orders = this.txHost.tx.getRepository(Order);
+    return orders.save(orders.create(input));
   }
 }

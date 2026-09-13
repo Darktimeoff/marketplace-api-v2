@@ -1,14 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import { Phone } from '../../entities/phone.entity.js';
 import { CreatePhoneDto } from '../dto/create-phone.dto.js';
 
 @Injectable()
 export class PhoneRepository {
-  constructor(@InjectRepository(Phone) private readonly phones: Repository<Phone>) {}
+  constructor(private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>) {}
 
   create(dto: CreatePhoneDto): Promise<Phone> {
-    return this.phones.save(this.phones.create(dto));
+    const phones = this.txHost.tx.getRepository(Phone);
+    return phones.save(phones.create(dto));
   }
 }

@@ -51,3 +51,6 @@ export class Order {
   @OneToMany('BackgroundJob', (job: BackgroundJob) => job.order)
   backgroundJobs: BackgroundJob[];
 }
+
+export interface OrderCreateEntityInterface
+  extends Pick<Order, 'orderRecipientId' | 'totalAmount' | 'discountAmount' | 'currency'> {}

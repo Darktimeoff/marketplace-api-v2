@@ -1,14 +1,16 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { OrderService } from '../service/order.service.js';
-import { CreateOrderDto } from '../dto/create-order.dto.js';
-import { Order } from '../entity/order.entity.js';
+import { OrderCreateInput } from '../input/order-create.input.js';
+import { OrderDto } from '../dto/order.dto.js';
+import { ResponseDto } from '../../generic/validation/response-dto.decorator.js';
 
 @Controller('order')
 export class OrderController {
   constructor(private readonly orderService: OrderService) {}
 
+  @ResponseDto(OrderDto)
   @Post()
-  create(@Body() dto: CreateOrderDto): Promise<Order> {
-    return this.orderService.create(dto);
+  create(@Body() input: OrderCreateInput): Promise<OrderDto> {
+    return this.orderService.create(input);
   }
 }

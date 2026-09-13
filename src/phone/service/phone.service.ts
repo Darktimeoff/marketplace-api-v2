@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PhoneRepository } from '../repository/phone.repository.js';
-import { CreatePhoneDto } from '../dto/create-phone.dto.js';
+import { PhoneCreateInput } from '../input/phone-create.input.js';
 import { Phone } from '../../entities/phone.entity.js';
 
 @Injectable()
@@ -9,7 +9,7 @@ export class PhoneService {
 
   /** Всегда создаёт НОВУЮ строку Phone — снапшот, а не ссылку на существующую
    *  (см. заметку в Phone.entity.ts: "fullNumber" намеренно не unique). */
-  create(dto: CreatePhoneDto): Promise<Phone> {
-    return this.phoneRepository.create(dto);
+  create(input: PhoneCreateInput): Promise<Phone> {
+    return this.phoneRepository.create(input);
   }
 }

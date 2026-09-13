@@ -1,6 +1,6 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import type { User } from './user.entity.js';
-import type { OrderRecipient } from './order-recipient.entity.js';
+import type { OrderRecipient } from '../order/entity/order-recipient.entity.js';
 
 @Entity('DeliveryAddress')
 @Check('DeliveryAddress_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)

@@ -1,6 +1,6 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 import { BackgroundJobStatusEnum, BackgroundJobTypeEnum } from './enums.js';
-import { Order } from './order.entity.js';
+import { Order } from '../order/entity/order.entity.js';
 
 /**
  * Очередь фоновых задач (пока только тип ORDER — асинхронная обработка заказа).

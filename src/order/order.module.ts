@@ -8,12 +8,14 @@ import { OrderService } from "./service/order.service.js";
 import { OrderController } from "./controller/order.controller.js";
 import { PhoneModule } from "../phone/phone.module.js";
 import { DeliveryAddressModule } from "../delivery-address/delivery-address.module.js";
+import { ProductOfferModule } from "../product-offer/product-offer.module.js";
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Order, OrderProduct, OrderRecipient]),
     PhoneModule,
     DeliveryAddressModule,
+    ProductOfferModule,
   ],
   controllers: [OrderController],
   providers: [OrderRepository, OrderService],

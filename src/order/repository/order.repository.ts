@@ -4,13 +4,8 @@ import { Repository } from 'typeorm';
 import { Order } from '../entity/order.entity.js';
 import { OrderProduct } from '../entity/order-product.entity.js';
 import { OrderRecipient } from '../entity/order-recipient.entity.js';
-import { CurrencyEnum, StatusEnum } from '../../entities/enums.js';
+import { CurrencyEnum } from '../../entities/enums.js';
 
-/**
- * Вход репозитория не совпадает с клиентским CreateOrderDto: он ничего не знает
- * про CreatePhoneDto/CreateDeliveryAddressDto, только про уже готовые
- * phoneId/deliveryAddressId — их разрешает OrderService до вызова create().
- */
 export interface CreateOrderRecipientInput {
   buyerId: number;
   fullName: string;
@@ -29,16 +24,10 @@ export interface CreateOrderInput {
   recipient: CreateOrderRecipientInput;
   items: CreateOrderItemInput[];
   totalAmount: string;
-  discountAmount?: string;
+  discountAmount: string;
   currency: CurrencyEnum;
-  status?: StatusEnum;
 }
 
-/**
- * Только create(): создаёт три строки — OrderRecipient, Order, OrderProduct[] —
- * ровно из того, что пришло. Никакой дополнительной логики (пересчёта сумм,
- * транзакции) — это на будущее ДЗ.
- */
 @Injectable()
 export class OrderRepository {
   constructor(
@@ -53,7 +42,6 @@ export class OrderRepository {
     const order = await this.orders.save(
       this.orders.create({
         orderRecipientId: recipient.id,
-        status: input.status,
         totalAmount: input.totalAmount,
         discountAmount: input.discountAmount,
         currency: input.currency,

@@ -2,7 +2,6 @@ import 'reflect-metadata';
 import { DeepPartial, FindOptionsWhere, ObjectLiteral, Repository } from 'typeorm';
 import { AppDataSource } from './data-source.js';
 import {
-  BackgroundJob,
   BackgroundJobStatusEnum,
   BackgroundJobTypeEnum,
   Brand,
@@ -26,6 +25,7 @@ import {
   TransactionTypeEnum,
   User,
 } from './entities/index.js';
+import { BackgroundJob } from './background-job/entity/background-job.entity.js';
 import { Order } from './order/entity/order.entity.js';
 import { OrderProduct } from './order/entity/order-product.entity.js';
 import { OrderRecipient } from './order/entity/order-recipient.entity.js';

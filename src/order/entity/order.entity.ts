@@ -3,7 +3,7 @@ import { CurrencyEnum, StatusEnum } from '../../entities/enums.js';
 import { OrderRecipient } from './order-recipient.entity.js';
 import { moneyTransformer } from '../../entities/money.transformer.js';
 import type { OrderProduct } from './order-product.entity.js';
-import type { BackgroundJob } from '../../entities/background-job.entity.js';
+import type { BackgroundJob } from '../../background-job/entity/background-job.entity.js';
 
 @Entity('Order')
 @Check('Order_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)

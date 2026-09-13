@@ -123,10 +123,13 @@ npm-скриптов, так что префиксов набирать не н�
    `CHECK (VALUE > 0)` и `CHECK (VALUE >= 0)` — замену `UNSIGNED` из ДЗ #12;
 4. не знал про триггеры `…_setUpdatedAt` и функцию `setUpdatedAt`;
 5. давал констрейнтам хешевые имена (`PK_faeb810…`) вместо `Phone_pkey`, `Identity_email_key`
-   и прочих из `db/schema.sql`.
+   и прочих исходных из схемы ДЗ #12 (`marketplace.dbml`).
 
-Всё это восстановлено вручную. Результат сверен машинно: `pg_dump --schema-only` базы после
-миграции и базы после `db/schema.sql` дают **111 идентичных стейтментов**, расхождений ноль.
+Всё это восстановлено вручную. На момент ДЗ #12/#13 схема сверялась машинно: `pg_dump
+--schema-only` базы после миграции и базы, поднятой напрямую из raw-SQL схемы ДЗ #12, дали
+**111 идентичных стейтментов**, расхождений ноль (тот raw-SQL файл был служебным
+верификационным артефактом и убран из репозитория после проверки — дизайн схемы остаётся
+в `marketplace.dbml`).
 
 `down()` не заглушка: сносит все 14 таблиц, функцию, шесть enum-типов и оба домена.
 Расширение `citext` остаётся намеренно — это общее свойство базы, его мог поставить не
@@ -154,10 +157,10 @@ npm-скриптов, так что префиксов набирать не н�
   бессмысленно для штучного товара.
 - **`quantity` — `CHECK (>= 0)`, не домен `uint`.** `uint` запрещает `0` (`CHECK VALUE > 0`),
   а распроданный оффер (`quantity = 0`) — нормальное состояние.
-- **`quantity` физически последняя колонка** и в миграции, и в `db/schema.sql`: `ALTER TABLE
-  ADD COLUMN` всегда добавляет колонку в конец таблицы, а не туда, где она стоит в
-  `CREATE TABLE`, поэтому `db/schema.sql` тоже держит её последней — иначе `pg_dump` двух
-  путей (миграция vs `schema.sql`) не совпадал бы даже при одинаковом смысле схемы.
+- **`quantity` физически последняя колонка.** `ALTER TABLE ADD COLUMN` всегда добавляет
+  колонку в конец таблицы, а не туда, где она логически стоит в `CREATE TABLE` — это
+  видно в `\d "ProductOffer"` и в `pg_dump`, поэтому в `marketplace.dbml` она тоже
+  показана последней.
 - **`BackgroundJob.dedupeKey` — `UNIQUE`.** Название поля говорит про дедупликацию — без
   ограничения это была бы просто ещё одна колонка, а дедуп пришлось бы делать вручную на
   каждый `INSERT`.
@@ -171,9 +174,10 @@ npm-скриптов, так что префиксов набирать не н�
   везде), направление денег кодирует `type` (`DEPOSIT`/`PAYMENT`/`WITHDRAWAL`), а не знак
   числа.
 
-После применения обеих миграций `pg_dump --schema-only` снова сверен с обновлённым
-`db/schema.sql`: **126 идентичных стейтментов**, расхождений ноль. Откат (`migrate:revert`)
-проверен дважды подряд до пустой базы (остаются только служебные таблицы TypeORM) и обратно.
+После применения обеих миграций `pg_dump --schema-only` на момент этой работы был снова
+сверен с raw-SQL версией схемы: **126 идентичных стейтментов**, расхождений ноль. Откат
+(`migrate:revert`) проверен дважды подряд до пустой базы (остаются только служебные таблицы
+TypeORM) и обратно.
 
 ### Деньги: расхождение с заданием
 
@@ -265,140 +269,6 @@ docker compose exec -T db psql -U root -d api -Atc \
 | `src/query-count.logger.ts` | Logger, считающий отправленные в базу запросы |
 | `src/report.ts` | отчёт через `createQueryBuilder().getRawMany()` |
 | `scripts/with-secrets.sh` | обёртка «команда с секретами из хранилища» |
-
----
-
-## Database (HW #12)
-
-Всё, что нужно грейдеру, — в этом разделе. Свежий клон, ничего доустанавливать не надо,
-файлы править не надо. Нужен только Docker.
-
-**Главная таблица — `"Order"`, 120 000 строк после сида.**
-
-> ⚠️ Идентификаторы схемы в camelCase, поэтому в SQL они **всегда в двойных кавычках**:
-> `SELECT count(*) FROM "Order";` — не `FROM Order`. Слово `order` вдобавок
-> зарезервировано в SQL, без кавычек будет синтаксическая ошибка.
-
-### Поднять Postgres — одна команда
-
-```bash
-cp .env.example .env && cp secrets/db_password.txt.example secrets/db_password.txt && docker compose up -d --wait db
-```
-
-Два `cp` в начале — потому что `.env` и `secrets/db_password.txt` в gitignore с ДЗ #11,
-и в клоне их нет. Шаблоны обоих лежат в репозитории и содержат рабочие дев-значения,
-править их не нужно. Без `.env` база поднимется как `postgres`/`postgres` на случайном
-порту, и команды ниже не сработают.
-
-> **Изменение в ДЗ #13.** Раньше `db/schema.sql` и `db/seed.sql` накатывались сами при
-> первом старте контейнера через `/docker-entrypoint-initdb.d`. Начиная с ветки `hw-13`
-> схему создаёт TypeORM-миграция, поэтому автонакат снят — иначе `npm run migrate`
-> падал бы с `relation "Phone" already exists`. Таблицы, типы и констрейнты при этом
-> не изменились: миграция даёт схему, идентичную `db/schema.sql` (сверено `pg_dump`).
-> Прогон ниже по-прежнему работает и нужен для проверки ДЗ #12.
-
-`db/schema.sql` идемпотентен (начинается с пересоздания схемы `public`), поэтому применять
-его повторно на живой базе безопасно и он не падает с `already exists`.
-`NOTICE: drop cascades to ...` в выводе — это не ошибка, а перечисление сносимых объектов.
-
-### Подключиться — одна команда
-
-```bash
-docker compose exec db psql -U root -d api
-```
-
-Креденшелы стенда после этих `cp`: пользователь `root`, база `api`, порт хоста `33310`,
-пароль `changeme`. Имя пользователя, базы и порт берутся из `.env`, пароль — из
-`secrets/db_password.txt` через `POSTGRES_PASSWORD_FILE`.
-
-Каталог `db/` смонтирован внутрь контейнера как `/db` (read-only), поэтому все `.sql`
-доступны и снаружи (`db/schema.sql`), и изнутри (`/db/schema.sql`).
-
-### Полный цикл: чистый volume → schema → seed → EXPLAIN до → indexes → EXPLAIN после
-
-Каждая строка самодостаточна, копируется по одной или блоком целиком:
-
-```bash
-docker compose down -v db
-docker compose up -d --wait db
-
-docker compose exec -T db psql -U root -d api -v ON_ERROR_STOP=1 -f /db/schema.sql
-docker compose exec -T db psql -U root -d api -v ON_ERROR_STOP=1 -f /db/seed.sql
-
-# EXPLAIN «до» — в каждом плане есть Seq Scan
-docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q1.sql)"
-docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q2.sql)"
-docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q3.sql)"
-
-docker compose exec -T db psql -U root -d api -v ON_ERROR_STOP=1 -f /db/indexes.sql
-docker compose exec -T db psql -U root -d api -c "ANALYZE;"
-
-# EXPLAIN «после» — Seq Scan нет, есть Bitmap Index Scan
-docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q1.sql)"
-docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q2.sql)"
-docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q3.sql)"
-```
-
-Сид отрабатывает примерно за 7 секунд. Разбор планов — в [`db/OPTIMIZATIONS.md`](db/OPTIMIZATIONS.md).
-
-### Проверка критериев и ожидаемый вывод
-
-```bash
-# схема применилась, FOREIGN KEY >= 3
-docker compose exec -T db psql -U root -d api -Atc "SELECT count(*) FROM information_schema.table_constraints WHERE constraint_type='FOREIGN KEY' AND table_schema='public';"
-# -> 17
-
-# объём главной таблицы >= 100000
-docker compose exec -T db psql -U root -d api -Atc 'SELECT count(*) FROM "Order";'
-# -> 120000
-
-# partial или expression индекс присутствует >= 1
-docker compose exec -T db psql -U root -d api -Atc "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND (indexdef ILIKE '% WHERE %' OR indexdef ~ '\((\w+)\(');"
-# -> 2
-
-# отчёт полный, >= 6
-grep -c 'Execution Time' db/OPTIMIZATIONS.md
-# -> 7
-
-# база отвечает на свежем клоне
-docker compose exec -T db psql -U root -d api -Atc "SELECT 1"
-# -> 1
-```
-
-### Если удобнее psql с хоста, а не через контейнер
-
-```bash
-export PGPASSWORD=changeme
-psql -h localhost -p 33310 -U root -d api -Atc "SELECT 1"
-psql -h localhost -p 33310 -U root -d api -v ON_ERROR_STOP=1 -f db/schema.sql
-psql -h localhost -p 33310 -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q1.sql)"
-```
-
-### Файлы
-
-| Файл | Назначение |
-|---|---|
-| [`db/schema.sql`](db/schema.sql) | таблицы, типы, констрейнты (17 FOREIGN KEY). Индексов оптимизации намеренно нет — на этой схеме все три запроса дают `Seq Scan` |
-| [`db/seed.sql`](db/seed.sql) | данные через `generate_series`, перекошенные распределения, `VACUUM (ANALYZE)` в конце |
-| [`db/queries/q1.sql`](db/queries/q1.sql) | заказы покупателя за период |
-| [`db/queries/q2.sql`](db/queries/q2.sql) | проблемные оплаты за 30 дней (`status = 'failed_payment'`) |
-| [`db/queries/q3.sql`](db/queries/q3.sql) | поиск товара по названию без учёта регистра |
-| [`db/indexes.sql`](db/indexes.sql) | три индекса: b-tree, **partial**, **expression** |
-| [`db/OPTIMIZATIONS.md`](db/OPTIMIZATIONS.md) | `EXPLAIN (ANALYZE, BUFFERS)` до/после + разбор каждого плана |
-| [`db/marketplace.dbml`](db/marketplace.dbml) | та же схема в DBML для dbdiagram.io |
-
-### Решения по схеме
-
-- **Деньги — `numeric(12,2)`**, не `float`. Через домен `amount` с `CHECK (VALUE >= 0)`.
-- **Время — `timestamptz`** везде, кроме `dateOfBirth`: там `date`, потому что день рождения
-  это календарная дата, а не момент времени.
-- **Вместо `unsigned int`** (которого в Postgres нет) — домен `uint AS integer CHECK (VALUE > 0)`
-  на всех FK и `quantity`. На PK его нет: `GENERATED ALWAYS AS IDENTITY` не принимает
-  доменный тип и всё равно стартует с 1.
-- **PK — `integer GENERATED ALWAYS AS IDENTITY`**, не `serial` (см. «Don't Do This»).
-- **Снапшоты заказа**: `OrderRecipient` хранит копию получателя на момент заказа —
-  новые строки `Phone` и `DeliveryAddress`, поэтому связи 1:1, а `Phone."fullNumber"`
-  намеренно не уникален (снапшоты дублируют номер покупателя).
 
 ---
 

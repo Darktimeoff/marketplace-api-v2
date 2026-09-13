@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import {
+  BackgroundJob,
   Brand,
   BrandTranslation,
   Category,
@@ -16,6 +17,7 @@ import {
   Product,
   ProductOffer,
   ProductTranslation,
+  Transaction,
   User,
 } from './entities/index.js';
 
@@ -36,6 +38,8 @@ export const entities = [
   OrderRecipient,
   Order,
   OrderProduct,
+  Transaction,
+  BackgroundJob,
 ];
 
 function required(name: string): string {

@@ -28,6 +28,12 @@ CREATE TYPE "StatusEnum"      AS ENUM (
   'created', 'pending_payment', 'failed_payment', 'paid', 'confirmed',
   'preparing', 'shipped', 'delivered', 'completed', 'canceled', 'refunded'
 );
+-- Направление денег кодирует TransactionTypeEnum; "Transaction"."amount" — всегда
+-- неотрицательная величина (домен "amount", как и у денег в остальной схеме).
+CREATE TYPE "TransactionTypeEnum"   AS ENUM ('DEPOSIT', 'PAYMENT', 'WITHDRAWAL');
+CREATE TYPE "TransactionStatusEnum" AS ENUM ('PENDING', 'FAILED', 'SUCCESS');
+CREATE TYPE "BackgroundJobTypeEnum"   AS ENUM ('ORDER');
+CREATE TYPE "BackgroundJobStatusEnum" AS ENUM ('QUEUED', 'PROCESSING', 'READY', 'FAILED', 'INTERRUPTED');
 
 -- ---------- updatedAt trigger ----------
 CREATE FUNCTION "setUpdatedAt"() RETURNS trigger AS $$
@@ -189,10 +195,16 @@ CREATE TABLE "ProductOffer" (
   "createdAt"     timestamptz    NOT NULL DEFAULT now(),
   "updatedAt"     timestamptz    NOT NULL DEFAULT now(),
   "deletedAt"     timestamptz,
-  CONSTRAINT "ProductOffer_sellerId_sku"   UNIQUE ("sellerId", "sku"),
-  CONSTRAINT "ProductOffer_sku_notBlank"   CHECK (btrim("sku") <> ''),
-  CONSTRAINT "ProductOffer_discount_le"    CHECK ("discountPrice" IS NULL OR "discountPrice" <= "price"),
-  CONSTRAINT "ProductOffer_deletedAt_ord"  CHECK ("deletedAt" IS NULL OR "deletedAt" >= "createdAt")
+  -- Остаток на складе — счётчик штук, а не деньги, поэтому integer, а не домен
+  -- "amount". 0 (распродано) — нормальное состояние, поэтому CHECK >= 0,
+  -- а не домен "uint" (тот запрещает 0, VALUE > 0). Колонка физически идёт
+  -- последней: добавлена ALTER TABLE ADD COLUMN поверх исходной таблицы ДЗ #12.
+  "quantity"      integer        NOT NULL DEFAULT 0,
+  CONSTRAINT "ProductOffer_sellerId_sku"     UNIQUE ("sellerId", "sku"),
+  CONSTRAINT "ProductOffer_sku_notBlank"     CHECK (btrim("sku") <> ''),
+  CONSTRAINT "ProductOffer_discount_le"      CHECK ("discountPrice" IS NULL OR "discountPrice" <= "price"),
+  CONSTRAINT "ProductOffer_quantity_nonneg"  CHECK ("quantity" >= 0),
+  CONSTRAINT "ProductOffer_deletedAt_ord"    CHECK ("deletedAt" IS NULL OR "deletedAt" >= "createdAt")
 );
 
 -- ---------- OrderRecipient ----------
@@ -239,6 +251,43 @@ CREATE TABLE "OrderProduct" (
   CONSTRAINT "OrderProduct_deletedAt_ord" CHECK ("deletedAt" IS NULL OR "deletedAt" >= "createdAt")
 );
 
+-- ---------- Transaction ----------
+-- Денежная проводка пользователя: пополнение, оплата, вывод средств.
+CREATE TABLE "Transaction" (
+  "id"        integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  "userId"    "uint" NOT NULL REFERENCES "User"("id") ON DELETE RESTRICT,
+  "amount"    "amount" NOT NULL,
+  "status"    "TransactionStatusEnum" NOT NULL DEFAULT 'PENDING',
+  "type"      "TransactionTypeEnum"   NOT NULL DEFAULT 'PAYMENT',
+  "createdAt" timestamptz NOT NULL DEFAULT now(),
+  "updatedAt" timestamptz NOT NULL DEFAULT now(),
+  "deletedAt" timestamptz,
+  CONSTRAINT "Transaction_deletedAt_order" CHECK ("deletedAt" IS NULL OR "deletedAt" >= "createdAt")
+);
+
+-- ---------- BackgroundJob ----------
+-- Очередь фоновых задач (пока только ORDER). dedupeKey уникален: повторная
+-- постановка одной и той же задачи не создаёт дубликат.
+CREATE TABLE "BackgroundJob" (
+  "id"           integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  "type"         "BackgroundJobTypeEnum"   NOT NULL,
+  "status"       "BackgroundJobStatusEnum" NOT NULL DEFAULT 'QUEUED',
+  "payload"      jsonb        NOT NULL,
+  "dedupeKey"    varchar(255) NOT NULL,
+  "startedAt"    timestamptz,
+  "finishedAt"   timestamptz,
+  "errorMessage" text,
+  "attempts"     integer NOT NULL DEFAULT 0,
+  "orderId"      "uint" REFERENCES "Order"("id") ON DELETE RESTRICT,
+  "createdAt"    timestamptz NOT NULL DEFAULT now(),
+  "updatedAt"    timestamptz NOT NULL DEFAULT now(),
+  "deletedAt"    timestamptz,
+  CONSTRAINT "BackgroundJob_dedupeKey_key"      UNIQUE ("dedupeKey"),
+  CONSTRAINT "BackgroundJob_dedupeKey_notBlank" CHECK (btrim("dedupeKey") <> ''),
+  CONSTRAINT "BackgroundJob_attempts_nonneg"    CHECK ("attempts" >= 0),
+  CONSTRAINT "BackgroundJob_deletedAt_order"    CHECK ("deletedAt" IS NULL OR "deletedAt" >= "createdAt")
+);
+
 -- ---------- updatedAt triggers ----------
 DO $$
 DECLARE t text;
@@ -246,7 +295,8 @@ BEGIN
   FOREACH t IN ARRAY ARRAY[
     'Phone', 'DeliveryAddress', 'Identity', 'User', 'Brand', 'BrandTranslation',
     'Category', 'CategoryTranslation', 'Product', 'ProductTranslation',
-    'ProductOffer', 'OrderRecipient', 'Order', 'OrderProduct'
+    'ProductOffer', 'OrderRecipient', 'Order', 'OrderProduct',
+    'Transaction', 'BackgroundJob'
   ] LOOP
     EXECUTE format(
       'CREATE TRIGGER %I BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION "setUpdatedAt"()',

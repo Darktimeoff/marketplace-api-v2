@@ -3,6 +3,7 @@ import { CurrencyEnum, StatusEnum } from './enums.js';
 import { OrderRecipient } from './order-recipient.entity.js';
 import { moneyTransformer } from './money.transformer.js';
 import type { OrderProduct } from './order-product.entity.js';
+import type { BackgroundJob } from './background-job.entity.js';
 
 @Entity('Order')
 @Check('Order_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
@@ -46,4 +47,7 @@ export class Order {
 
   @OneToMany('OrderProduct', (item: OrderProduct) => item.order)
   items: OrderProduct[];
+
+  @OneToMany('BackgroundJob', (job: BackgroundJob) => job.order)
+  backgroundJobs: BackgroundJob[];
 }

@@ -2,8 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
 import { OrderProductRepository, CreateOrderProductInput } from '../repository/order-product.repository.js';
-import { CreateOrderDto, CreateOrderItemDto } from '../dto/create-order.dto.js';
+import { CreateOrderDto, CreateOrderItemDto, CreateOrderRecipientDto } from '../dto/create-order.dto.js';
 import { Order } from '../entity/order.entity.js';
+import { OrderRecipient } from '../entity/order-recipient.entity.js';
 import { PhoneService } from '../../phone/service/phone.service.js';
 import { DeliveryAddressService } from '../../delivery-address/service/delivery-address.service.js';
 import { ProductOfferService } from '../../product-offer/service/product-offer.service.js';
@@ -33,12 +34,7 @@ export class OrderService {
       this.productOfferService.findByIds(dto.items.map((item) => item.productOfferId)),
     ]);
 
-    const recipient = await this.orderRecipientRepository.create({
-      buyerId: dto.recipient.buyerId,
-      fullName: dto.recipient.fullName,
-      phoneId: phone.id,
-      deliveryAddressId: deliveryAddress.id,
-    });
+    const recipient = await this.createRecipient(dto.recipient, phone.id, deliveryAddress.id);
 
     const offersById = new Map(offers.map((offer) => [offer.id, offer]));
     const pricedItems = dto.items.map((item) => this.priceItem(item, offersById));
@@ -58,6 +54,19 @@ export class OrderService {
     );
 
     return order;
+  }
+
+  private createRecipient(
+    recipient: CreateOrderRecipientDto,
+    phoneId: number,
+    deliveryAddressId: number,
+  ): Promise<OrderRecipient> {
+    return this.orderRecipientRepository.create({
+      buyerId: recipient.buyerId,
+      fullName: recipient.fullName,
+      phoneId,
+      deliveryAddressId,
+    });
   }
 
   private priceItem(item: CreateOrderItemDto, offersById: Map<number, ProductOffer>): PricedOrderItem {

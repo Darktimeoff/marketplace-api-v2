@@ -12,6 +12,7 @@ import { PhoneModule } from "../phone/phone.module.js";
 import { DeliveryAddressModule } from "../delivery-address/delivery-address.module.js";
 import { ProductOfferModule } from "../product-offer/product-offer.module.js";
 import { BackgroundJobModule } from "../background-job/background-job.module.js";
+import { AccountModule } from "../account/account.module.js";
 import { OrderSaga } from "./saga/order.saga.js";
 
 @Module({
@@ -20,7 +21,8 @@ import { OrderSaga } from "./saga/order.saga.js";
     PhoneModule,
     DeliveryAddressModule,
     ProductOfferModule,
-    BackgroundJobModule
+    BackgroundJobModule,
+    AccountModule,
   ],
   controllers: [OrderController],
   providers: [OrderRepository, OrderRecipientRepository, OrderProductRepository, OrderService, OrderSaga],

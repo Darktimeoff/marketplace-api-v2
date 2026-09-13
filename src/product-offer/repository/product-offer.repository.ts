@@ -21,15 +21,23 @@ export class ProductOfferRepository {
   }
 
   decrementQuantityByIds(decrements: { id: number; quantity: number }[]): Promise<unknown> {
+    return this.updateQuantityByIds(decrements, '-');
+  }
+
+  incrementQuantityByIds(increments: { id: number; quantity: number }[]): Promise<unknown> {
+    return this.updateQuantityByIds(increments, '+');
+  }
+
+  private updateQuantityByIds(changes: { id: number; quantity: number }[], operator: '+' | '-'): Promise<unknown> {
     const productOffers = this.txHost.tx.getRepository(ProductOffer);
 
     const params: Record<string, number> = {};
-    const cases = decrements
+    const cases = changes
       .map(({ id, quantity }, index) => {
         params[`id_${index}`] = id;
         params[`qty_${index}`] = quantity;
 
-        return `WHEN :id_${index} THEN "quantity" - :qty_${index}`;
+        return `WHEN :id_${index} THEN "quantity" ${operator} :qty_${index}`;
       })
       .join(' ');
 
@@ -37,7 +45,7 @@ export class ProductOfferRepository {
       .createQueryBuilder()
       .update(ProductOffer)
       .set({ quantity: () => `CASE "id" ${cases} END` })
-      .whereInIds(decrements.map(({ id }) => id))
+      .whereInIds(changes.map(({ id }) => id))
       .setParameters(params)
       .execute();
   }

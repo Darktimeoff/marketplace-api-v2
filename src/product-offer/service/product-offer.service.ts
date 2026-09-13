@@ -17,4 +17,8 @@ export class ProductOfferService {
   decrementQuantityByIds(decrements: { id: ProductOffer['id']; quantity: number }[]): Promise<unknown> {
     return this.productOfferRepository.decrementQuantityByIds(decrements);
   }
+
+  incrementQuantityByIds(increments: { id: ProductOffer['id']; quantity: number }[]): Promise<unknown> {
+    return this.productOfferRepository.incrementQuantityByIds(increments);
+  }
 }

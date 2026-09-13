@@ -40,3 +40,6 @@ export class Transaction {
   @JoinColumn({ name: 'userId' })
   user: User;
 }
+
+export interface TransactionCreateEntityInterface
+  extends Pick<Transaction, 'userId' | 'amount' | 'type' | 'status'> {}

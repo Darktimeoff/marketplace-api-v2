@@ -4,18 +4,19 @@ import { Transactional } from "@nestjs-cls/transactional";
 import { OrderRepository } from "../repository/order.repository.js";
 import { OrderStatusEnum } from "../../entities/enums.js";
 import { ProductOfferService } from "../../product-offer/service/product-offer.service.js";
+import { AccountService } from "../../account/service/account.service.js";
 import { ProductOffer } from "../../entities/product-offer.entity.js";
 
 @Injectable()
 export class OrderSaga {
   constructor(
     private readonly repository: OrderRepository,
-    private readonly offers: ProductOfferService
+    private readonly offers: ProductOfferService,
+    private readonly accounts: AccountService,
   ) {
 
   }
 
-  @Transactional()
   async handleById(orderId: Order['id']) {
     let order = await this.repository.findByIdOrFail(orderId);
     let hasTransitioned = true;
@@ -35,7 +36,11 @@ export class OrderSaga {
         return await this.handlerCreatedStatus(order);
 
       case OrderStatusEnum.pending_payment:
+        return await this.handlerPendingPaymentStatus(order);
+
       case OrderStatusEnum.failed_payment:
+        return await this.handlerFailedPaymentStatus(order);
+
       case OrderStatusEnum.paid:
       case OrderStatusEnum.confirmed:
       case OrderStatusEnum.preparing:
@@ -57,6 +62,26 @@ export class OrderSaga {
     await this.repository.updateStatusById(order.id, OrderStatusEnum.pending_payment)
     return true
   }
+  
+  private async handlerPendingPaymentStatus(order: Order): Promise<boolean> {
+    const charged = await this.accounts.charge(order.orderRecipient.buyerId, Number(order.totalAmount))
+
+    if (!charged) {
+      await this.repository.updateStatusById(order.id, OrderStatusEnum.failed_payment)
+      return true
+    }
+
+    await this.repository.updateStatusById(order.id, OrderStatusEnum.completed)
+    return true
+  }
+
+  private async handlerFailedPaymentStatus(order: Order): Promise<boolean> {
+    await this.offers.incrementQuantityByIds(
+      order.items.map(item => ({ id: item.productOfferId, quantity: item.quantity })),
+    )
+
+    return false
+  }
 
   private async reserveItemsInSeller(order: Order) {
     const orderProductIds = order.items.map(item => item.productOfferId)
@@ -67,12 +92,12 @@ export class OrderSaga {
       const offer = offerById.get(item.productOfferId)
       if (!offer) {
         await this.repository.updateStatusById(order.id, OrderStatusEnum.canceled);
-        return false
+        return true
       }
 
       if (item.quantity > offer.quantity) {
         await this.repository.updateStatusById(order.id, OrderStatusEnum.canceled)
-        return false
+        return true
       }
     }
 
@@ -82,7 +107,7 @@ export class OrderSaga {
       )
     } catch {
       await this.repository.updateStatusById(order.id, OrderStatusEnum.canceled)
-      return false
+      return true
     }
 
     return true

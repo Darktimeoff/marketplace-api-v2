@@ -54,3 +54,6 @@ export class OrderRecipient {
   @OneToOne('Order', (order: Order) => order.orderRecipient)
   order: Order | null;
 }
+
+export interface OrderRecipientCreateEntityInterface
+  extends Pick<OrderRecipient, 'buyerId' | 'fullName' | 'phoneId' | 'deliveryAddressId'> {}

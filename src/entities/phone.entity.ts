@@ -40,3 +40,6 @@ export class Phone {
   @OneToOne('OrderRecipient', (recipient: OrderRecipient) => recipient.phone)
   orderRecipient: OrderRecipient | null;
 }
+
+export interface PhoneCreateEntityInterface
+  extends Pick<Phone, 'countryCode' | 'rawNumber' | 'fullNumber' | 'nationalNumber'> {}

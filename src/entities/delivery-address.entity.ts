@@ -32,3 +32,7 @@ export class DeliveryAddress {
   @OneToOne('OrderRecipient', (recipient: OrderRecipient) => recipient.deliveryAddress)
   orderRecipient: OrderRecipient | null;
 }
+
+export interface DeliveryAddressCreateEntityInterface
+  extends Pick<DeliveryAddress, 'addressLine' | 'city'>,
+    Partial<Pick<DeliveryAddress, 'building'>> {}

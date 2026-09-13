@@ -46,3 +46,6 @@ export class OrderProduct {
   @JoinColumn({ name: 'productOfferId' })
   productOffer: ProductOffer;
 }
+
+export interface OrderProductCreateEntityInterface
+  extends Pick<OrderProduct, 'orderId' | 'productOfferId' | 'quantity' | 'price' | 'discountPrice'> {}

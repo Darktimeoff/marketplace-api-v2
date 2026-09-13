@@ -8,11 +8,6 @@ import { EnvironmentModule, EnvironmentService } from "../environment/environmen
 import { SecretManagerModule } from "../secret-manager/secret-manager.module.js";
 import { SecretManagerService } from "../secret-manager/secret-manager.service.js";
 import { entities as sharedEntities } from "../../entities/all.js";
-import { Order } from "../../order/entity/order.entity.js";
-import { OrderProduct } from "../../order/entity/order-product.entity.js";
-import { OrderRecipient } from "../../order/entity/order-recipient.entity.js";
-
-const entities = [...sharedEntities, Order, OrderProduct, OrderRecipient];
 
 @Module({
   imports: [
@@ -21,7 +16,12 @@ const entities = [...sharedEntities, Order, OrderProduct, OrderRecipient];
       inject: [EnvironmentService, SecretManagerService],
       useFactory: async (environment: EnvironmentService, secrets: SecretManagerService) => ({
         type: "postgres",
-        entities,
+        // Entity с owner-модулем (Order, BackgroundJob, Phone, DeliveryAddress,
+        // ProductOffer, ...) сюда не добавляются — они регистрируются через
+        // TypeOrmModule.forFeature([...]) в своих модулях и подхватываются
+        // autoLoadEntities. sharedEntities — только entity без owner-модуля.
+        entities: sharedEntities,
+        autoLoadEntities: true,
         synchronize: false,
         host: environment.get("DBHOST"),
         port: environment.get("DBPORT"),

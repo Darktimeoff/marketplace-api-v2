@@ -12,4 +12,3 @@ export * from './product.entity.js';
 export * from './product-translation.entity.js';
 export * from './product-offer.entity.js';
 export * from './transaction.entity.js';
-export * from './background-job.entity.js';

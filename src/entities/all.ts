@@ -1,28 +1,25 @@
 import {
-  BackgroundJob,
   Brand,
   BrandTranslation,
   Category,
   CategoryTranslation,
-  DeliveryAddress,
   Identity,
-  Phone,
   Product,
-  ProductOffer,
   ProductTranslation,
   Transaction,
   User,
 } from './index.js';
 
 /**
- * Единственный список entities: используется и CLI-DataSource'ом для миграций
- * (`src/data-source.ts`), и рантайм-регистрацией TypeORM в Nest (`src/generic/db`).
- * Раньше список дублировался в обоих местах — теперь при добавлении entity
- * достаточно поправить один файл.
+ * Entities без выделенного доменного модуля: у них нет своего
+ * TypeOrmModule.forFeature([...]) в каком-либо модуле, поэтому список
+ * остаётся единым и подключается в TypeOrmModule.forRootAsync (AppModule)
+ * и CLI-DataSource'ом для миграций (`src/data-source.ts`). Entity с owner-модулем
+ * (Order, BackgroundJob, Phone, DeliveryAddress, ProductOffer, ...) сюда не входят —
+ * они регистрируются через forFeature в своих модулях и подхватываются
+ * autoLoadEntities.
  */
 export const entities = [
-  Phone,
-  DeliveryAddress,
   Identity,
   User,
   Brand,
@@ -31,7 +28,5 @@ export const entities = [
   CategoryTranslation,
   Product,
   ProductTranslation,
-  ProductOffer,
   Transaction,
-  BackgroundJob,
 ];

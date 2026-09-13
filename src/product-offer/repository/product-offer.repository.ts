@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
+import { In } from 'typeorm';
 import { ProductOffer } from '../../entities/product-offer.entity.js';
 
 @Injectable()
 export class ProductOfferRepository {
-  constructor(
-    @InjectRepository(ProductOffer) private readonly productOffers: Repository<ProductOffer>,
-  ) {}
+  constructor(private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>) {}
 
   findByIds(ids: number[]): Promise<ProductOffer[]> {
-    return this.productOffers.findBy({ id: In(ids) });
+    const productOffers = this.txHost.tx.getRepository(ProductOffer);
+    return productOffers.findBy({ id: In(ids) });
   }
 }

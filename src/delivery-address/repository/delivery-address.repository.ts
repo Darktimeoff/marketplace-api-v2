@@ -1,16 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { TransactionHost } from '@nestjs-cls/transactional';
+import { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import { DeliveryAddress } from '../../entities/delivery-address.entity.js';
 import { CreateDeliveryAddressDto } from '../dto/create-delivery-address.dto.js';
 
 @Injectable()
 export class DeliveryAddressRepository {
-  constructor(
-    @InjectRepository(DeliveryAddress) private readonly deliveryAddresses: Repository<DeliveryAddress>,
-  ) {}
+  constructor(private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>) {}
 
   create(dto: CreateDeliveryAddressDto): Promise<DeliveryAddress> {
-    return this.deliveryAddresses.save(this.deliveryAddresses.create(dto));
+    const deliveryAddresses = this.txHost.tx.getRepository(DeliveryAddress);
+    return deliveryAddresses.save(deliveryAddresses.create(dto));
   }
 }

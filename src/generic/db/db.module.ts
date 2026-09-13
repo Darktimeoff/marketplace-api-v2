@@ -1,5 +1,9 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
+import { ClsModule } from "nestjs-cls";
+import { ClsPluginTransactional } from "@nestjs-cls/transactional";
+import { TransactionalAdapterTypeOrm } from "@nestjs-cls/transactional-adapter-typeorm";
+import { DataSource } from "typeorm";
 import { EnvironmentModule, EnvironmentService } from "../environment/environment.module.js";
 import { SecretManagerModule } from "../secret-manager/secret-manager.module.js";
 import { SecretManagerService } from "../secret-manager/secret-manager.service.js";
@@ -8,13 +12,6 @@ import { Order } from "../../order/entity/order.entity.js";
 import { OrderProduct } from "../../order/entity/order-product.entity.js";
 import { OrderRecipient } from "../../order/entity/order-recipient.entity.js";
 
-// Order/OrderProduct/OrderRecipient зарегистрированы отдельно от src/entities/all.ts —
-// они живут в src/order/entity/ вместе с доменным модулем заказа. Но им всё равно
-// нужно быть в этом же списке: Phone/DeliveryAddress/User/ProductOffer/BackgroundJob
-// ссылаются на них строкой ('OrderRecipient', 'Order', ...), и без записи в общих
-// метаданных TypeORM падает при старте с "Entity metadata for ... was not found" —
-// OrderModule.forFeature() регистрирует репозитории поверх уже известного DataSource,
-// а не добавляет entity в его метаданные задним числом.
 const entities = [...sharedEntities, Order, OrderProduct, OrderRecipient];
 
 @Module({
@@ -32,6 +29,16 @@ const entities = [...sharedEntities, Order, OrderProduct, OrderRecipient];
         database: environment.get("DBNAME"),
         password: async () => await secrets.get("DBPASSWORD"),
       }),
+    }),
+    ClsModule.forRoot({
+      global: true,
+      plugins: [
+        new ClsPluginTransactional({
+          adapter: new TransactionalAdapterTypeOrm({
+            dataSourceToken: DataSource,
+          }),
+        }),
+      ],
     }),
   ],
   exports: [TypeOrmModule],

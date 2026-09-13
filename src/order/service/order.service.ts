@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Transactional } from '@nestjs-cls/transactional';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
 import { OrderProductRepository, CreateOrderProductInput } from '../repository/order-product.repository.js';
@@ -29,6 +30,7 @@ export class OrderService {
     private readonly productOfferService: ProductOfferService,
   ) {}
 
+  @Transactional()
   async create(dto: CreateOrderDto): Promise<Order> {
     const [phone, deliveryAddress, offers] = await Promise.all([
       this.phoneService.create(dto.recipient.phone),
@@ -41,10 +43,7 @@ export class OrderService {
     const offersById = new Map(offers.map((offer) => [offer.id, offer]));
     const pricedItems = dto.items.map((item) => this.priceItem(item, offersById));
 
-    const totalAmount = pricedItems.reduce((sum, priced) => sum + priced.amount, 0);
-    const discountAmount = pricedItems.reduce((sum, priced) => sum + priced.discount, 0);
-
-    const order = await this.createOrder(recipient.id, totalAmount, discountAmount, dto.currency);
+    const order = await this.createOrder(recipient.id, pricedItems, dto.currency);
 
     await this.createItems(pricedItems, order.id);
 
@@ -66,10 +65,12 @@ export class OrderService {
 
   private createOrder(
     orderRecipientId: number,
-    totalAmount: number,
-    discountAmount: number,
+    items: PricedOrderItem[],
     currency: CurrencyEnum,
   ): Promise<Order> {
+    const totalAmount = items.reduce((sum, priced) => sum + priced.amount, 0);
+    const discountAmount = items.reduce((sum, priced) => sum + priced.discount, 0);
+    
     return this.orderRepository.create({
       orderRecipientId,
       totalAmount: totalAmount.toFixed(2),

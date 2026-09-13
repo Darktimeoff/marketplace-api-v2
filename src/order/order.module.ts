@@ -1,8 +1,4 @@
 import { Module } from "@nestjs/common";
-import { TypeOrmModule } from "@nestjs/typeorm";
-import { Order } from "./entity/order.entity.js";
-import { OrderProduct } from "./entity/order-product.entity.js";
-import { OrderRecipient } from "./entity/order-recipient.entity.js";
 import { OrderRepository } from "./repository/order.repository.js";
 import { OrderRecipientRepository } from "./repository/order-recipient.repository.js";
 import { OrderProductRepository } from "./repository/order-product.repository.js";
@@ -13,16 +9,8 @@ import { DeliveryAddressModule } from "../delivery-address/delivery-address.modu
 import { ProductOfferModule } from "../product-offer/product-offer.module.js";
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Order, OrderProduct, OrderRecipient]),
-    PhoneModule,
-    DeliveryAddressModule,
-    ProductOfferModule,
-  ],
+  imports: [PhoneModule, DeliveryAddressModule, ProductOfferModule],
   controllers: [OrderController],
   providers: [OrderRepository, OrderRecipientRepository, OrderProductRepository, OrderService],
-  exports: [TypeOrmModule]
 })
-export class OrderModule {
-
-}
+export class OrderModule {}

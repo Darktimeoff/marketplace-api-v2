@@ -1,8 +1,8 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { User } from './user.entity.js';
-import { Phone } from './phone.entity.js';
-import { DeliveryAddress } from './delivery-address.entity.js';
-import type { Order } from './order.entity.js';
+import { User } from '../../entities/user.entity.js';
+import { Phone } from '../../entities/phone.entity.js';
+import { DeliveryAddress } from '../../entities/delivery-address.entity.js';
+import type { Order } from '../../entities/order.entity.js/order.entity.js';
 
 /**
  * Снапшот получателя на момент оформления заказа. phoneId и deliveryAddressId —

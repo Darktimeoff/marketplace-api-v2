@@ -1,9 +1,9 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { CurrencyEnum, StatusEnum } from './enums.js';
+import { CurrencyEnum, StatusEnum } from '../../entities/enums.js';
 import { OrderRecipient } from './order-recipient.entity.js';
-import { moneyTransformer } from './money.transformer.js';
-import type { OrderProduct } from './order-product.entity.js';
-import type { BackgroundJob } from './background-job.entity.js';
+import { moneyTransformer } from '../../entities/money.transformer.js';
+import type { OrderProduct } from '../../entities/order-product.entity.jsroduct.entity.js';
+import type { BackgroundJob } from '../../entities/background-job.entity.js';
 
 @Entity('Order')
 @Check('Order_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)

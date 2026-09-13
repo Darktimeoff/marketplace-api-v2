@@ -11,8 +11,5 @@ export * from './category-translation.entity.js';
 export * from './product.entity.js';
 export * from './product-translation.entity.js';
 export * from './product-offer.entity.js';
-export * from './order-recipient.entity.js';
-export * from './order.entity.js';
-export * from './order-product.entity.js';
 export * from './transaction.entity.js';
 export * from './background-job.entity.js';

@@ -386,7 +386,6 @@ psql -h localhost -p 33310 -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat d
 | [`db/indexes.sql`](db/indexes.sql) | три индекса: b-tree, **partial**, **expression** |
 | [`db/OPTIMIZATIONS.md`](db/OPTIMIZATIONS.md) | `EXPLAIN (ANALYZE, BUFFERS)` до/после + разбор каждого плана |
 | [`db/marketplace.dbml`](db/marketplace.dbml) | та же схема в DBML для dbdiagram.io |
-| [`db/initdb/`](db/initdb) | обёртки автоната при первом старте контейнера: `01-schema.sql`, `02-seed.sql` |
 
 ### Решения по схеме
 

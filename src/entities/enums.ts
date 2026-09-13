@@ -33,7 +33,7 @@ export enum CurrencyEnum {
   USD = 'USD',
 }
 
-export enum StatusEnum {
+export enum OrderStatusEnum {
   created = 'created',
   pending_payment = 'pending_payment',
   failed_payment = 'failed_payment',

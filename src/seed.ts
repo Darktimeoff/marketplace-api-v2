@@ -19,7 +19,7 @@ import {
   ProductOffer,
   ProductTranslation,
   RoleEnum,
-  StatusEnum,
+  OrderStatusEnum,
   Transaction,
   TransactionStatusEnum,
   TransactionTypeEnum,
@@ -244,11 +244,11 @@ async function seed(): Promise<void> {
 
   // ---------- заказы со снапшотом получателя ----------
   const statuses = [
-    StatusEnum.completed,
-    StatusEnum.delivered,
-    StatusEnum.paid,
-    StatusEnum.shipped,
-    StatusEnum.canceled,
+    OrderStatusEnum.completed,
+    OrderStatusEnum.delivered,
+    OrderStatusEnum.paid,
+    OrderStatusEnum.shipped,
+    OrderStatusEnum.canceled,
   ];
 
   for (let i = 0; i < ORDERS; i++) {
@@ -312,7 +312,7 @@ async function seed(): Promise<void> {
 
     // Оплата заказа — денежная проводка покупателя. amount неотрицателен
     // (домен "amount"), направление денег кодирует type = PAYMENT.
-    const paidStatuses = [StatusEnum.paid, StatusEnum.shipped, StatusEnum.delivered, StatusEnum.completed];
+    const paidStatuses = [OrderStatusEnum.paid, OrderStatusEnum.shipped, OrderStatusEnum.delivered, OrderStatusEnum.completed];
 
     await ensure(
       transactions,

@@ -1,5 +1,5 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { CurrencyEnum, StatusEnum } from '../../entities/enums.js';
+import { CurrencyEnum, OrderStatusEnum } from '../../entities/enums.js';
 import { OrderRecipient } from './order-recipient.entity.js';
 import { moneyTransformer } from '../../entities/money.transformer.js';
 import type { OrderProduct } from './order-product.entity.js';
@@ -19,8 +19,8 @@ export class Order {
 
   // Переходы статусов валидирует приложение, не БД: машина состояний зависит
   // от роли, оплаты и прав, триггер дублировал бы эту логику.
-  @Column({ type: 'enum', enum: StatusEnum, enumName: 'StatusEnum', default: StatusEnum.created })
-  status: StatusEnum;
+  @Column({ type: 'enum', enum: OrderStatusEnum, enumName: 'StatusEnum', default: OrderStatusEnum.created })
+  status: OrderStatusEnum;
 
   // Снапшот на момент заказа: итог К ОПЛАТЕ, уже со скидкой.
   @Column({ type: 'numeric', precision: 12, scale: 2, transformer: moneyTransformer })

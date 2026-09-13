@@ -9,4 +9,12 @@ export class ProductOfferService {
   findByIds(ids: number[]): Promise<ProductOffer[]> {
     return this.productOfferRepository.findByIds(ids);
   }
+
+  findByIdsForUpdate(ids: ProductOffer['id'][]): Promise<ProductOffer[]> {
+    return this.productOfferRepository.findByIdsForUpdate(ids);
+  }
+
+  decrementQuantityByIds(decrements: { id: ProductOffer['id']; quantity: number }[]): Promise<unknown> {
+    return this.productOfferRepository.decrementQuantityByIds(decrements);
+  }
 }

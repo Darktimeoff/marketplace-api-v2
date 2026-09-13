@@ -12,6 +12,7 @@ import { PhoneModule } from "../phone/phone.module.js";
 import { DeliveryAddressModule } from "../delivery-address/delivery-address.module.js";
 import { ProductOfferModule } from "../product-offer/product-offer.module.js";
 import { BackgroundJobModule } from "../background-job/background-job.module.js";
+import { OrderSaga } from "./saga/order.saga.js";
 
 @Module({
   imports: [
@@ -22,6 +23,6 @@ import { BackgroundJobModule } from "../background-job/background-job.module.js"
     BackgroundJobModule
   ],
   controllers: [OrderController],
-  providers: [OrderRepository, OrderRecipientRepository, OrderProductRepository, OrderService],
+  providers: [OrderRepository, OrderRecipientRepository, OrderProductRepository, OrderService, OrderSaga],
 })
 export class OrderModule {}

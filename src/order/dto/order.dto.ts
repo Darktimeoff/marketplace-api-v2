@@ -1,6 +1,6 @@
 import { Expose } from 'class-transformer';
 import { IsDate, IsEnum, IsInt, IsPositive, IsString, IsUUID } from 'class-validator';
-import { CurrencyEnum, StatusEnum } from '../../entities/enums.js';
+import { CurrencyEnum, OrderStatusEnum } from '../../entities/enums.js';
 
 export class OrderDto {
   @Expose()
@@ -13,8 +13,8 @@ export class OrderDto {
   publicId: string;
 
   @Expose()
-  @IsEnum(StatusEnum)
-  status: StatusEnum;
+  @IsEnum(OrderStatusEnum)
+  status: OrderStatusEnum;
 
   @Expose()
   @IsString()

@@ -14,7 +14,7 @@ export class BackgroundJobRepository {
   }
 
   async claimNext(type: BackgroundJobTypeEnum): Promise<BackgroundJob | null> {
-    const rows: BackgroundJob[] = await this.txHost.tx.query(
+    const [rows]: [BackgroundJob[], number] = await this.txHost.tx.query(
       `UPDATE "BackgroundJob"
        SET status = $1, "startedAt" = now(), attempts = attempts + 1
        WHERE id = (

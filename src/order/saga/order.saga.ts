@@ -54,9 +54,9 @@ export class OrderSaga {
   }
 
   private async handlerCreatedStatus(order: Order): Promise<boolean> {
-    const available = await this.reserveItemsInSeller(order)
-    if (!available) {
-      return false
+    const reserved = await this.reserveItemsInSeller(order)
+    if (!reserved) {
+      return true
     }
 
     await this.repository.updateStatusById(order.id, OrderStatusEnum.pending_payment)
@@ -83,22 +83,19 @@ export class OrderSaga {
     return false
   }
 
-  private async reserveItemsInSeller(order: Order) {
+  private async reserveItemsInSeller(order: Order): Promise<boolean> {
     const orderProductIds = order.items.map(item => item.productOfferId)
     const offers = await this.offers.findByIdsForUpdate(orderProductIds)
 
     const offerById = new Map<number, ProductOffer>(offers.map(offer => [offer.id, offer]))
-    for (const item of order.items) {
+    const isAvailable = order.items.every(item => {
       const offer = offerById.get(item.productOfferId)
-      if (!offer) {
-        await this.repository.updateStatusById(order.id, OrderStatusEnum.canceled);
-        return true
-      }
+      return offer !== undefined && item.quantity <= offer.quantity
+    })
 
-      if (item.quantity > offer.quantity) {
-        await this.repository.updateStatusById(order.id, OrderStatusEnum.canceled)
-        return true
-      }
+    if (!isAvailable) {
+      await this.repository.updateStatusById(order.id, OrderStatusEnum.canceled)
+      return false
     }
 
     try {
@@ -107,7 +104,7 @@ export class OrderSaga {
       )
     } catch {
       await this.repository.updateStatusById(order.id, OrderStatusEnum.canceled)
-      return true
+      return false
     }
 
     return true

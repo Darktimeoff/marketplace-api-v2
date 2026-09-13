@@ -1,0 +1,1 @@
+SELECT o."id", o."publicId", o."totalAmount", o."currency", o."createdAt" FROM "Order" o WHERE o."status" = 'failed_payment' AND o."createdAt" >= now() - interval '30 days' ORDER BY o."createdAt" DESC LIMIT 50;

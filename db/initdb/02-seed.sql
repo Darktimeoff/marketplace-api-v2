@@ -1,0 +1,1 @@
+\i /db/seed.sql

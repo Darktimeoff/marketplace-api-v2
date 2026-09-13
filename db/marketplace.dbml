@@ -1,0 +1,307 @@
+// Marketplace DB — типы и констрейнты.
+// Структура (таблицы/колонки/связи) не менялась, кроме:
+//   - переименований по согласованию (см. ниже)
+//   - createdAt/updatedAt/deletedAt добавлены в DeliveryAddress и OrderRecipient
+//
+// Переименования: password -> passwordHash, EURO -> EUR,
+//   OrderRecipient.phoneNumberId -> phoneId, Order.recipientId -> orderRecipientId,
+//   DeliveryAddress.address -> addressLine, DeliveryAddress.street -> building.
+//
+// Домены (Postgres, см. schema.sql):
+//   uint   = integer CHECK (VALUE > 0)     -- все FK и quantity
+//   amount = numeric(12,2) CHECK (VALUE >= 0) -- все деньги
+// PK везде integer GENERATED ALWAYS AS IDENTITY, без CHECK.
+//
+// TimezoneEnum убран: IANA-таймзон ~400 и tzdata обновляется несколько раз в год,
+// enum потребовал бы ALTER TYPE на каждое обновление. Заменён на varchar(64).
+
+Enum LanguageEnum {
+  en
+  ua
+}
+
+Enum RoleEnum {
+  owner
+  seller
+  admin
+  user
+}
+
+Enum GenderEnum {
+  male
+  female
+}
+
+Enum CountryCodeEnum {
+  UA
+  US
+  PL
+  DE
+  GB
+}
+
+Enum CurrencyEnum {
+  UAH
+  EUR
+  USD
+}
+
+Enum StatusEnum {
+  created
+  pending_payment
+  failed_payment
+  paid
+  confirmed
+  preparing
+  shipped
+  delivered
+  completed
+  canceled
+  refunded
+}
+
+Table Identity {
+  id integer [pk, increment]
+  email citext [unique, null]
+  phoneId uint [ref: - Phone.id, unique, null]
+  passwordHash varchar(255) [not null]
+  role RoleEnum [not null, default: 'user']
+  activatedAt timestamptz [null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Note: '''
+  CHECK: email IS NOT NULL OR phoneId IS NOT NULL — нужен хотя бы один способ входа
+  CHECK: activatedAt IS NULL OR activatedAt >= createdAt
+  CHECK: deletedAt IS NULL OR deletedAt >= createdAt
+  citext даёт регистронезависимый unique без .toLowerCase() в коде
+  '''
+}
+
+Table Phone {
+  id integer [pk, increment]
+  countryCode CountryCodeEnum [not null]
+  rawNumber varchar(32) [not null]
+  fullNumber varchar(16) [not null]
+  nationalNumber varchar(15) [not null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Note: '''
+  CHECK: fullNumber ~ '^\+[1-9][0-9]{7,14}$' — E.164
+  CHECK: nationalNumber ~ '^[0-9]{4,15}$'
+  fullNumber НЕ unique: OrderRecipient создаёт снапшот-копию номера на каждый заказ.
+  Уникальность телефона как логина держит Identity.phoneId.
+  '''
+}
+
+Table User {
+  id integer [pk, increment]
+  identityId uint [ref: - Identity.id, unique, not null]
+  firstName varchar(100) [null]
+  lastName varchar(100) [null]
+  fullName varchar(201) [null, note: "GENERATED ALWAYS AS (nullif(trim(coalesce(firstName,'') || ' ' || coalesce(lastName,'')), '')) STORED"]
+  dateOfBirth date [null]
+  gender GenderEnum [null]
+  language LanguageEnum [not null, default: 'en']
+  timezone varchar(64) [not null, default: 'Europe/London']
+  deliveryAddressId uint [ref: - DeliveryAddress.id, unique, null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Note: '''
+  CHECK: dateOfBirth IS NULL OR dateOfBirth < current_date
+  Возрастной порог (18+) не в БД: бизнес-правило, зависит от юрисдикции.
+  user query will be populated by email,phoneNumber from jwt payload,
+  doesn`t projection email,phoneNumber
+  '''
+}
+
+Table DeliveryAddress {
+  id integer [pk, increment]
+  addressLine varchar(255) [not null]
+  city varchar(100) [not null]
+  building varchar(32) [null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+}
+
+Table Brand {
+  id integer [pk, increment]
+  slug varchar(120) [unique, not null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Note: "CHECK: slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'"
+}
+
+Table BrandTranslation {
+  id integer [pk, increment]
+  brandId uint [ref: > Brand.id, not null]
+  name varchar(255) [not null]
+  language LanguageEnum [not null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Indexes {
+    (brandId, language) [unique]
+  }
+
+  Note: 'FK ON DELETE CASCADE — перевод без бренда бессмысленен'
+}
+
+Table Category {
+  id integer [pk, increment]
+  slug varchar(120) [unique, not null]
+  parentCategoryId uint [ref: > Category.id, null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Note: '''
+  CHECK: parentCategoryId <> id — защита от самоссылки
+  Циклы длиннее одного шага (A->B->A) CHECK не ловит — это на приложении.
+  parentCategoryId IS NULL = корень дерева. FK ON DELETE RESTRICT.
+  '''
+}
+
+Table CategoryTranslation {
+  id integer [pk, increment]
+  categoryId uint [ref: > Category.id, not null]
+  name varchar(255) [not null]
+  language LanguageEnum [not null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Indexes {
+    (categoryId, language) [unique]
+  }
+}
+
+Table Product {
+  id integer [pk, increment]
+  categoryId uint [ref: > Category.id, not null]
+  brandId uint [ref: > Brand.id, not null]
+  slug varchar(120) [unique, not null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Note: "CHECK: slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'"
+}
+
+Table ProductTranslation {
+  id integer [pk, increment]
+  productId uint [ref: > Product.id, not null]
+  title varchar(255) [not null]
+  description text [null]
+  language LanguageEnum [not null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Indexes {
+    (productId, language) [unique]
+  }
+}
+
+Table ProductOffer {
+  id integer [pk, increment]
+  productId uint [ref: > Product.id, not null]
+  sellerId uint [ref: > User.id, not null]
+  sku varchar(64) [not null]
+  price amount [not null]
+  currency CurrencyEnum [not null]
+  discountPrice amount [null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Indexes {
+    (sellerId, sku) [unique]
+    productId
+    sellerId
+  }
+
+  Note: '''
+  CHECK: discountPrice IS NULL OR discountPrice <= price
+  discountPrice NULL = скидки нет (отличается от «скидка 0»)
+  sku уникален в рамках продавца, а не глобально
+  '''
+}
+
+Table OrderRecipient {
+  id integer [pk, increment]
+  buyerId uint [ref: > User.id, not null]
+  fullName varchar(201) [not null]
+  phoneId uint [ref: - Phone.id, unique, not null]
+  deliveryAddressId uint [ref: - DeliveryAddress.id, unique, not null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Indexes {
+    buyerId
+  }
+
+  Note: '''
+  Snapshot of user for order.
+  phoneId / deliveryAddressId — новые строки Phone/DeliveryAddress,
+  скопированные из профиля покупателя или введённые кастомно. Поэтому 1:1.
+  buyerId — N:1, у покупателя много заказов.
+  '''
+}
+
+Table Order {
+  id integer [pk, increment]
+  publicId uuid [unique, not null, default: `gen_random_uuid()`]
+  orderRecipientId uint [ref: - OrderRecipient.id, unique, not null]
+  status StatusEnum [not null, default: 'created']
+  totalAmount amount [not null, note: 'snapshot value, итог К ОПЛАТЕ (уже со скидкой)']
+  discountAmount amount [not null, default: 0, note: 'snapshot value, сколько скинули']
+  currency CurrencyEnum [not null, note: 'snapshot value']
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Indexes {
+    status
+    createdAt
+  }
+
+  Note: '''
+  Переходы StatusEnum валидирует приложение, не БД:
+  машина состояний зависит от роли, оплаты и прав — триггер дублировал бы логику.
+  '''
+}
+
+Table OrderProduct {
+  orderId uint [ref: > Order.id, not null]
+  productOfferId uint [ref: > ProductOffer.id, not null]
+  quantity uint [not null]
+  price amount [not null, note: 'snapshot value']
+  discountPrice amount [null, note: 'snapshot value']
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Indexes {
+    (orderId, productOfferId) [pk]
+    productOfferId
+  }
+
+  Note: '''
+  M:N между Order и ProductOffer.
+  CHECK: discountPrice IS NULL OR discountPrice <= price
+  quantity > 0 через домен uint
+  FK orderId ON DELETE CASCADE, productOfferId ON DELETE RESTRICT —
+  удаление оффера не должно уносить позиции исторических заказов.
+  '''
+}

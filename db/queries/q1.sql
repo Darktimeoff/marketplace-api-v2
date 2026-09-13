@@ -1,1 +1,0 @@
-SELECT o."id", o."publicId", o."status", o."totalAmount", o."currency", o."createdAt" FROM "Order" o JOIN "OrderRecipient" r ON r."id" = o."orderRecipientId" WHERE r."buyerId" = 777 AND o."createdAt" >= now() - interval '365 days' AND o."createdAt" < now() ORDER BY o."createdAt" DESC LIMIT 20;

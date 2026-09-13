@@ -1,4 +1,4 @@
-// Значения совпадают с CREATE TYPE из db/schema.sql (ДЗ #12).
+// Значения совпадают с CREATE TYPE из исходной raw-SQL схемы ДЗ #12 (см. marketplace.dbml).
 // enumName обязателен: без него TypeORM создал бы свои типы вида "User_language_enum"
 // вместо существующих "LanguageEnum" и т.д.
 

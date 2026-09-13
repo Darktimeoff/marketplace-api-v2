@@ -14,6 +14,7 @@ import { ProductOfferModule } from "../product-offer/product-offer.module.js";
 import { BackgroundJobModule } from "../background-job/background-job.module.js";
 import { AccountModule } from "../account/account.module.js";
 import { OrderSaga } from "./saga/order.saga.js";
+import { OrderWorkerService } from "./worker/order-worker.service.js";
 
 @Module({
   imports: [
@@ -25,6 +26,14 @@ import { OrderSaga } from "./saga/order.saga.js";
     AccountModule,
   ],
   controllers: [OrderController],
-  providers: [OrderRepository, OrderRecipientRepository, OrderProductRepository, OrderService, OrderSaga],
+  providers: [
+    OrderRepository,
+    OrderRecipientRepository,
+    OrderProductRepository,
+    OrderService,
+    OrderSaga,
+    OrderWorkerService,
+  ],
+  exports: [OrderSaga],
 })
 export class OrderModule {}

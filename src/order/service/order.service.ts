@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
@@ -41,7 +41,7 @@ export class OrderService {
     const recipient = await this.createRecipient(dto.recipient, phone.id, deliveryAddress.id);
 
     const offersById = new Map(offers.map((offer) => [offer.id, offer]));
-    const pricedItems = dto.items.map((item) => this.priceItem(item, offersById));
+    const pricedItems = dto.items.map((item) => this.toPriceItemOrFail(item, offersById));
 
     const order = await this.createOrder(recipient.id, pricedItems, dto.currency);
 
@@ -85,8 +85,12 @@ export class OrderService {
     );
   }
 
-  private priceItem(item: CreateOrderItemDto, offersById: Map<number, ProductOffer>): PricedOrderItem {
-    const offer = offersById.get(item.productOfferId)!;
+  private toPriceItemOrFail(item: CreateOrderItemDto, offersById: Map<number, ProductOffer>): PricedOrderItem {
+    const offer = offersById.get(item.productOfferId);
+    if (!offer) {
+      throw new NotFoundException(`Product with this id ${item.productOfferId} not existed, please try again`)
+    }
+    
     const price = Number(offer.price);
     const discountPrice = offer.discountPrice !== null ? Number(offer.discountPrice) : price;
 

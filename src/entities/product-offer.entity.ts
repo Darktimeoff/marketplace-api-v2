@@ -3,7 +3,7 @@ import { CurrencyEnum } from './enums.js';
 import { Product } from './product.entity.js';
 import { User } from './user.entity.js';
 import { moneyTransformer } from './money.transformer.js';
-import type { OrderProduct } from '../order/entity/order-product.entity.js'
+import type { OrderProduct } from '../order/entity/order-product.entity.js';
 
 @Entity('ProductOffer')
 @Unique('ProductOffer_sellerId_sku', ['sellerId', 'sku'])

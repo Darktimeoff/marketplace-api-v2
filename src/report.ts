@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { AppDataSource } from './data-source.js';
-import { LanguageEnum, OrderProduct, StatusEnum } from './entities/index.js';
+import { LanguageEnum, StatusEnum } from './entities/index.js';
+import { OrderProduct } from './order/entity/order-product.entity.js';
 
 /**
  * Выторг по категориям: агрегат + GROUP BY + четыре JOIN'а через всю цепочку

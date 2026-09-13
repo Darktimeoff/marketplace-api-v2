@@ -23,7 +23,14 @@
     "spec:lint": "redocly lint openapi/openapi.yaml",
     "spec:bundle": "redocly bundle openapi/openapi.yaml -o spec.json",
     "spec:docs": "redocly build-docs openapi/openapi.yaml -o docs.html",
-    "test:contract": "node --test consumer.pact.test.mjs"
+    "test:contract": "node --test consumer.pact.test.mjs",
+    "migrate": "bash scripts/with-secrets.sh dev npx typeorm migration:run -d dist/data-source.js",
+    "migrate:show": "bash scripts/with-secrets.sh dev npx typeorm migration:show -d dist/data-source.js",
+    "migrate:revert": "bash scripts/with-secrets.sh dev npx typeorm migration:revert -d dist/data-source.js",
+    "migrate:generate": "bash scripts/with-secrets.sh dev npx typeorm migration:generate -d dist/data-source.js",
+    "seed": "bash scripts/with-secrets.sh dev node dist/seed.js",
+    "demo:nplus1": "bash scripts/with-secrets.sh dev node dist/demo-nplus1.js",
+    "report": "bash scripts/with-secrets.sh dev node dist/report.js"
   },
   "dependencies": {
     "@infisical/sdk": "^5.0.2",
@@ -36,6 +43,7 @@
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "typeorm": "^1.1.1",
     "zod": "^4.5.2"
   },
   "devDependencies": {

@@ -11,6 +11,7 @@ import { OrderController } from "./controller/order.controller.js";
 import { PhoneModule } from "../phone/phone.module.js";
 import { DeliveryAddressModule } from "../delivery-address/delivery-address.module.js";
 import { ProductOfferModule } from "../product-offer/product-offer.module.js";
+import { BackgroundJobModule } from "../background-job/background-job.module.js";
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { ProductOfferModule } from "../product-offer/product-offer.module.js";
     PhoneModule,
     DeliveryAddressModule,
     ProductOfferModule,
+    BackgroundJobModule
   ],
   controllers: [OrderController],
   providers: [OrderRepository, OrderRecipientRepository, OrderProductRepository, OrderService],

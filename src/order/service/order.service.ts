@@ -15,7 +15,9 @@ import { PhoneService } from '../../phone/service/phone.service.js';
 import { DeliveryAddressService } from '../../delivery-address/service/delivery-address.service.js';
 import { ProductOfferService } from '../../product-offer/service/product-offer.service.js';
 import { ProductOffer } from '../../entities/product-offer.entity.js';
-import { CurrencyEnum } from '../../entities/enums.js';
+import { BackgroundJobTypeEnum, CurrencyEnum } from '../../entities/enums.js';
+import { BackgroundJobService } from '../../background-job/service/background-job.service.js';
+import { BackgroundJobCreateInput } from '../../background-job/input/background-job-create.input.js';
 
 interface PricedOrderItem {
   item: Omit<OrderProductCreateEntityInterface, 'orderId'>;
@@ -32,6 +34,7 @@ export class OrderService {
     private readonly phoneService: PhoneService,
     private readonly deliveryAddressService: DeliveryAddressService,
     private readonly productOfferService: ProductOfferService,
+    private readonly backgroundJobService: BackgroundJobService
   ) {}
 
   @Transactional()
@@ -50,6 +53,8 @@ export class OrderService {
     const order = await this.createOrder(recipient.id, pricedItems, input.currency);
 
     await this.createItems(pricedItems, order.id);
+
+    await this.backgroundJobService.create(this.toBackgroundJobInput(order))
 
     return order;
   }
@@ -108,5 +113,14 @@ export class OrderService {
       amount: discountPrice * item.quantity,
       discount: (price - discountPrice) * item.quantity,
     };
+  }
+
+  private toBackgroundJobInput(order: Order): BackgroundJobCreateInput {
+    return {
+      type: BackgroundJobTypeEnum.ORDER,
+      dedupeKey: order.publicId,
+      orderId: order.id,
+      payload: {}
+    }
   }
 }

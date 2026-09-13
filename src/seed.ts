@@ -15,9 +15,6 @@ import {
   GenderEnum,
   Identity,
   LanguageEnum,
-  Order,
-  OrderProduct,
-  OrderRecipient,
   Phone,
   Product,
   ProductOffer,
@@ -29,6 +26,9 @@ import {
   TransactionTypeEnum,
   User,
 } from './entities/index.js';
+import { Order } from './order/entity/order.entity.js';
+import { OrderProduct } from './order/entity/order-product.entity.js';
+import { OrderRecipient } from './order/entity/order-recipient.entity.js';
 
 /**
  * Детерминированный идемпотентный seed: никакого random() и Date.now(), каждая строка

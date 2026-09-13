@@ -2,7 +2,9 @@ import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { AppDataSource } from './data-source.js';
 import { QueryCountLogger } from './query-count.logger.js';
-import { Order, OrderProduct, Product, ProductOffer } from './entities/index.js';
+import { Product, ProductOffer } from './entities/index.js';
+import { Order } from './order/entity/order.entity.js';
+import { OrderProduct } from './order/entity/order-product.entity.js';
 
 /**
  * Реальный для маркетплейса запрос: «список заказов покупателя вместе с позициями

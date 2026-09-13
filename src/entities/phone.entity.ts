@@ -1,7 +1,7 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { CountryCodeEnum } from './enums.js';
 import type { Identity } from './identity.entity.js';
-import type { OrderRecipient } from '../order/entity/order-recipient.entity.js
+import type { OrderRecipient } from '../order/entity/order-recipient.entity.js';
 
 // "fullNumber" намеренно НЕ unique: OrderRecipient делает снапшот-копию номера
 // на каждый заказ, поэтому дубликаты в этой таблице — норма.

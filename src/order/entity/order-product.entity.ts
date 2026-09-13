@@ -1,7 +1,7 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, PrimaryColumn, UpdateDateColumn } from 'typeorm';
-import { Order } from '../../entities/order.entity.js';
-import { ProductOffer } from '../../entities/product-offer.entity.jsfer.entity.js';
-import { moneyTransformer } from '../../entities/money.transformer.jsransformer.js';
+import { Order } from './order.entity.js';
+import { ProductOffer } from '../../entities/product-offer.entity.js';
+import { moneyTransformer } from '../../entities/money.transformer.js';
 
 /**
  * M:N между Order и ProductOffer с данными на связи (количество и цены на момент

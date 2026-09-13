@@ -2,9 +2,18 @@ import 'reflect-metadata';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DataSource, DataSourceOptions } from 'typeorm';
-import { entities } from './entities/all.js';
+import { entities as sharedEntities } from './entities/all.js';
+import { Order } from './order/entity/order.entity.js';
+import { OrderProduct } from './order/entity/order-product.entity.js';
+import { OrderRecipient } from './order/entity/order-recipient.entity.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+// Order/OrderProduct/OrderRecipient зарегистрированы отдельно от src/entities/all.ts —
+// они живут в src/order/entity/ вместе с остальным доменным модулем заказа
+// (см. OrderModule). CLI-DataSource должен знать обо всех таблицах — иначе
+// migration:generate не увидит их изменения.
+const entities = [...sharedEntities, Order, OrderProduct, OrderRecipient];
 
 function required(name: string): string {
   const value = process.env[name];

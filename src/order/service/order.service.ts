@@ -5,10 +5,12 @@ import { OrderProductRepository, CreateOrderProductInput } from '../repository/o
 import { CreateOrderDto, CreateOrderItemDto, CreateOrderRecipientDto } from '../dto/create-order.dto.js';
 import { Order } from '../entity/order.entity.js';
 import { OrderRecipient } from '../entity/order-recipient.entity.js';
+import { OrderProduct } from '../entity/order-product.entity.js';
 import { PhoneService } from '../../phone/service/phone.service.js';
 import { DeliveryAddressService } from '../../delivery-address/service/delivery-address.service.js';
 import { ProductOfferService } from '../../product-offer/service/product-offer.service.js';
 import { ProductOffer } from '../../entities/product-offer.entity.js';
+import { CurrencyEnum } from '../../entities/enums.js';
 
 interface PricedOrderItem {
   item: Omit<CreateOrderProductInput, 'orderId'>;
@@ -42,16 +44,9 @@ export class OrderService {
     const totalAmount = pricedItems.reduce((sum, priced) => sum + priced.amount, 0);
     const discountAmount = pricedItems.reduce((sum, priced) => sum + priced.discount, 0);
 
-    const order = await this.orderRepository.create({
-      orderRecipientId: recipient.id,
-      totalAmount: totalAmount.toFixed(2),
-      discountAmount: discountAmount.toFixed(2),
-      currency: dto.currency,
-    });
+    const order = await this.createOrder(recipient.id, totalAmount, discountAmount, dto.currency);
 
-    await this.orderProductRepository.create(
-      pricedItems.map((priced) => ({ ...priced.item, orderId: order.id })),
-    );
+    await this.createItems(pricedItems, order.id);
 
     return order;
   }
@@ -67,6 +62,26 @@ export class OrderService {
       phoneId,
       deliveryAddressId,
     });
+  }
+
+  private createOrder(
+    orderRecipientId: number,
+    totalAmount: number,
+    discountAmount: number,
+    currency: CurrencyEnum,
+  ): Promise<Order> {
+    return this.orderRepository.create({
+      orderRecipientId,
+      totalAmount: totalAmount.toFixed(2),
+      discountAmount: discountAmount.toFixed(2),
+      currency,
+    });
+  }
+
+  private createItems(pricedItems: PricedOrderItem[], orderId: number): Promise<OrderProduct[]> {
+    return this.orderProductRepository.create(
+      pricedItems.map((priced) => ({ ...priced.item, orderId })),
+    );
   }
 
   private priceItem(item: CreateOrderItemDto, offersById: Map<number, ProductOffer>): PricedOrderItem {

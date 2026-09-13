@@ -2,45 +2,9 @@ import 'reflect-metadata';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DataSource, DataSourceOptions } from 'typeorm';
-import {
-  BackgroundJob,
-  Brand,
-  BrandTranslation,
-  Category,
-  CategoryTranslation,
-  DeliveryAddress,
-  Identity,
-  Order,
-  OrderProduct,
-  OrderRecipient,
-  Phone,
-  Product,
-  ProductOffer,
-  ProductTranslation,
-  Transaction,
-  User,
-} from './entities/index.js';
+import { entities } from './entities/all.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-
-export const entities = [
-  Phone,
-  DeliveryAddress,
-  Identity,
-  User,
-  Brand,
-  BrandTranslation,
-  Category,
-  CategoryTranslation,
-  Product,
-  ProductTranslation,
-  ProductOffer,
-  OrderRecipient,
-  Order,
-  OrderProduct,
-  Transaction,
-  BackgroundJob,
-];
 
 function required(name: string): string {
   const value = process.env[name];
@@ -89,7 +53,4 @@ function connectionOptions(): DataSourceOptions {
   } as DataSourceOptions;
 }
 
-// Ровно один экспорт DataSource на файл: CLI миграций падает с
-// "Given data source file must contain only one export of DataSource instance",
-// если рядом лежит ещё и default-экспорт того же объекта.
 export const AppDataSource = new DataSource(connectionOptions());

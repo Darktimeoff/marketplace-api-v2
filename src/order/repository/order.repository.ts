@@ -4,12 +4,40 @@ import { Repository } from 'typeorm';
 import { Order } from '../entity/order.entity.js';
 import { OrderProduct } from '../entity/order-product.entity.js';
 import { OrderRecipient } from '../entity/order-recipient.entity.js';
-import { CreateOrderDto } from '../dto/create-order.dto.js';
+import { CurrencyEnum, StatusEnum } from '../../entities/enums.js';
+
+/**
+ * Вход репозитория не совпадает с клиентским CreateOrderDto: он ничего не знает
+ * про CreatePhoneDto/CreateDeliveryAddressDto, только про уже готовые
+ * phoneId/deliveryAddressId — их разрешает OrderService до вызова create().
+ */
+export interface CreateOrderRecipientInput {
+  buyerId: number;
+  fullName: string;
+  phoneId: number;
+  deliveryAddressId: number;
+}
+
+export interface CreateOrderItemInput {
+  productOfferId: number;
+  quantity: number;
+  price: string;
+  discountPrice?: string | null;
+}
+
+export interface CreateOrderInput {
+  recipient: CreateOrderRecipientInput;
+  items: CreateOrderItemInput[];
+  totalAmount: string;
+  discountAmount?: string;
+  currency: CurrencyEnum;
+  status?: StatusEnum;
+}
 
 /**
  * Только create(): создаёт три строки — OrderRecipient, Order, OrderProduct[] —
- * ровно из того, что пришло в DTO. Никакой дополнительной логики (снапшотов,
- * пересчёта сумм, транзакции) — это на будущее ДЗ.
+ * ровно из того, что пришло. Никакой дополнительной логики (пересчёта сумм,
+ * транзакции) — это на будущее ДЗ.
  */
 @Injectable()
 export class OrderRepository {
@@ -19,21 +47,21 @@ export class OrderRepository {
     @InjectRepository(OrderRecipient) private readonly orderRecipients: Repository<OrderRecipient>,
   ) {}
 
-  async create(dto: CreateOrderDto): Promise<Order> {
-    const recipient = await this.orderRecipients.save(this.orderRecipients.create(dto.recipient));
+  async create(input: CreateOrderInput): Promise<Order> {
+    const recipient = await this.orderRecipients.save(this.orderRecipients.create(input.recipient));
 
     const order = await this.orders.save(
       this.orders.create({
         orderRecipientId: recipient.id,
-        status: dto.status,
-        totalAmount: dto.totalAmount,
-        discountAmount: dto.discountAmount,
-        currency: dto.currency,
+        status: input.status,
+        totalAmount: input.totalAmount,
+        discountAmount: input.discountAmount,
+        currency: input.currency,
       }),
     );
 
     await this.orderProducts.save(
-      dto.items.map((item) =>
+      input.items.map((item) =>
         this.orderProducts.create({
           orderId: order.id,
           productOfferId: item.productOfferId,

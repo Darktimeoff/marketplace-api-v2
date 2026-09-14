@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { SecretsInterface } from "./secrets.interface.js";
 
+const SKIP_VAULT = process.env.SKIP_VAULT === '1';
+
 @Injectable()
 export class SecretManagerService implements OnModuleInit {
   private readonly CLIENT_SECRET_PATH = join(process.cwd(), 'secrets', 'infisical_client_secret.txt');
@@ -17,10 +19,19 @@ export class SecretManagerService implements OnModuleInit {
   }
 
   async onModuleInit() {
+    if (SKIP_VAULT) {
+      this.logger.warn('SKIP_VAULT=1 — секреты читаются из окружения, хранилище не опрашивается')
+      return
+    }
+
     await this.ready()
   }
 
   async get(name: keyof SecretsInterface) {
+    if (SKIP_VAULT) {
+      return this.fromEnvironmentOrFail(name)
+    }
+
     await this.ready()
 
     try {
@@ -33,6 +44,19 @@ export class SecretManagerService implements OnModuleInit {
 
       return await this.readSecret(name)
     }
+  }
+
+  private fromEnvironmentOrFail(name: keyof SecretsInterface): string {
+    const value = process.env[name]
+
+    if (!value) {
+      throw new Error(
+        `${name} is not set. При SKIP_VAULT=1 секреты берутся из окружения — ` +
+          `выставь ${name} вручную (см. README, раздел Grading).`,
+      )
+    }
+
+    return value
   }
 
   private ready() {

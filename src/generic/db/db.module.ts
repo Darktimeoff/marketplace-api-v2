@@ -2,8 +2,8 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { ClsModule } from "nestjs-cls";
 import { ClsPluginTransactional } from "@nestjs-cls/transactional";
-import { TransactionalAdapterTypeOrm } from "@nestjs-cls/transactional-adapter-typeorm";
 import { DataSource } from "typeorm";
+import { TransactionalAdapterTypeOrmWithRetry } from "./typeorm-retry.adapter.js";
 import { EnvironmentModule, EnvironmentService } from "../environment/environment.module.js";
 import { SecretManagerModule } from "../secret-manager/secret-manager.module.js";
 import { SecretManagerService } from "../secret-manager/secret-manager.service.js";
@@ -34,7 +34,7 @@ import { entities as sharedEntities } from "../../entities/all.js";
       global: true,
       plugins: [
         new ClsPluginTransactional({
-          adapter: new TransactionalAdapterTypeOrm({
+          adapter: new TransactionalAdapterTypeOrmWithRetry({
             dataSourceToken: DataSource,
           }),
         }),

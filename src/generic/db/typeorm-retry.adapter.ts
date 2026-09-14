@@ -5,6 +5,11 @@ import type { IsolationLevel } from 'typeorm/driver/types/IsolationLevel.js';
 
 const logger = new Logger('TransactionalAdapterTypeOrmWithRetry');
 
+const DEADLOCK_ERROR_CODES = new Set(['40P01', '40001']);
+
+type TransactionCallback = (...args: unknown[]) => Promise<unknown>;
+type SetTransaction = (client?: EntityManager) => void;
+
 export interface TypeOrmTransactionOptions {
   isolationLevel?: IsolationLevel;
 }
@@ -18,11 +23,25 @@ export interface TypeOrmRetryAdapterOptions extends RetryTransactionOptions {
   dataSourceToken: unknown;
 }
 
-const DEADLOCK_ERROR_CODES = new Set([
-  '40P01',
-  '40001',
-  'ER_LOCK_DEADLOCK',
-]);
+export interface TransactionRetryInfo {
+  attempt: number;
+  maxAttempts: number;
+  code: string;
+  delayMs: number;
+  message: string;
+}
+
+export type TransactionRetryListener = (info: TransactionRetryInfo) => void;
+
+const retryListeners = new Set<TransactionRetryListener>();
+
+export function onTransactionRetry(listener: TransactionRetryListener): () => void {
+  retryListeners.add(listener);
+
+  return () => {
+    retryListeners.delete(listener);
+  };
+}
 
 export class TransactionalAdapterTypeOrmWithRetry
   implements TransactionalAdapter<DataSource, EntityManager, TypeOrmTransactionOptions>
@@ -38,39 +57,42 @@ export class TransactionalAdapterTypeOrmWithRetry
   optionsFactory = (dataSource: DataSource) => ({
     wrapWithTransaction: (
       options: TypeOrmTransactionOptions,
-      fn: (...args: unknown[]) => Promise<unknown>,
-      setTx: (client?: EntityManager) => void,
+      fn: TransactionCallback,
+      setTx: SetTransaction,
     ) => {
-      const runInTransaction = (trx: EntityManager) => {
-        setTx(trx);
-        return fn();
-      };
+      const run = bindTransaction(fn, setTx);
 
       return retryTransactionOnDeadlock(
         () =>
           options?.isolationLevel
-            ? dataSource.transaction(options.isolationLevel, runInTransaction)
-            : dataSource.transaction(runInTransaction),
+            ? dataSource.transaction(options.isolationLevel, run)
+            : dataSource.transaction(run),
         this.retryOptions,
       );
     },
+
     wrapWithNestedTransaction: (
       options: TypeOrmTransactionOptions,
-      fn: (...args: unknown[]) => Promise<unknown>,
-      setTx: (client?: EntityManager) => void,
+      fn: TransactionCallback,
+      setTx: SetTransaction,
       client: EntityManager,
     ) => {
-      const runInTransaction = (trx: EntityManager) => {
-        setTx(trx);
-        return fn();
-      };
+      const run = bindTransaction(fn, setTx);
 
       return options?.isolationLevel
-        ? client.transaction(options.isolationLevel, runInTransaction)
-        : client.transaction(runInTransaction);
+        ? client.transaction(options.isolationLevel, run)
+        : client.transaction(run);
     },
+
     getFallbackInstance: () => dataSource.manager,
   });
+}
+
+function bindTransaction(fn: TransactionCallback, setTx: SetTransaction) {
+  return (trx: EntityManager) => {
+    setTx(trx);
+    return fn();
+  };
 }
 
 async function retryTransactionOnDeadlock<T>(
@@ -81,26 +103,42 @@ async function retryTransactionOnDeadlock<T>(
     try {
       return await fn();
     } catch (error) {
-      if (!isDeadlockError(error) || attempt >= maxAttempts) {
+      const code = deadlockErrorCode(error);
+
+      if (code === null || attempt >= maxAttempts) {
         throw error;
       }
 
-      const backoff = baseDelayMs * 2 ** (attempt - 1);
-      const jitter = Math.random() * baseDelayMs;
-      const delay = backoff + jitter;
-      logger.warn(`Deadlock detected, retrying (attempt ${attempt}/${maxAttempts}) after ${delay.toFixed(0)}ms`);
-      await sleep(delay);
+      const delayMs = Math.round(baseDelayMs * 2 ** (attempt - 1) + Math.random() * baseDelayMs);
+
+      logger.warn(`Deadlock detected, retrying (attempt ${attempt}/${maxAttempts}) after ${delayMs}ms`);
+      notifyRetry({
+        attempt,
+        maxAttempts,
+        code,
+        delayMs,
+        message: error instanceof Error ? error.message : String(error),
+      });
+
+      await sleep(delayMs);
     }
   }
 }
 
-function isDeadlockError(error: unknown): boolean {
+function notifyRetry(info: TransactionRetryInfo): void {
+  for (const listener of retryListeners) {
+    listener(info);
+  }
+}
+
+function deadlockErrorCode(error: unknown): string | null {
   if (!(error instanceof QueryFailedError)) {
-    return false;
+    return null;
   }
 
   const code = (error.driverError as { code?: string } | undefined)?.code;
-  return typeof code === 'string' && DEADLOCK_ERROR_CODES.has(code);
+
+  return typeof code === 'string' && DEADLOCK_ERROR_CODES.has(code) ? code : null;
 }
 
 function sleep(ms: number): Promise<void> {

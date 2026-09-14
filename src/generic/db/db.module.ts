@@ -36,6 +36,8 @@ import { entities as sharedEntities } from "../../entities/all.js";
         new ClsPluginTransactional({
           adapter: new TransactionalAdapterTypeOrmWithRetry({
             dataSourceToken: DataSource,
+            maxAttempts: 10,
+            baseDelayMs: 20,
           }),
         }),
       ],

@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { AppDataSource } from './data-source.js';
-import { LanguageEnum, OrderProduct, StatusEnum } from './entities/index.js';
+import { LanguageEnum, OrderStatusEnum } from './entities/index.js';
+import { OrderProduct } from './order/entity/order-product.entity.js';
 
 /**
  * Выторг по категориям: агрегат + GROUP BY + четыре JOIN'а через всю цепочку
@@ -18,7 +19,7 @@ type RevenueRow = {
 };
 
 // Статусы, по которым деньги считаются полученными.
-const PAID_STATUSES = [StatusEnum.paid, StatusEnum.shipped, StatusEnum.delivered, StatusEnum.completed];
+const PAID_STATUSES = [OrderStatusEnum.paid, OrderStatusEnum.shipped, OrderStatusEnum.delivered, OrderStatusEnum.completed];
 
 async function main(): Promise<void> {
   await AppDataSource.initialize();

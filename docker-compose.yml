@@ -10,8 +10,7 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     volumes:
       - postgres_data:/var/lib/postgresql
-      - ./db:/db:ro
-    ports: 
+    ports:
        - "${DBPORT}:5432"
     secrets:
       - db_password

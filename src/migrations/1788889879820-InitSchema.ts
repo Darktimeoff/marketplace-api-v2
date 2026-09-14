@@ -10,11 +10,12 @@ import { MigrationInterface, QueryRunner } from "typeorm"
  *  3. разворачивал домены "uint" и "amount" в базовые integer и numeric(12,2),
  *     теряя CHECK-и (VALUE > 0) и (VALUE >= 0) — то есть замену UNSIGNED из ДЗ #12;
  *  4. не знает про триггеры "…_setUpdatedAt" и функцию "setUpdatedAt";
- *  5. давал констрейнтам свои хешевые имена (PK_faeb810…) вместо тех, что стоят
- *     в db/schema.sql (Phone_pkey, Identity_email_key, …).
+ *  5. давал констрейнтам свои хешевые имена (PK_faeb810…) вместо исходных из схемы
+ *     ДЗ #12 (Phone_pkey, Identity_email_key, …).
  *
  * Всё перечисленное восстановлено вручную, поэтому схема после этой миграции
- * совпадает с db/schema.sql из ДЗ #12 (проверено pg_dump --schema-only).
+ * совпадает с raw-SQL схемой ДЗ #12 (проверено на момент написания через
+ * pg_dump --schema-only; дизайн схемы задокументирован в marketplace.dbml).
  */
 export class InitSchema1788889879820 implements MigrationInterface {
     name = 'InitSchema1788889879820'

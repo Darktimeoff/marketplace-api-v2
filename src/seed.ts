@@ -2,6 +2,8 @@ import 'reflect-metadata';
 import { DeepPartial, FindOptionsWhere, ObjectLiteral, Repository } from 'typeorm';
 import { AppDataSource } from './data-source.js';
 import {
+  BackgroundJobStatusEnum,
+  BackgroundJobTypeEnum,
   Brand,
   BrandTranslation,
   Category,
@@ -12,17 +14,21 @@ import {
   GenderEnum,
   Identity,
   LanguageEnum,
-  Order,
-  OrderProduct,
-  OrderRecipient,
   Phone,
   Product,
   ProductOffer,
   ProductTranslation,
   RoleEnum,
-  StatusEnum,
+  OrderStatusEnum,
+  Transaction,
+  TransactionStatusEnum,
+  TransactionTypeEnum,
   User,
 } from './entities/index.js';
+import { BackgroundJob } from './background-job/entity/background-job.entity.js';
+import { Order } from './order/entity/order.entity.js';
+import { OrderProduct } from './order/entity/order-product.entity.js';
+import { OrderRecipient } from './order/entity/order-recipient.entity.js';
 
 /**
  * Детерминированный идемпотентный seed: никакого random() и Date.now(), каждая строка
@@ -73,6 +79,8 @@ async function seed(): Promise<void> {
   const recipients = AppDataSource.getRepository(OrderRecipient);
   const orders = AppDataSource.getRepository(Order);
   const orderProducts = AppDataSource.getRepository(OrderProduct);
+  const transactions = AppDataSource.getRepository(Transaction);
+  const backgroundJobs = AppDataSource.getRepository(BackgroundJob);
 
   const cities = ['Kyiv', 'Lviv', 'Odesa', 'Kharkiv', 'Dnipro'];
 
@@ -226,6 +234,8 @@ async function seed(): Promise<void> {
         price: (100 + i * 25).toFixed(2),
         currency: CurrencyEnum.UAH,
         discountPrice: i % 3 === 0 ? (90 + i * 25).toFixed(2) : null,
+        // Перекос: часть офферов распродана (0), у остальных остаток растёт по i.
+        quantity: i % 4 === 0 ? 0 : (i + 1) * 5,
       },
     );
 
@@ -234,11 +244,11 @@ async function seed(): Promise<void> {
 
   // ---------- заказы со снапшотом получателя ----------
   const statuses = [
-    StatusEnum.completed,
-    StatusEnum.delivered,
-    StatusEnum.paid,
-    StatusEnum.shipped,
-    StatusEnum.canceled,
+    OrderStatusEnum.completed,
+    OrderStatusEnum.delivered,
+    OrderStatusEnum.paid,
+    OrderStatusEnum.shipped,
+    OrderStatusEnum.canceled,
   ];
 
   for (let i = 0; i < ORDERS; i++) {
@@ -299,6 +309,35 @@ async function seed(): Promise<void> {
         },
       );
     }
+
+    // Оплата заказа — денежная проводка покупателя. amount неотрицателен
+    // (домен "amount"), направление денег кодирует type = PAYMENT.
+    const paidStatuses = [OrderStatusEnum.paid, OrderStatusEnum.shipped, OrderStatusEnum.delivered, OrderStatusEnum.completed];
+
+    await ensure(
+      transactions,
+      { userId: buyer.id, amount: total.toFixed(2), type: TransactionTypeEnum.PAYMENT } as FindOptionsWhere<Transaction>,
+      {
+        userId: buyer.id,
+        amount: total.toFixed(2),
+        type: TransactionTypeEnum.PAYMENT,
+        status: paidStatuses.includes(order.status) ? TransactionStatusEnum.SUCCESS : TransactionStatusEnum.PENDING,
+      },
+    );
+
+    // Фоновая задача обработки заказа. dedupeKey строится из publicId, а не из
+    // order.id: тот же ключ идемпотентности, что и у самого заказа.
+    await ensure(
+      backgroundJobs,
+      { dedupeKey: `order:${publicId}` } as FindOptionsWhere<BackgroundJob>,
+      {
+        type: BackgroundJobTypeEnum.ORDER,
+        status: paidStatuses.includes(order.status) ? BackgroundJobStatusEnum.READY : BackgroundJobStatusEnum.QUEUED,
+        payload: { orderId: order.id, publicId },
+        dedupeKey: `order:${publicId}`,
+        orderId: order.id,
+      },
+    );
   }
 }
 
@@ -309,7 +348,7 @@ async function main(): Promise<void> {
     await seed();
 
     const counts = await Promise.all(
-      ['Category', 'Brand', 'User', 'Product', 'ProductOffer', 'Order', 'OrderProduct'].map(
+      ['Category', 'Brand', 'User', 'Product', 'ProductOffer', 'Order', 'OrderProduct', 'Transaction', 'BackgroundJob'].map(
         async (table) => {
           const [row] = await AppDataSource.query(`SELECT count(*)::int AS count FROM "${table}"`);
 

@@ -3,7 +3,8 @@ import { GenderEnum, LanguageEnum } from './enums.js';
 import { Identity } from './identity.entity.js';
 import { DeliveryAddress } from './delivery-address.entity.js';
 import type { ProductOffer } from './product-offer.entity.js';
-import type { OrderRecipient } from './order-recipient.entity.js';
+import type { OrderRecipient } from '../order/entity/order-recipient.entity.js'
+import type { Transaction } from './transaction.entity.js';
 
 @Entity('User')
 @Check('User_dateOfBirth_past', `"dateOfBirth" IS NULL OR "dateOfBirth" < current_date`)
@@ -70,4 +71,7 @@ export class User {
 
   @OneToMany('OrderRecipient', (recipient: OrderRecipient) => recipient.buyer)
   orderRecipients: OrderRecipient[];
+
+  @OneToMany('Transaction', (transaction: Transaction) => transaction.user)
+  transactions: Transaction[];
 }

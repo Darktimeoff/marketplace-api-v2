@@ -9,7 +9,8 @@ const environmentSchema = z.object({
   INFISICAL_SITE_URL: z.string().min(1),
   INFISICAL_CLIENT_ID: z.string().min(1),
   INFISICAL_PROJECT_ID: z.string().min(1),
-  INFISICAL_ENVIRONMENT: z.enum(['dev', 'stagin', 'prod'])
+  INFISICAL_ENVIRONMENT: z.enum(['dev', 'stagin', 'prod']),
+  WORKER_POOL_SIZE: z.coerce.number().int().min(1).default(4),
 })
 
 export type EnvironmentType = z.infer<typeof environmentSchema>

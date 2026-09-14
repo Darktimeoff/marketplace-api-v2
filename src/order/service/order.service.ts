@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
@@ -45,22 +45,20 @@ export class OrderService {
   async create(input: OrderCreateInput): Promise<Order> {
     const orderProductIds = input.items.map(item => item.productOfferId).toSorted()
 
-    const [phone, deliveryAddress, offers] = await Promise.all([
-      this.phoneService.create(input.recipient.phone),
-      this.deliveryAddressService.create(input.recipient.deliveryAddress),
-      this.offers.findByIdsForUpdate(orderProductIds),
-    ]);
+    const phone = await this.phoneService.create(input.recipient.phone);
+    const deliveryAddress = await this.deliveryAddressService.create(input.recipient.deliveryAddress);
+    const offers = await this.offers.findByIds(orderProductIds);
 
     const recipient = await this.createRecipient(input.recipient, phone.id, deliveryAddress.id);
 
     const offersById = new Map(offers.map((offer) => [offer.id, offer]));
     const pricedItems = input.items.map((item) => this.toPriceItemOrFail(item, offersById));
 
-    await this.reserveSellerProducts(offersById, input.items)
+    await this.reserveStockOrFail(input.items)
 
     const order = await this.createOrder(recipient.id, pricedItems, input.currency);
 
-    await this.accounts.charge(order.orderRecipient.buyerId, Number(order.totalAmount))
+    await this.accounts.charge(recipient.buyerId, Number(order.totalAmount))
 
     await this.createItems(pricedItems, order.id);
 
@@ -134,25 +132,27 @@ export class OrderService {
     }
   }
 
-  private async reserveSellerProducts(offerById: Map<number, ProductOffer>, items: OrderCreateInput['items']) {
-    const insufficientProducts: InsufficientStockProductInterface[] = this.getInsufficientProducts(offerById, items)
-    if (insufficientProducts.length > 0) {
-      throw new InsufficientStockException(insufficientProducts)
+  private async reserveStockOrFail(items: OrderCreateInput['items']): Promise<void> {
+    const reservations = items.map(item => ({ id: item.productOfferId, quantity: item.quantity }))
+    const reserved = await this.offers.reserveQuantityByIds(reservations)
+
+    if (reserved.length === reservations.length) {
+      return
     }
 
-    await this.offers.decrementQuantityByIds(items.map(item => ({ id: item.productOfferId, quantity: item.quantity })))
-  }
+    const reservedIds = new Set(reserved.map(row => row.id))
+    const failed = items.filter(item => !reservedIds.has(item.productOfferId))
+    const stockById = new Map(
+      (await this.offers.findByIds(failed.map(item => item.productOfferId)))
+        .map(offer => [offer.id, offer.quantity]),
+    )
 
-  private getInsufficientProducts(offerById: Map<number, ProductOffer>, items: OrderCreateInput['items']) {
-    return items.map<InsufficientStockProductInterface>(item => {
-      const offer = offerById.get(item.productOfferId)
-      return {
+    throw new InsufficientStockException(
+      failed.map<InsufficientStockProductInterface>(item => ({
         productOfferId: item.productOfferId,
         requestedQuantity: item.quantity,
-        stockQuantity: offer?.quantity ?? null
-      }
-    }).filter(item => {
-      return item.requestedQuantity < (item.stockQuantity ?? 0)
-    })
+        stockQuantity: stockById.get(item.productOfferId) ?? null,
+      })),
+    )
   }
 }

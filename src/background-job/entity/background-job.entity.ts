@@ -1,4 +1,4 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
+import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 import { BackgroundJobStatusEnum, BackgroundJobTypeEnum } from '../../entities/enums.js';
 import { Order } from '../../order/entity/order.entity.js';
 
@@ -11,7 +11,9 @@ import { Order } from '../../order/entity/order.entity.js';
 @Unique('BackgroundJob_dedupeKey_key', ['dedupeKey'])
 @Check('BackgroundJob_dedupeKey_notBlank', `btrim("dedupeKey") <> ''`)
 @Check('BackgroundJob_attempts_nonneg', `"attempts" >= 0`)
+@Check('BackgroundJob_processedCount_nonneg', `"processedCount" >= 0`)
 @Check('BackgroundJob_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
+@Index('BackgroundJob_queue_idx', ['type', 'createdAt'], { where: `"status" = 'QUEUED'` })
 export class BackgroundJob {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
@@ -41,6 +43,12 @@ export class BackgroundJob {
 
   @Column({ type: 'integer', default: 0 })
   attempts: number;
+
+  @Column({ type: 'integer', default: 0 })
+  processedCount: number;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  processedBy: string | null;
 
   @Column({ type: 'integer', nullable: true })
   orderId: number | null;

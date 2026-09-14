@@ -3,19 +3,20 @@ import { AccountRepository } from '../repository/account.repository.js';
 import { TransactionStatusEnum, TransactionTypeEnum } from '../../entities/enums.js';
 import { User } from '../../entities/user.entity.js';
 import { Transactional } from '@nestjs-cls/transactional';
+import { InsufficientBalanceException } from '../exception/insufficient-stock.exception.js';
 
 @Injectable()
 export class AccountService {
   constructor(private readonly accountRepository: AccountRepository) {}
 
   @Transactional()
-  async charge(userId: User['id'], amount: number): Promise<boolean> {
+  async charge(userId: User['id'], amount: number): Promise<void> {
     await this.accountRepository.lockUserForUpdate(userId);
 
     const balance = await this.accountRepository.getBalance(userId);
 
     if (balance < amount) {
-      return false;
+      throw new InsufficientBalanceException(balance, amount)
     }
 
     await this.accountRepository.create({
@@ -24,7 +25,5 @@ export class AccountService {
       type: TransactionTypeEnum.PAYMENT,
       status: TransactionStatusEnum.SUCCESS,
     });
-
-    return true;
   }
 }

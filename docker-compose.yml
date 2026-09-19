@@ -10,17 +10,43 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     volumes:
       - postgres_data:/var/lib/postgresql
-    ports:
-       - "${DBPORT}:5432"
     secrets:
       - db_password
-      
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s      
       timeout: 5s        
       retries: 5         
       start_period: 10s  
+
+  db-bouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0
+    restart: always
+    depends_on:
+      - db
+    ports:
+      - "${DBPORT}:5432"
+    environment:
+      DB_HOST: db
+      DB_NAME: ${DBNAME:-postgres}
+      DB_USER: ${DBUSER:-postgres}
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 100
+      DEFAULT_POOL_SIZE: 10
+      RESERVE_POOL_SIZE: 10
+      RESERVE_POOL_TIMEOUT: 5.0
+    entrypoint: >
+      sh -c '
+      export DATABASE_URL="postgres://$${DB_USER}:$$(cat /run/secrets/db_password)@$${DB_HOST}:5432/$${DB_NAME}";
+      exec /entrypoint.sh /usr/bin/pgbouncer /etc/pgbouncer/pgbouncer.ini'
+    secrets:
+      - db_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 5432 -d pgbouncer"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
 
   infisical-backend:
     container_name: infisical-backend
@@ -30,7 +56,7 @@ services:
         condition: service_healthy
       infisical-redis:
         condition: service_started
-    image: infisical/infisical:latest 
+    image: infisical/infisical:v0.165.13 
     pull_policy: always
     env_file:
       - path: .env.infisical

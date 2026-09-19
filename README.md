@@ -27,12 +27,29 @@ npm ci
 npx tsc --noEmit
 npm run build
 npm run migrate
-npm run migrate:show      # [X] InitSchema…
+npm run migrate:show      # [X] InitSchema… [X] AddJobQueueProcessing…
 npm run seed && npm run seed
+
+# ДЗ #13
 npm run demo:nplus1
 npm run report
+
+# ДЗ #14 — конкурентность (каждая команда завершается с кодом 0)
+npm run demo:race
+npm run demo:workers
+npm run demo:retry
+
 npm run migrate:revert && npm run migrate
 ```
+
+`npm run build` обязателен перед любой из команд ниже: npm-скрипты запускают
+скомпилированный `dist/`, а не исходники.
+
+Все три демо-сценария ДЗ #14 самодостаточны — свои фикстуры (демо-товар с
+остатком ровно 10, 50 покупателей с заведомо избыточным балансом, задачи в
+очереди) они создают и сбрасывают сами, идемпотентно, поэтому повторный запуск
+даёт тот же результат. `npm run seed` перед ними всё же нужен: без него в базе
+нет каталога, на котором проверяются остальные ДЗ.
 
 Три уточнения к блоку выше, каждое — из реального падения, а не из осторожности:
 
@@ -123,15 +140,61 @@ npm-скриптов, так что префиксов набирать не н�
    `CHECK (VALUE > 0)` и `CHECK (VALUE >= 0)` — замену `UNSIGNED` из ДЗ #12;
 4. не знал про триггеры `…_setUpdatedAt` и функцию `setUpdatedAt`;
 5. давал констрейнтам хешевые имена (`PK_faeb810…`) вместо `Phone_pkey`, `Identity_email_key`
-   и прочих из `db/schema.sql`.
+   и прочих исходных из схемы ДЗ #12 (`marketplace.dbml`).
 
-Всё это восстановлено вручную. Результат сверен машинно: `pg_dump --schema-only` базы после
-миграции и базы после `db/schema.sql` дают **111 идентичных стейтментов**, расхождений ноль.
+Всё это восстановлено вручную. На момент ДЗ #12/#13 схема сверялась машинно: `pg_dump
+--schema-only` базы после миграции и базы, поднятой напрямую из raw-SQL схемы ДЗ #12, дали
+**111 идентичных стейтментов**, расхождений ноль (тот raw-SQL файл был служебным
+верификационным артефактом и убран из репозитория после проверки — дизайн схемы остаётся
+в `marketplace.dbml`).
 
 `down()` не заглушка: сносит все 14 таблиц, функцию, шесть enum-типов и оба домена.
 Расширение `citext` остаётся намеренно — это общее свойство базы, его мог поставить не
 только этот проект, а в `up()` оно создаётся через `IF NOT EXISTS`, так что повторный
 `npm run migrate` проходит.
+
+### Диф-миграция: quantity, Transaction, BackgroundJob
+
+`src/migrations/1789306283697-AddQuantityTransactionsBackgroundJobs.ts` — второй пример
+миграции, поверх `InitSchema`, а не с нуля: `ProductOffer` получает остаток `quantity`,
+плюс две новые таблицы — `Transaction` (денежные проводки пользователя) и `BackgroundJob`
+(очередь фоновых задач, пока только тип `ORDER`).
+
+Тоже получена через `migration:generate` и тоже урезана руками — по той же причине, что и
+`InitSchema`: генератор не узнал свои же старые имена FK (`Xxx_fkey`) в живой базе и выдал
+`DROP`+`ADD` на все 17 существующих внешних ключей, ни один из которых не менялся, плюс
+пересоздал `fullName` и дефолт `publicId` без единого содержательного изменения. Ниже — то,
+что от диф-миграции реально осталось: одна `ALTER TABLE ADD COLUMN`, четыре `CREATE TYPE`,
+две `CREATE TABLE`, два новых FK.
+
+Решения по этому дифу (расходятся с исходным ДЗ, отмечены заранее в цепочке правок):
+
+- **`quantity` — `integer`, не домен `amount`.** В черновике схемы колонка была типа
+  `amount` (домен для денег), но это остаток товара на складе, а не деньги: `quantity=1.50`
+  бессмысленно для штучного товара.
+- **`quantity` — `CHECK (>= 0)`, не домен `uint`.** `uint` запрещает `0` (`CHECK VALUE > 0`),
+  а распроданный оффер (`quantity = 0`) — нормальное состояние.
+- **`quantity` физически последняя колонка.** `ALTER TABLE ADD COLUMN` всегда добавляет
+  колонку в конец таблицы, а не туда, где она логически стоит в `CREATE TABLE` — это
+  видно в `\d "ProductOffer"` и в `pg_dump`, поэтому в `marketplace.dbml` она тоже
+  показана последней.
+- **`BackgroundJob.dedupeKey` — `UNIQUE`.** Название поля говорит про дедупликацию — без
+  ограничения это была бы просто ещё одна колонка, а дедуп пришлось бы делать вручную на
+  каждый `INSERT`.
+- **`BackgroundJob.payload` — `jsonb`, не `json`.** Единственная причина вообще выбирать
+  между ними в Postgres: `jsonb` поддерживает индексацию и containment-запросы (`@>`).
+- **`onDelete: 'RESTRICT'` у обоих новых FK** (`Transaction.userId → User`,
+  `BackgroundJob.orderId → Order`) — та же политика, что и у остальных 13 FK в схеме:
+  soft delete везде, физическое удаление аварийное, `RESTRICT` не даёт молча снести
+  финансовую историю или задачи.
+- **`Transaction.amount` — всегда неотрицательная величина** (домен `amount`, как и
+  везде), направление денег кодирует `type` (`DEPOSIT`/`PAYMENT`/`WITHDRAWAL`), а не знак
+  числа.
+
+После применения обеих миграций `pg_dump --schema-only` на момент этой работы был снова
+сверен с raw-SQL версией схемы: **126 идентичных стейтментов**, расхождений ноль. Откат
+(`migrate:revert`) проверен дважды подряд до пустой базы (остаются только служебные таблицы
+TypeORM) и обратно.
 
 ### Деньги: расхождение с заданием
 
@@ -151,7 +214,7 @@ join-entity с составным PK, а не `@ManyToMany`: на связи в�
 | Стратегия | Где | Почему |
 |---|---|---|
 | `CASCADE` | `BrandTranslation`, `CategoryTranslation`, `ProductTranslation` → родитель; `OrderProduct` → `Order` | Перевод без бренда/категории/товара и позиция без заказа не существуют как самостоятельные сущности |
-| `RESTRICT` | все остальные 13 FK | В схеме везде soft delete, физическое удаление — аварийный сценарий, и `RESTRICT` не даст молча снести половину каталога |
+| `RESTRICT` | все остальные 15 FK (включая `Transaction.userId`, `BackgroundJob.orderId`) | В схеме везде soft delete, физическое удаление — аварийный сценарий, и `RESTRICT` не даст молча снести половину каталога |
 
 Отдельно: `OrderProduct → ProductOffer` — именно `RESTRICT`, хотя рядом
 `OrderProduct → Order` это `CASCADE`. Удаление оффера не должно вычищать позиции из уже
@@ -193,24 +256,30 @@ Product → Category → CategoryTranslation`. Через `find()` это не �
 ### Идемпотентность seed
 
 `src/seed.ts` детерминирован: ни `random()`, ни `Date.now()`, каждая строка ищется по
-естественному ключу (`slug`, `email`, `(sellerId, sku)`, `publicId`) и создаётся, только
-если её нет. Проверка:
+естественному ключу (`slug`, `email`, `(sellerId, sku)`, `publicId`, `dedupeKey`) и
+создаётся, только если её нет. Проверка:
 
 ```bash
 npm run seed && npm run seed
 docker compose exec -T db psql -U root -d api -Atc \
   'SELECT (SELECT count(*) FROM "Category") || \'/\' || (SELECT count(*) FROM "Product") || \'/\' ||
           (SELECT count(*) FROM "ProductOffer") || \'/\' || (SELECT count(*) FROM "Order") || \'/\' ||
-          (SELECT count(*) FROM "OrderProduct")'
-# 6/8/10/10/20 — одинаково после первого и после второго прогона
+          (SELECT count(*) FROM "OrderProduct") || \'/\' || (SELECT count(*) FROM "Transaction") || \'/\' ||
+          (SELECT count(*) FROM "BackgroundJob")'
+# 6/8/10/10/20/10/10 — одинаково после первого и после второго прогона
 ```
+
+`Transaction` и `BackgroundJob` заводятся по одному на заказ: `Transaction` — снимок
+оплаты (`status = SUCCESS`, если статус заказа уже в числе «оплачен/отгружен/доставлен/
+завершён», иначе `PENDING`), `BackgroundJob` — задача обработки этого заказа с
+`dedupeKey = order:<publicId>` — тем же ключом идемпотентности, что и у самого заказа.
 
 ### Файлы
 
 | Файл | Назначение |
 |---|---|
-| `src/entities/` | 14 entities схемы ДЗ #12 + enum-типы и transformer для денег |
-| `src/migrations/` | начальная миграция |
+| `src/entities/` | 16 entities (14 из ДЗ #12 + `Transaction`, `BackgroundJob`) + enum-типы и transformer для денег |
+| `src/migrations/` | `InitSchema` + диф-миграция (`quantity`, `Transaction`, `BackgroundJob`) |
 | `src/data-source.ts` | DataSource: `synchronize: false`, параметры только из `process.env` |
 | `src/seed.ts` | детерминированный идемпотентный seed |
 | `src/demo-nplus1.ts` | демо N+1 «до/после» со счётчиком запросов |
@@ -220,138 +289,190 @@ docker compose exec -T db psql -U root -d api -Atc \
 
 ---
 
-## Database (HW #12)
+## Конкурентность (ДЗ #14)
 
-Всё, что нужно грейдеру, — в этом разделе. Свежий клон, ничего доустанавливать не надо,
-файлы править не надо. Нужен только Docker.
-
-**Главная таблица — `"Order"`, 120 000 строк после сида.**
-
-> ⚠️ Идентификаторы схемы в camelCase, поэтому в SQL они **всегда в двойных кавычках**:
-> `SELECT count(*) FROM "Order";` — не `FROM Order`. Слово `order` вдобавок
-> зарезервировано в SQL, без кавычек будет синтаксическая ошибка.
-
-### Поднять Postgres — одна команда
+Три сценария, каждый завершается с кодом 0 только если инварианты сошлись —
+скрипты проверяют их сами, глазами сверять числа не нужно.
 
 ```bash
-cp .env.example .env && cp secrets/db_password.txt.example secrets/db_password.txt && docker compose up -d --wait db
+npm run demo:race      # 50 параллельных checkout-ов на товар с остатком 10
+npm run demo:workers   # воркер-пул через FOR UPDATE SKIP LOCKED
+npm run demo:retry     # повтор транзакции на 40001
 ```
 
-Два `cp` в начале — потому что `.env` и `secrets/db_password.txt` в gitignore с ДЗ #11,
-и в клоне их нет. Шаблоны обоих лежат в репозитории и содержат рабочие дев-значения,
-править их не нужно. Без `.env` база поднимется как `postgres`/`postgres` на случайном
-порту, и команды ниже не сработают.
+### Числа из своих запусков
 
-> **Изменение в ДЗ #13.** Раньше `db/schema.sql` и `db/seed.sql` накатывались сами при
-> первом старте контейнера через `/docker-entrypoint-initdb.d`. Начиная с ветки `hw-13`
-> схему создаёт TypeORM-миграция, поэтому автонакат снят — иначе `npm run migrate`
-> падал бы с `relation "Phone" already exists`. Таблицы, типы и констрейнты при этом
-> не изменились: миграция даёт схему, идентичную `db/schema.sql` (сверено `pg_dump`).
-> Прогон ниже по-прежнему работает и нужен для проверки ДЗ #12.
+| Сценарий | Что мерилось | Результат |
+|---|---|---|
+| `demo:race` | попыток / успешных / финальный stock / строк с stock < 0 | **50 / 10 / 0 / 0**, 40 отказов `InsufficientStockException`, 111–330 мс |
+| `demo:workers` | 24 задачи, 4 воркера, по 40 мс на задачу | распределение **6 / 6 / 6 / 6**, обработано дважды **0**, **297 мс** против 960 мс последовательно (×3.2) |
+| `demo:workers` (чистая БД, в очереди ещё 12 задач из seed) | 36 задач, 4 воркера | **9 / 9 / 9 / 9**, дважды **0**, **402 мс** против 1440 мс (×3.6) |
+| `demo:retry` | 5 конкурентных read-modify-write под REPEATABLE READ | **10 повторов**, все `40001`, финальное `quantity` = 5 = 0 + 5 × 1 |
 
-`db/schema.sql` идемпотентен (начинается с пересоздания схемы `public`), поэтому применять
-его повторно на живой базе безопасно и он не падает с `already exists`.
-`NOTICE: drop cascades to ...` в выводе — это не ошибка, а перечисление сносимых объектов.
+`demo:race` устойчив к повторным запускам: фикстура каждый раз выставляет остаток
+ровно в 10, поэтому «успешных 10» — это результат, а не совпадение. Отдельно
+проверено, что скрипт ловит oversell, а не всегда печатает галочки: при снятой
+проверке `quantity >= $n` (и снятом CHECK, который её дублирует на уровне БД)
+тот же скрипт даёт **50 успешных, финальный stock −40, одну строку с
+отрицательным остатком и exit 1**.
 
-### Подключиться — одна команда
+### Оптимистично-атомарный UPDATE против pessimistic FOR UPDATE
 
-```bash
-docker compose exec db psql -U root -d api
-```
+В checkout-е используются оба инструмента — на разных данных, и это не
+непоследовательность, а следствие того, что данные разной формы.
 
-Креденшелы стенда после этих `cp`: пользователь `root`, база `api`, порт хоста `33310`,
-пароль `changeme`. Имя пользователя, базы и порт берутся из `.env`, пароль — из
-`secrets/db_password.txt` через `POSTGRES_PASSWORD_FILE`.
+**Остаток товара — атомарный `UPDATE … WHERE quantity >= $n RETURNING`**
+(`src/product-offer/repository/product-offer.repository.ts`). Остаток — один
+счётчик в одной колонке, и вся бизнес-проверка («хватает ли») выражается тем же
+предикатом, что и защита от гонки. Раз так, проверять и списывать отдельными
+операторами незачем: условие уезжает в `WHERE` того же `UPDATE`, окна между
+проверкой и записью не остаётся физически, а ноль строк в `RETURNING` — это
+готовый ответ «не хватило», для которого не нужен ни повторный `SELECT`, ни
+доверие к прочитанному ранее значению. Дополнительный бонус — под
+`READ COMMITTED` Postgres, упёршись в чужой лок строки, дожидается его снятия и
+**перепроверяет `WHERE` на уже обновлённой версии строки**, так что второй
+покупатель видит новый остаток, а не тот, что был на старте его транзакции.
+`SELECT … FOR UPDATE` здесь дал бы тот же результат, но лишним раундтрипом и с
+локом, взятым раньше, чем он нужен.
 
-Каталог `db/` смонтирован внутрь контейнера как `/db` (read-only), поэтому все `.sql`
-доступны и снаружи (`db/schema.sql`), и изнутри (`/db/schema.sql`).
+**Баланс покупателя — `SELECT … FOR UPDATE` по строке `User`**
+(`src/account/repository/account.repository.ts`). Здесь одним атомарным `UPDATE`
+не обойтись, потому что баланса как колонки не существует: он выводится
+агрегатом по журналу проводок `Transaction`
+(`SUM(DEPOSIT) − SUM(PAYMENT|WITHDRAWAL)` по успешным). Списание — это `INSERT`
+новой проводки, и «хватает ли денег» — предикат не над изменяемой строкой, а над
+набором строк, которого в момент вставки ещё нет. Такое условие в `WHERE`
+вставки не положишь; сериализовать конкурентные списания одного пользователя
+может только лок на чём-то одном, общем для них всех — на строке владельца
+журнала.
 
-### Полный цикл: чистый volume → schema → seed → EXPLAIN до → indexes → EXPLAIN после
+Порядок захвата локов в `OrderService.create` фиксирован — сначала строки
+`ProductOffer` по возрастанию `id`, потом строка `User`, — и встречного порядка
+в коде нет ни у кого. Поэтому дедлок не «маловероятен», а невозможен по
+построению. По той же причине резерв нескольких позиций идёт отдельными
+`UPDATE` в порядке `id`, а не одним оператором на все строки: в одном операторе
+порядок захвата локов выбирает планировщик, и два заказа с пересекающимися
+позициями могут взять их в разном порядке — это `40P01` на ровном месте.
 
-Каждая строка самодостаточна, копируется по одной или блоком целиком:
+### Транзакционность checkout
 
-```bash
-docker compose down -v db
-docker compose up -d --wait db
+Все четыре шага — резерв остатка, списание с баланса, `INSERT` заказа с
+позициями, постановка задачи на post-processing — идут в **одной** транзакции
+(`@Transactional()` на `OrderService.create`, `src/order/service/order.service.ts`).
+Транзакция живёт на одном соединении из пула (`dataSource.transaction(...)`
+внутри адаптера), а не раскидывается по `BEGIN`/`COMMIT` в разные соединения.
 
-docker compose exec -T db psql -U root -d api -v ON_ERROR_STOP=1 -f /db/schema.sql
-docker compose exec -T db psql -U root -d api -v ON_ERROR_STOP=1 -f /db/seed.sql
+Проверок вида `if (offer.quantity >= item.quantity)` в JS в этом пути нет
+намеренно: любая такая проверка — это окно между `SELECT` и `UPDATE`. Решение
+принимает БД внутри самого `UPDATE`, код только читает, сколько строк вернулось.
 
-# EXPLAIN «до» — в каждом плане есть Seq Scan
-docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q1.sql)"
-docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q2.sql)"
-docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q3.sql)"
+Отсюда же «заказов-сирот не существует»: недостаток товара или денег бросает
+исключение, транзакция откатывается целиком, и заказ, списание и задача исчезают
+вместе. `demo:race` проверяет это не на слово — он сверяет, что создано ровно
+столько заказов, сколько было успехов, столько же списаний, и что сумма позиций
+в заказах совпадает со списанным со склада остатком.
 
-docker compose exec -T db psql -U root -d api -v ON_ERROR_STOP=1 -f /db/indexes.sql
-docker compose exec -T db psql -U root -d api -c "ANALYZE;"
+Про пул соединений: 50 параллельных клиентов на пуле по умолчанию (10 соединений
+у `pg`) — это 50 транзакций, вежливо стоящих в очереди пула. На результат это не
+влияет, потому что узкое место всё равно строка товара: конкуренты за неё
+сериализуются локом, а не пулом. Ни одному checkout-у не нужно второе соединение,
+пока он держит первое, поэтому взаимной блокировки на пуле возникнуть не может.
 
-# EXPLAIN «после» — Seq Scan нет, есть Bitmap Index Scan
-docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q1.sql)"
-docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q2.sql)"
-docker compose exec -T db psql -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q3.sql)"
-```
+### Воркер-пул и SKIP LOCKED
 
-Сид отрабатывает примерно за 7 секунд. Разбор планов — в [`db/OPTIMIZATIONS.md`](db/OPTIMIZATIONS.md).
+`claimNext` (`src/background-job/repository/background-job.repository.ts`) берёт
+следующую задачу запросом `SELECT … FOR UPDATE SKIP LOCKED` — через
+QueryBuilder это `setLock('pessimistic_write')` + `setOnLocked('skip_locked')`.
+Без `SKIP LOCKED` второй воркер встал бы в очередь за первым на ту же строку и
+пул из четырёх работал бы со скоростью одного.
 
-### Проверка критериев и ожидаемый вывод
+Транзакция держится открытой **всё время обработки** задачи, а не закрывается
+сразу после claim: лок снимается только на `COMMIT`, поэтому «упал воркер —
+задачу подберёт другой» получается бесплатно. Если процесс умрёт на середине,
+транзакция не закоммитится, лок исчезнет вместе с соединением, и задача вернётся
+в `QUEUED` сама — без отдельного cron-а «отпусти зависшие». Статус `done` и
+результат работы пишутся одним оператором и коммитятся вместе с самой работой,
+так что разъехаться они не могут.
 
-```bash
-# схема применилась, FOREIGN KEY >= 3
-docker compose exec -T db psql -U root -d api -Atc "SELECT count(*) FROM information_schema.table_constraints WHERE constraint_type='FOREIGN KEY' AND table_schema='public';"
-# -> 17
+Пустой результат `SKIP LOCKED` означает «свободных нет **прямо сейчас**», а не
+«очередь пуста»: оставшиеся строки могут быть просто залочены соседями. Поэтому
+воркер на пустом ответе не выходит, а переспрашивает счётчик по статусам
+(`countPending`) и останавливается, только если в `QUEUED` и `PROCESSING` не
+осталось ничего (`src/background-job/worker/worker-pool.service.ts`).
 
-# объём главной таблицы >= 100000
-docker compose exec -T db psql -U root -d api -Atc 'SELECT count(*) FROM "Order";'
-# -> 120000
+«Ровно один раз» доказывает колонка `processedCount` **в самой строке задачи**, а
+не счётчик в памяти скрипта: счётчик в памяти доказывал бы только то, что скрипт
+умеет считать. `demo:workers` печатает `обработано дважды: 0` по результату
+запроса `count(*) FILTER (WHERE "processedCount" > 1)`.
 
-# partial или expression индекс присутствует >= 1
-docker compose exec -T db psql -U root -d api -Atc "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND (indexdef ILIKE '% WHERE %' OR indexdef ~ '\((\w+)\(');"
-# -> 2
+Тот же пул работает и как долгоживущий процесс: `npm run worker` (размер пула —
+`WORKER_POOL_SIZE`). Несколько таких процессов можно запускать параллельно —
+разводит их по разным задачам не код, а `SKIP LOCKED`.
 
-# отчёт полный, >= 6
-grep -c 'Execution Time' db/OPTIMIZATIONS.md
-# -> 7
+### Почему retry ловит всего два кода
 
-# база отвечает на свежем клоне
-docker compose exec -T db psql -U root -d api -Atc "SELECT 1"
-# -> 1
-```
+`DEADLOCK_ERROR_CODES = { '40P01', '40001' }`
+(`src/generic/db/typeorm-retry.adapter.ts`). Это единственные два состояния, в
+которых Postgres откатывает транзакцию, **заранее зная, что виновата не она
+сама**, а чужая конкурентная транзакция: `40001` (`serialization_failure`) и
+`40P01` (`deadlock_detected`). Тот же запрос на тех же данных, запущенный ещё
+раз, имеет все шансы пройти — повтор здесь штатная часть протокола, а не «а вдруг
+повезёт».
 
-### Если удобнее psql с хоста, а не через контейнер
+Всё остальное повторять бессмысленно или опасно:
 
-```bash
-export PGPASSWORD=changeme
-psql -h localhost -p 33310 -U root -d api -Atc "SELECT 1"
-psql -h localhost -p 33310 -U root -d api -v ON_ERROR_STOP=1 -f db/schema.sql
-psql -h localhost -p 33310 -U root -d api -c "EXPLAIN (ANALYZE, BUFFERS) $(cat db/queries/q1.sql)"
-```
+- `23505`, `23503`, `23514` (нарушения unique / FK / CHECK) детерминированы —
+  второй раз упадут ровно так же, повтор только удвоит нагрузку;
+- `55P03` (`lock_not_available`), `57014` (`query_canceled`) означают, что ждать
+  не разрешили; это решение вызывающего, а не сбой, и повтор его отменяет;
+- ошибки соединения повторять вслепую нельзя вообще: транзакция могла
+  закоммититься **до** обрыва, и повтор выполнит бизнес-операцию дважды.
 
-### Файлы
+Проверка идёт по SQLSTATE, а не по тексту сообщения и не по `instanceof`: текст
+зависит от локали сервера, а класс ошибки у драйвера один на все сбои запроса.
+
+Повторяется транзакция **целиком, вместе с чтениями**. Повтор одной записи по
+значению, прочитанному в прошлой попытке, — это тот же lost update, только с
+ретраем в стектрейсе: значение уже устарело. Backoff экспоненциальный и с
+джиттером — без джиттера все проигравшие просыпаются одновременно и сталкиваются
+снова.
+
+`maxAttempts: 10` в `DBModule` выбрано не «с запасом»: под конкурентной нагрузкой
+проигравшие выбывают по одной за раунд, и последней из пяти соперниц нужно
+четыре повтора только чтобы дойти до своей очереди — что и видно в выводе
+`demo:retry` (`повтор 4/9`). Если конфликта нет, лишние попытки ничего не стоят.
+
+### Что появилось в схеме
+
+Очередь задач (`BackgroundJob`) заведена ещё диф-миграцией ДЗ #13; ДЗ #14
+добавляет к ней миграцией — не `synchronize` —
+`src/migrations/1789405980915-AddJobQueueProcessing.ts`:
+
+- `processedCount` (`integer NOT NULL DEFAULT 0` + `CHECK >= 0`) — счётчик
+  доведённых до конца обработок в самой строке;
+- `processedBy` (`varchar(64)`) — кто взял задачу: и распределение по воркерам в
+  демо, и ответ на вопрос «на ком зависла задача в `PROCESSING`» в проде;
+- частичный индекс `BackgroundJob_queue_idx (type, createdAt) WHERE status = 'QUEUED'`
+  — ровно под claim-запрос: строки в других статусах воркеру не нужны никогда,
+  поэтому partial index не тащит их в себе и не перестраивается, когда задача
+  уходит в `READY`.
+
+`migrate:revert` для этой миграции проверен и возвращает таблицу к состоянию ДЗ #13.
+
+### Файлы ДЗ #14
 
 | Файл | Назначение |
 |---|---|
-| [`db/schema.sql`](db/schema.sql) | таблицы, типы, констрейнты (17 FOREIGN KEY). Индексов оптимизации намеренно нет — на этой схеме все три запроса дают `Seq Scan` |
-| [`db/seed.sql`](db/seed.sql) | данные через `generate_series`, перекошенные распределения, `VACUUM (ANALYZE)` в конце |
-| [`db/queries/q1.sql`](db/queries/q1.sql) | заказы покупателя за период |
-| [`db/queries/q2.sql`](db/queries/q2.sql) | проблемные оплаты за 30 дней (`status = 'failed_payment'`) |
-| [`db/queries/q3.sql`](db/queries/q3.sql) | поиск товара по названию без учёта регистра |
-| [`db/indexes.sql`](db/indexes.sql) | три индекса: b-tree, **partial**, **expression** |
-| [`db/OPTIMIZATIONS.md`](db/OPTIMIZATIONS.md) | `EXPLAIN (ANALYZE, BUFFERS)` до/после + разбор каждого плана |
-| [`db/marketplace.dbml`](db/marketplace.dbml) | та же схема в DBML для dbdiagram.io |
-| [`db/initdb/`](db/initdb) | обёртки автоната при первом старте контейнера: `01-schema.sql`, `02-seed.sql` |
-
-### Решения по схеме
-
-- **Деньги — `numeric(12,2)`**, не `float`. Через домен `amount` с `CHECK (VALUE >= 0)`.
-- **Время — `timestamptz`** везде, кроме `dateOfBirth`: там `date`, потому что день рождения
-  это календарная дата, а не момент времени.
-- **Вместо `unsigned int`** (которого в Postgres нет) — домен `uint AS integer CHECK (VALUE > 0)`
-  на всех FK и `quantity`. На PK его нет: `GENERATED ALWAYS AS IDENTITY` не принимает
-  доменный тип и всё равно стартует с 1.
-- **PK — `integer GENERATED ALWAYS AS IDENTITY`**, не `serial` (см. «Don't Do This»).
-- **Снапшоты заказа**: `OrderRecipient` хранит копию получателя на момент заказа —
-  новые строки `Phone` и `DeliveryAddress`, поэтому связи 1:1, а `Phone."fullNumber"`
-  намеренно не уникален (снапшоты дублируют номер покупателя).
+| `src/order/service/order.service.ts` | checkout в одной транзакции: резерв, списание, заказ, задача |
+| `src/product-offer/repository/product-offer.repository.ts` | атомарный резерв остатка `UPDATE … WHERE quantity >= $n RETURNING` |
+| `src/account/repository/account.repository.ts` | баланс по журналу проводок под `FOR UPDATE` на строке `User` |
+| `src/background-job/repository/background-job.repository.ts` | claim через `FOR UPDATE SKIP LOCKED`, `processedCount` |
+| `src/background-job/worker/worker-pool.service.ts` | пул воркеров, транзакция открыта на время обработки |
+| `src/generic/db/typeorm-retry.adapter.ts` | повтор транзакции на `40001` / `40P01` с backoff, подключённый ко всем `@Transactional()` |
+| `src/demo-race.ts`, `src/demo-workers.ts`, `src/demo-retry.ts` | три демо-сценария с самопроверкой инвариантов |
+| `src/demo/fixtures.ts` | идемпотентные фикстуры: демо-товар с заданным остатком, покупатели с избыточным балансом |
+| `src/worker.ts` | долгоживущий воркер-процесс (`npm run worker`) |
+| `src/migrations/1789405980915-AddJobQueueProcessing.ts` | `processedCount`, `processedBy`, частичный индекс очереди |
 
 ---
 
@@ -390,6 +511,7 @@ immediately with a validation error if any are missing or invalid.
 | `DBPORT`  | no       | `3000`  | Postgres port (host-mapped, see `docker-compose.yml`) |
 | `DBUSER`  | yes      | —       | Postgres role/user                    |
 | `DBNAME`  | yes      | —       | Postgres database name                |
+| `WORKER_POOL_SIZE` | no | `4` | Сколько воркеров поднимает `npm run worker` |
 
 Секрет подключения к базе живёт **в хранилище секретов из ДЗ #11**, а не в env-файле:
 пароль `DBPASSWORD` `SecretManagerService` читает из Infisical (окружения `dev` и

@@ -2,40 +2,34 @@ import 'reflect-metadata';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DataSource, DataSourceOptions } from 'typeorm';
-import {
-  Brand,
-  BrandTranslation,
-  Category,
-  CategoryTranslation,
-  DeliveryAddress,
-  Identity,
-  Order,
-  OrderProduct,
-  OrderRecipient,
-  Phone,
-  Product,
-  ProductOffer,
-  ProductTranslation,
-  User,
-} from './entities/index.js';
+import { entities as sharedEntities } from './entities/all.js';
+import { Phone } from './entities/phone.entity.js';
+import { DeliveryAddress } from './entities/delivery-address.entity.js';
+import { ProductOffer } from './entities/product-offer.entity.js';
+import { Transaction } from './entities/transaction.entity.js';
+import { Order } from './order/entity/order.entity.js';
+import { OrderProduct } from './order/entity/order-product.entity.js';
+import { OrderRecipient } from './order/entity/order-recipient.entity.js';
+import { BackgroundJob } from './background-job/entity/background-job.entity.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-export const entities = [
+// Entity с owner-модулем (Phone, DeliveryAddress, ProductOffer, Transaction,
+// Order/OrderProduct/OrderRecipient, BackgroundJob) зарегистрированы через
+// TypeOrmModule.forFeature в своих модулях, а не в src/entities/all.ts. Nest
+// подхватывает их сам через autoLoadEntities, но у CLI-DataSource'а такого
+// механизма нет — иначе migration:generate не увидит их таблицы, поэтому здесь
+// список собирается вручную.
+const entities = [
+  ...sharedEntities,
   Phone,
   DeliveryAddress,
-  Identity,
-  User,
-  Brand,
-  BrandTranslation,
-  Category,
-  CategoryTranslation,
-  Product,
-  ProductTranslation,
   ProductOffer,
-  OrderRecipient,
+  Transaction,
   Order,
   OrderProduct,
+  OrderRecipient,
+  BackgroundJob,
 ];
 
 function required(name: string): string {
@@ -85,7 +79,4 @@ function connectionOptions(): DataSourceOptions {
   } as DataSourceOptions;
 }
 
-// Ровно один экспорт DataSource на файл: CLI миграций падает с
-// "Given data source file must contain only one export of DataSource instance",
-// если рядом лежит ещё и default-экспорт того же объекта.
 export const AppDataSource = new DataSource(connectionOptions());

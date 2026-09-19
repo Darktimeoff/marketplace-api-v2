@@ -3,12 +3,13 @@ import { CurrencyEnum } from './enums.js';
 import { Product } from './product.entity.js';
 import { User } from './user.entity.js';
 import { moneyTransformer } from './money.transformer.js';
-import type { OrderProduct } from './order-product.entity.js';
+import type { OrderProduct } from '../order/entity/order-product.entity.js';
 
 @Entity('ProductOffer')
 @Unique('ProductOffer_sellerId_sku', ['sellerId', 'sku'])
 @Check('ProductOffer_sku_notBlank', `btrim("sku") <> ''`)
 @Check('ProductOffer_discount_le', `"discountPrice" IS NULL OR "discountPrice" <= "price"`)
+@Check('ProductOffer_quantity_nonneg', `"quantity" >= 0`)
 @Check('ProductOffer_deletedAt_ord', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
 export class ProductOffer {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
@@ -33,6 +34,12 @@ export class ProductOffer {
   // NULL = скидки нет, что отличается от «скидка 0».
   @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true, transformer: moneyTransformer })
   discountPrice: string | null;
+
+  // Остаток на складе — счётчик штук, а не деньги, поэтому обычный integer,
+  // а не домен "amount" (numeric(12,2), для денег). 0 = распродано, это
+  // нормальное состояние, поэтому CHECK >= 0, а не домен "uint" (> 0).
+  @Column({ type: 'integer', default: 0 })
+  quantity: number;
 
   @CreateDateColumn({ type: 'timestamptz', default: () => 'now()' })
   createdAt: Date;

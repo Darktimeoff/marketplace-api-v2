@@ -1,4 +1,4 @@
-// Значения совпадают с CREATE TYPE из db/schema.sql (ДЗ #12).
+// Значения совпадают с CREATE TYPE из исходной raw-SQL схемы ДЗ #12 (см. marketplace.dbml).
 // enumName обязателен: без него TypeORM создал бы свои типы вида "User_language_enum"
 // вместо существующих "LanguageEnum" и т.д.
 
@@ -33,7 +33,7 @@ export enum CurrencyEnum {
   USD = 'USD',
 }
 
-export enum StatusEnum {
+export enum OrderStatusEnum {
   created = 'created',
   pending_payment = 'pending_payment',
   failed_payment = 'failed_payment',
@@ -45,4 +45,30 @@ export enum StatusEnum {
   completed = 'completed',
   canceled = 'canceled',
   refunded = 'refunded',
+}
+
+// Направление денег кодирует TransactionType; amount у Transaction — всегда
+// неотрицательная величина (тот же домен "amount", что и у денег в остальной схеме).
+export enum TransactionTypeEnum {
+  DEPOSIT = 'DEPOSIT',
+  PAYMENT = 'PAYMENT',
+  WITHDRAWAL = 'WITHDRAWAL',
+}
+
+export enum TransactionStatusEnum {
+  PENDING = 'PENDING',
+  FAILED = 'FAILED',
+  SUCCESS = 'SUCCESS',
+}
+
+export enum BackgroundJobTypeEnum {
+  ORDER = 'ORDER',
+}
+
+export enum BackgroundJobStatusEnum {
+  QUEUED = 'QUEUED',
+  PROCESSING = 'PROCESSING',
+  READY = 'READY',
+  FAILED = 'FAILED',
+  INTERRUPTED = 'INTERRUPTED',
 }

@@ -1,0 +1,59 @@
+name: Contract
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+
+    services:
+      pact-broker:
+        image: pactfoundation/pact-broker:latest
+        ports:
+          - 9292:9292
+        env:
+          PACT_BROKER_DATABASE_ADAPTER: sqlite
+          PACT_BROKER_DATABASE_NAME: /tmp/pact_broker.sqlite3
+          PACT_BROKER_BASIC_AUTH_ENABLED: 'true'
+          PACT_BROKER_BASIC_AUTH_USERNAME: ci
+          PACT_BROKER_BASIC_AUTH_PASSWORD: ${{ secrets.PACT_BROKER_TOKEN }}
+          PACT_BROKER_PUBLIC_HEARTBEAT: 'true'
+        options: >-
+          --health-cmd "wget -q -O /dev/null http://127.0.0.1:9292/diagnostic/status/heartbeat"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 10s
+
+    env:
+      # PACT_BROKER_URL/PACT_BROKER_TOKEN are the only broker settings read from
+      # process.env (see README, "Contract test" section) — the broker address
+      # here is non-secret (points at the service container above), the token
+      # is a real GitHub secret.
+      PACT_BROKER_URL: http://127.0.0.1:9292
+      PACT_BROKER_TOKEN: ${{ secrets.PACT_BROKER_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: npm ci
+
+      # 1. Consumer test: marketplace-web describes the interaction, produces pacts/*.json
+      - run: npm run test:contract
+
+      # 2. Publish the contract to the broker under this commit's SHA
+      - run: npm run pact:publish
+
+      # 3. Provider verification: real AppModule + real Postgres (testcontainers),
+      #    publishVerificationResult: true records the result back on the broker
+      - run: npm run verify:provider
+
+      # 4. Gate: fails the job if this SHA isn't deployable for both pacticipants
+      - run: npm run pact:can-i-deploy

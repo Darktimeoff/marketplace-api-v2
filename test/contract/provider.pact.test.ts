@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, it } from 'vitest';
+import { execSync } from 'node:child_process';
 import { NestFactory } from '@nestjs/core';
 import type { INestApplication } from '@nestjs/common';
-import { resolve } from 'node:path';
 import { Verifier } from '@pact-foundation/pact';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module.js';
@@ -14,6 +14,23 @@ import {
 } from '../support/builders.js';
 import { CurrencyEnum } from '../../src/entities/enums.js';
 import { ProductOffer } from '../../src/entities/product-offer.entity.js';
+
+// Non-secret by design: local docker-compose always exposes the broker on
+// this loopback address. CI/staging point PACT_BROKER_URL at the real broker.
+const DEFAULT_BROKER_URL = 'http://127.0.0.1:9292';
+
+// OSS Pact Broker only supports HTTP Basic Auth (no bearer-token endpoint),
+// so PACT_BROKER_TOKEN is the Basic Auth password; the username is a fixed,
+// non-secret constant, same way the broker's own docker-compose service is set up.
+const PACT_BROKER_USERNAME = 'ci';
+
+function providerVersion(): string {
+  if (process.env.GITHUB_SHA) {
+    return process.env.GITHUB_SHA;
+  }
+
+  return execSync('git rev-parse HEAD').toString().trim();
+}
 
 describe('Provider verification: marketplace-api', () => {
   let app: INestApplication;
@@ -71,13 +88,16 @@ describe('Provider verification: marketplace-api', () => {
     },
   };
 
-  it('satisfies the pact contract with marketplace-web', async () => {
+  it('satisfies the pact contract published by marketplace-web in the broker', async () => {
     await new Verifier({
       provider: 'marketplace-api',
       providerBaseUrl,
-      pactUrls: [
-        resolve(process.cwd(), 'pacts', 'marketplace-web-marketplace-api.json'),
-      ],
+      pactBrokerUrl: process.env.PACT_BROKER_URL ?? DEFAULT_BROKER_URL,
+      pactBrokerUsername: PACT_BROKER_USERNAME,
+      pactBrokerPassword: process.env.PACT_BROKER_TOKEN,
+      consumerVersionSelectors: [{ latest: true }],
+      publishVerificationResult: true,
+      providerVersion: providerVersion(),
       stateHandlers,
       logLevel: 'warn',
     }).verifyProvider();

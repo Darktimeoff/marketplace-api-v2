@@ -497,7 +497,8 @@ npm run start:dev          # watch mode
 npm run test               # unit tests (vitest)
 npm run test:integration   # repository tests against a real Postgres (testcontainers)
 npm run test:e2e           # e2e tests (full Nest app, supertest, real Postgres)
-npm run test:contract      # Pact consumer + provider verification (real app, real Postgres)
+npm run test:contract      # Pact consumer test — produces pacts/*.json
+npm run verify:provider    # Pact provider verification against the broker (real app, real Postgres)
 ```
 
 ### Integration & e2e tests
@@ -549,16 +550,19 @@ Lives in `test/contract/`:
   breadcrumbs }, error: null }`, `product.offers` is an Amazon/eBay-style
   array of per-seller offers).
 - `provider.pact.test.ts` — runs under its own Vitest config
-  (`vitest.config.contract.ts`, `npm run test:contract`) because it needs
+  (`vitest.config.contract.ts`, `npm run verify:provider`) because it needs
   the real Nest DI container (decorators), which the plain `node:test`
   runner can't transform. It boots the **real** `AppModule` with
   `NestFactory.create` + `app.listen(0)` against the same kind of
   `testcontainers` Postgres as the integration/e2e suites, defines a
   `stateHandlers['product 1 exists in category "phones"']` that truncates
   the DB and seeds a real Category → Brand → Product → ProductOffer chain
-  via the builders, then runs Pact's `Verifier` against
-  `pacts/marketplace-web-marketplace-api.json`. A green run means the
-  contract, the real HTTP handler, and a real Postgres row all agree.
+  via the builders, then runs Pact's `Verifier` against the pact **pulled
+  from the broker** (`pactBrokerUrl` + `consumerVersionSelectors: [{ latest:
+  true }]`, `publishVerificationResult: true`). A green run means the
+  contract, the real HTTP handler, and a real Postgres row all agree — and
+  the result is recorded on the broker against this commit's SHA
+  (`providerVersion`).
 - `GET /product/{id}` itself (`src/product/`) is a small read-only module
   built from entities that already existed (`Product`, `*Translation`,
   `Brand`, `Category`, `ProductOffer`) — no new migration. It uses its own
@@ -566,6 +570,69 @@ Lives in `test/contract/`:
   (`ProblemJsonFilter`), scoped to this controller only, since that's the
   contract this endpoint has to honor — `OrderController`'s plain JSON
   error style is untouched.
+
+npm scripts (fixed names, matched by the grading rubric):
+
+```bash
+npm run test:contract     # consumer only — produces pacts/*.json
+npm run verify:provider   # provider verification against the broker, publishes the result
+npm run pact:publish      # publishes pacts/*.json to the broker under this commit's SHA
+npm run pact:can-i-deploy # fails (exit 1) unless both pacticipants are verified-deployable
+```
+
+**Pact Broker.** `docker compose up -d --wait pact-broker` starts a real OSS
+Pact Broker (+ its own Postgres) locally, matching the same
+`cp secrets/*.example` pattern as the app's own DB:
+
+```bash
+cp secrets/pact_broker_password.txt.example secrets/pact_broker_password.txt
+docker compose up -d --wait pact-broker
+export PACT_BROKER_URL=http://127.0.0.1:9292 PACT_BROKER_TOKEN=changeme
+npm run test:contract && npm run pact:publish && npm run verify:provider && npm run pact:can-i-deploy
+```
+
+- **`PACT_BROKER_URL` and `PACT_BROKER_TOKEN` are the only two broker settings
+  read from `process.env`** — never hardcoded. `PACT_BROKER_URL` defaulting to
+  `http://127.0.0.1:9292` is fine to bake in as a fallback (not a secret, see
+  `test/contract/provider.pact.test.ts`); the token always comes from outside
+  the code — locally from the ДЗ #11 secret store via
+  `bash scripts/with-secrets.sh dev npm run verify:provider`, in CI from a
+  GitHub secret (`.github/workflows/contract.yml`).
+- **OSS Pact Broker only supports HTTP Basic Auth**, not a bearer-token
+  endpoint (verified against the real `pactfoundation/pact-broker` image —
+  see `scripts/pact-publish.sh`). So `PACT_BROKER_TOKEN` is used as the Basic
+  Auth *password*; the *username* (`ci`) is a fixed, non-secret constant —
+  exactly the "constants in code are fine, the address and token are the
+  secrets" split from the brief.
+- `scripts/pact-publish.sh` / `scripts/pact-can-i-deploy.sh` explicitly
+  `unset PACT_BROKER_TOKEN` before invoking the `pact-broker` CLI binary
+  (`@pact-foundation/pact-cli`): that binary *also* auto-binds a
+  `--broker-token` (bearer) flag to the same env var name, and sending both
+  Basic and Bearer auth at once makes the OSS broker reject the request with
+  `400` — confirmed by running the whole pipeline against a real broker
+  container. `verify:provider` doesn't need this workaround since it calls
+  the JS `Verifier` class directly (`pactBrokerUsername`/`pactBrokerPassword`
+  options), not the CLI binary.
+- `DATABASE_URL` for the app's own DB in tests is a separate concern and
+  deliberately doesn't go through the secret store at all: `testcontainers`
+  hands it out at runtime (see "Integration & e2e tests" above) — the secret
+  store stays the source of truth for the app's normal runs (Grading recipe),
+  not for tests.
+
+**CI** (`.github/workflows/contract.yml`) runs a single `contract` job: an
+ephemeral sqlite-backed `pact-broker` service container (no separate DB
+service — no startup-ordering race to manage), then
+`test:contract → pact:publish → verify:provider → pact:can-i-deploy` in
+order, with `PACT_BROKER_TOKEN` coming from a GitHub secret. `can-i-deploy`
+exits non-zero when the two pacticipants aren't both verified-deployable for
+this SHA, which fails the job.
+
+Every Vitest config (`vitest.config*.ts`) pins `reporters: ['default']`:
+Vitest — like Jest — can pick a different default reporter depending on the
+environment it detects (TTY vs CI vs piped output), which would make a
+passing suite print differently depending on who runs it. Pinning the
+reporter keeps `npm run test`/`test:integration`/`test:e2e`/`verify:provider`
+output identical everywhere.
 
 ## Configuration
 

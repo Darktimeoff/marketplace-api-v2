@@ -15,5 +15,6 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 30000,
     hookTimeout: 60000,
+    reporters: ['default'],
   },
 });

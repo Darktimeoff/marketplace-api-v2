@@ -1,6 +1,6 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import type { CategoryTranslation } from './category-translation.entity.js';
-import type { Product } from './product.entity.js';
+import type { Product } from '../product/entity/product.entity.js';
 
 @Entity('Category')
 @Check('Category_slug_format', `"slug" ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`)

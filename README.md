@@ -497,6 +497,7 @@ npm run start:dev          # watch mode
 npm run test               # unit tests (vitest)
 npm run test:integration   # repository tests against a real Postgres (testcontainers)
 npm run test:e2e           # e2e tests (full Nest app, supertest, real Postgres)
+npm run test:contract      # Pact consumer + provider verification (real app, real Postgres)
 ```
 
 ### Integration & e2e tests
@@ -534,6 +535,37 @@ overrides and drives `POST /order` → `GET /order/:id` over HTTP with
 `supertest`, plus a `400` from the global `ValidationPipe` and a `404` for a
 missing order. `test/support/builders.ts` has the test data builders
 (`aUser`, `aProductOffer`, ...) used by both.
+
+### Contract test (Pact, option A — consumer-driven)
+
+Lives in `test/contract/`:
+
+- `consumer.pact.test.mjs` — plain `node:test` (no DB, no Nest), the imagined
+  frontend (`marketplace-web`) describes one interaction —
+  `GET /product/{id}` under the state `product 1 exists in category
+  "phones"` — against a Pact mock server, producing `pacts/*.json`. The
+  path and response shape match `GET /product/{id}` in
+  `openapi/openapi.yaml` (`ProductDetailEnvelope`: `{ data: { product,
+  breadcrumbs }, error: null }`, `product.offers` is an Amazon/eBay-style
+  array of per-seller offers).
+- `provider.pact.test.ts` — runs under its own Vitest config
+  (`vitest.config.contract.ts`, `npm run test:contract`) because it needs
+  the real Nest DI container (decorators), which the plain `node:test`
+  runner can't transform. It boots the **real** `AppModule` with
+  `NestFactory.create` + `app.listen(0)` against the same kind of
+  `testcontainers` Postgres as the integration/e2e suites, defines a
+  `stateHandlers['product 1 exists in category "phones"']` that truncates
+  the DB and seeds a real Category → Brand → Product → ProductOffer chain
+  via the builders, then runs Pact's `Verifier` against
+  `pacts/marketplace-web-marketplace-api.json`. A green run means the
+  contract, the real HTTP handler, and a real Postgres row all agree.
+- `GET /product/{id}` itself (`src/product/`) is a small read-only module
+  built from entities that already existed (`Product`, `*Translation`,
+  `Brand`, `Category`, `ProductOffer`) — no new migration. It uses its own
+  `{ data, error }` envelope + `application/problem+json` 404s
+  (`ProblemJsonFilter`), scoped to this controller only, since that's the
+  contract this endpoint has to honor — `OrderController`'s plain JSON
+  error style is untouched.
 
 ## Configuration
 

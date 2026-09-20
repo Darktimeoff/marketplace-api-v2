@@ -1,6 +1,6 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import type { BrandTranslation } from './brand-translation.entity.js';
-import type { Product } from './product.entity.js';
+import type { Product } from '../product/entity/product.entity.js';
 
 @Entity('Brand')
 @Check('Brand_slug_format', `"slug" ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`)

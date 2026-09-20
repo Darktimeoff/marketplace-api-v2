@@ -13,7 +13,6 @@ import {
   CurrencyEnum,
   Identity,
   Phone,
-  Product,
   ProductOffer,
   RoleEnum,
   Transaction,
@@ -21,6 +20,7 @@ import {
   TransactionTypeEnum,
   User,
 } from '../entities/index.js';
+import { Product } from '../product/entity/product.entity.js';
 
 export const DEMO_SLUG = 'demo-concurrency';
 export const DEMO_SELLER_EMAIL = 'demo-seller@concurrency.local';

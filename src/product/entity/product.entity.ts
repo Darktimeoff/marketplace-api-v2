@@ -1,14 +1,31 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { Category } from './category.entity.js';
-import { Brand } from './brand.entity.js';
-import type { ProductTranslation } from './product-translation.entity.js';
-import type { ProductOffer } from './product-offer.entity.js';
+import {
+  Check,
+  Column,
+  CreateDateColumn,
+  DeleteDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { Category } from '../../entities/category.entity.js';
+import { Brand } from '../../entities/brand.entity.js';
+import type { ProductTranslation } from '../../entities/product-translation.entity.js';
+import type { ProductOffer } from '../../entities/product-offer.entity.js';
 
 @Entity('Product')
 @Check('Product_slug_format', `"slug" ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`)
-@Check('Product_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
+@Check(
+  'Product_deletedAt_order',
+  `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`,
+)
 export class Product {
-  @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
+  @PrimaryGeneratedColumn('identity', {
+    type: 'integer',
+    generatedIdentity: 'ALWAYS',
+  })
   id: number;
 
   @Column({ type: 'integer' })
@@ -29,8 +46,9 @@ export class Product {
   @DeleteDateColumn({ type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 
-  // RESTRICT: категория и бренд — справочники, их удаление не должно сносить каталог.
-  @ManyToOne(() => Category, (category) => category.products, { onDelete: 'RESTRICT' })
+  @ManyToOne(() => Category, (category) => category.products, {
+    onDelete: 'RESTRICT',
+  })
   @JoinColumn({ name: 'categoryId' })
   category: Category;
 
@@ -38,7 +56,10 @@ export class Product {
   @JoinColumn({ name: 'brandId' })
   brand: Brand;
 
-  @OneToMany('ProductTranslation', (translation: ProductTranslation) => translation.product)
+  @OneToMany(
+    'ProductTranslation',
+    (translation: ProductTranslation) => translation.product,
+  )
   translations: ProductTranslation[];
 
   @OneToMany('ProductOffer', (offer: ProductOffer) => offer.product)

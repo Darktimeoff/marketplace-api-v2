@@ -10,10 +10,10 @@ const dirname = path.dirname(fileURLToPath(import.meta.url))
 const provider = new PactV3({
   consumer: 'marketplace-web',
   provider: 'marketplace-api',
-  dir: path.resolve(dirname, 'pacts'),
+  dir: path.resolve(dirname, '..', '..', 'pacts'),
 })
 
-test('GET /product/{id} returns the product together with its category breadcrumbs', async () => {
+test('GET /product/{id} returns the product with its offers and category breadcrumbs', async () => {
   provider
     .given('product 1 exists in category "phones"')
     .uponReceiving('a request for product 1')
@@ -30,17 +30,17 @@ test('GET /product/{id} returns the product together with its category breadcrum
           product: {
             title: like('iPhone 15'),
             slug: like('iphone-15'),
-            priceCents: integer(2600000),
-            oldPriceCents: null,
             brand: {
               name: like('Apple'),
               slug: like('apple'),
             },
-            media: like([
+            offers: like([
               {
-                url: like('https://cdn.example.com/media/1.jpg'),
-                format: like('JPEG'),
-                type: like('IMAGE'),
+                sellerId: integer(1),
+                price: like('999.99'),
+                discountPrice: null,
+                currency: like('USD'),
+                quantity: integer(5),
               },
             ]),
           },
@@ -61,6 +61,7 @@ test('GET /product/{id} returns the product together with its category breadcrum
     assert.equal(response.status, 200)
     assert.equal(body.error, null)
     assert.equal(body.data.product.title, 'iPhone 15')
+    assert.equal(body.data.product.offers[0].sellerId, 1)
     assert.equal(body.data.breadcrumbs[0].slug, 'phones')
   })
 })

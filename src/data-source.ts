@@ -7,6 +7,7 @@ import { Phone } from './entities/phone.entity.js';
 import { DeliveryAddress } from './entities/delivery-address.entity.js';
 import { ProductOffer } from './entities/product-offer.entity.js';
 import { Transaction } from './entities/transaction.entity.js';
+import { Product } from './product/entity/product.entity.js';
 import { Order } from './order/entity/order.entity.js';
 import { OrderProduct } from './order/entity/order-product.entity.js';
 import { OrderRecipient } from './order/entity/order-recipient.entity.js';
@@ -14,7 +15,7 @@ import { BackgroundJob } from './background-job/entity/background-job.entity.js'
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-// Entity с owner-модулем (Phone, DeliveryAddress, ProductOffer, Transaction,
+// Entity с owner-модулем (Phone, DeliveryAddress, Product, ProductOffer, Transaction,
 // Order/OrderProduct/OrderRecipient, BackgroundJob) зарегистрированы через
 // TypeOrmModule.forFeature в своих модулях, а не в src/entities/all.ts. Nest
 // подхватывает их сам через autoLoadEntities, но у CLI-DataSource'а такого
@@ -24,6 +25,7 @@ const entities = [
   ...sharedEntities,
   Phone,
   DeliveryAddress,
+  Product,
   ProductOffer,
   Transaction,
   Order,

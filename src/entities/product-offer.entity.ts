@@ -1,6 +1,6 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 import { CurrencyEnum } from './enums.js';
-import { Product } from './product.entity.js';
+import { Product } from '../product/entity/product.entity.js';
 import { User } from './user.entity.js';
 import { moneyTransformer } from './money.transformer.js';
 import type { OrderProduct } from '../order/entity/order-product.entity.js';

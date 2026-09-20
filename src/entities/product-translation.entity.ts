@@ -1,6 +1,6 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 import { LanguageEnum } from './enums.js';
-import { Product } from './product.entity.js';
+import { Product } from '../product/entity/product.entity.js';
 
 @Entity('ProductTranslation')
 @Unique('ProductTranslation_productId_language', ['productId', 'language'])

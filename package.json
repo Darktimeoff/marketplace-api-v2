@@ -24,7 +24,7 @@
     "spec:lint": "redocly lint openapi/openapi.yaml",
     "spec:bundle": "redocly bundle openapi/openapi.yaml -o spec.json",
     "spec:docs": "redocly build-docs openapi/openapi.yaml -o docs.html",
-    "test:contract": "node --test consumer.pact.test.mjs",
+    "test:contract": "node --test test/contract/consumer.pact.test.mjs && vitest run --config ./vitest.config.contract.ts",
     "migrate": "bash scripts/with-secrets.sh dev npx typeorm migration:run -d dist/data-source.js",
     "migrate:show": "bash scripts/with-secrets.sh dev npx typeorm migration:show -d dist/data-source.js",
     "migrate:revert": "bash scripts/with-secrets.sh dev npx typeorm migration:revert -d dist/data-source.js",

@@ -4,10 +4,11 @@ import { EnvironmentModule } from './generic/environment/environment.module.js';
 import { DBModule } from './generic/db/db.module.js';
 import { HealthModule } from './health/health.module.js';
 import { OrderModule } from './order/order.module.js';
+import { ProductModule } from './product/product.module.js';
 import { ValidationResponseInterceptor } from './generic/validation/validation-response.interceptor.js';
 
 @Module({
-  imports: [EnvironmentModule, DBModule, HealthModule, OrderModule],
+  imports: [EnvironmentModule, DBModule, HealthModule, OrderModule, ProductModule],
   controllers: [],
   providers: [
     {

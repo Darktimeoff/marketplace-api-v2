@@ -5,13 +5,17 @@ import { DeliveryAddress } from '../../src/entities/delivery-address.entity.js';
 import { Identity } from '../../src/entities/identity.entity.js';
 import { User } from '../../src/entities/user.entity.js';
 import { Brand } from '../../src/entities/brand.entity.js';
+import { BrandTranslation } from '../../src/entities/brand-translation.entity.js';
 import { Category } from '../../src/entities/category.entity.js';
-import { Product } from '../../src/entities/product.entity.js';
+import { CategoryTranslation } from '../../src/entities/category-translation.entity.js';
+import { Product } from '../../src/product/entity/product.entity.js';
+import { ProductTranslation } from '../../src/entities/product-translation.entity.js';
 import { ProductOffer } from '../../src/entities/product-offer.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
 import {
   CountryCodeEnum,
   CurrencyEnum,
+  LanguageEnum,
   RoleEnum,
 } from '../../src/entities/enums.js';
 import type { BackgroundJobCreateEntityInterface } from '../../src/background-job/entity/background-job.entity.js';
@@ -162,6 +166,74 @@ export async function aProductOffer(
       quantity: overrides.quantity ?? 10,
     }),
   );
+}
+
+export async function aCategoryWithTranslation(
+  manager: EntityManager,
+  options: { slug: string; name: string; parentCategoryId?: number | null },
+): Promise<Category> {
+  const categories = manager.getRepository(Category);
+  const category = await categories.save(
+    categories.create({
+      slug: options.slug,
+      parentCategoryId: options.parentCategoryId ?? null,
+    }),
+  );
+
+  const translations = manager.getRepository(CategoryTranslation);
+  await translations.save(
+    translations.create({
+      categoryId: category.id,
+      name: options.name,
+      language: LanguageEnum.en,
+    }),
+  );
+
+  return category;
+}
+
+export async function aBrandWithTranslation(
+  manager: EntityManager,
+  options: { slug: string; name: string },
+): Promise<Brand> {
+  const brands = manager.getRepository(Brand);
+  const brand = await brands.save(brands.create({ slug: options.slug }));
+
+  const translations = manager.getRepository(BrandTranslation);
+  await translations.save(
+    translations.create({
+      brandId: brand.id,
+      name: options.name,
+      language: LanguageEnum.en,
+    }),
+  );
+
+  return brand;
+}
+
+export async function aCatalogProduct(
+  manager: EntityManager,
+  options: { slug: string; title: string; categoryId: number; brandId: number },
+): Promise<Product> {
+  const products = manager.getRepository(Product);
+  const product = await products.save(
+    products.create({
+      slug: options.slug,
+      categoryId: options.categoryId,
+      brandId: options.brandId,
+    }),
+  );
+
+  const translations = manager.getRepository(ProductTranslation);
+  await translations.save(
+    translations.create({
+      productId: product.id,
+      title: options.title,
+      language: LanguageEnum.en,
+    }),
+  );
+
+  return product;
 }
 
 export function aBackgroundJobInput(

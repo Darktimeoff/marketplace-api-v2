@@ -8,7 +8,6 @@ export * from './brand.entity.js';
 export * from './brand-translation.entity.js';
 export * from './category.entity.js';
 export * from './category-translation.entity.js';
-export * from './product.entity.js';
 export * from './product-translation.entity.js';
 export * from './product-offer.entity.js';
 export * from './transaction.entity.js';

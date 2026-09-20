@@ -7,6 +7,7 @@ import { Phone } from '../../src/entities/phone.entity.js';
 import { DeliveryAddress } from '../../src/entities/delivery-address.entity.js';
 import { ProductOffer } from '../../src/entities/product-offer.entity.js';
 import { Transaction } from '../../src/entities/transaction.entity.js';
+import { Product } from '../../src/product/entity/product.entity.js';
 import { Order } from '../../src/order/entity/order.entity.js';
 import { OrderProduct } from '../../src/order/entity/order-product.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
@@ -22,6 +23,7 @@ export const testEntities = [
   ...sharedEntities,
   Phone,
   DeliveryAddress,
+  Product,
   ProductOffer,
   Transaction,
   Order,

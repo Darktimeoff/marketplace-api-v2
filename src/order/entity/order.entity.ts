@@ -1,7 +1,7 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { CurrencyEnum, OrderStatusEnum } from '../../entities/enums.js';
+import { CurrencyEnum, OrderStatusEnum } from '../../generic/enum/enums.js';
 import { OrderRecipient } from './order-recipient.entity.js';
-import { moneyTransformer } from '../../entities/money.transformer.js';
+import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
 import type { OrderProduct } from './order-product.entity.js';
 import type { BackgroundJob } from '../../background-job/entity/background-job.entity.js';
 

@@ -4,7 +4,7 @@ import { BackgroundJobRepository } from '../../src/background-job/repository/bac
 import {
   BackgroundJobStatusEnum,
   BackgroundJobTypeEnum,
-} from '../../src/entities/enums.js';
+} from '../../src/generic/enum/enums.js';
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
 import { aBackgroundJobInput } from '../support/builders.js';

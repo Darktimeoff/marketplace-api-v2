@@ -189,12 +189,9 @@ Table Product {
   id integer [pk, increment]
   categoryId uint [ref: > Category.id, not null]
   brandId uint [ref: > Brand.id, not null]
-  slug varchar(120) [unique, not null]
   createdAt timestamptz [not null, default: `now()`]
   updatedAt timestamptz [not null, default: `now()`]
   deletedAt timestamptz [null]
-
-  Note: "CHECK: slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'"
 }
 
 Table ProductTranslation {
@@ -212,11 +209,40 @@ Table ProductTranslation {
   }
 }
 
-Table ProductOffer {
+Table Seller {
+  id integer [pk, increment]
+  userId uint [ref: - User.id, unique, not null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+}
+
+Table ProductVariant {
   id integer [pk, increment]
   productId uint [ref: > Product.id, not null]
-  sellerId uint [ref: > User.id, not null]
-  sku varchar(64) [not null]
+  sku varchar(64) [unique, not null]
+  barcode varchar(14) [unique, null]
+  slug varchar(120) [unique, not null]
+  createdAt timestamptz [not null, default: `now()`]
+  updatedAt timestamptz [not null, default: `now()`]
+  deletedAt timestamptz [null]
+
+  Indexes {
+    productId
+  }
+
+  Note: '''
+  CHECK: sku <> '' (btrim)
+  CHECK: slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
+  CHECK: barcode IS NULL OR barcode ~ '^[0-9]{8,14}$'
+  '''
+}
+
+Table SellerOffer {
+  id integer [pk, increment]
+  sellerId uint [ref: > Seller.id, not null]
+  variantId uint [ref: > ProductVariant.id, not null]
+  sellerSku varchar(64) [not null]
   price amount [not null]
   currency CurrencyEnum [not null]
   discountPrice amount [null]
@@ -226,15 +252,16 @@ Table ProductOffer {
   quantity integer [not null, default: 0, note: 'физически последняя колонка — добавлена ALTER TABLE поверх схемы ДЗ #12']
 
   Indexes {
-    (sellerId, sku) [unique]
-    productId
+    (sellerId, sellerSku) [unique]
+    (sellerId, variantId) [unique]
+    variantId
     sellerId
   }
 
   Note: '''
   CHECK: discountPrice IS NULL OR discountPrice <= price
   discountPrice NULL = скидки нет (отличается от «скидка 0»)
-  sku уникален в рамках продавца, а не глобально
+  sellerSku уникален в рамках продавца, а не глобально
   CHECK: quantity >= 0 — integer, а не домен uint (тот запрещает 0,
   а распроданный оффер — норма) и не amount (это остаток штук, а не деньги)
   '''
@@ -287,7 +314,7 @@ Table Order {
 
 Table OrderProduct {
   orderId uint [ref: > Order.id, not null]
-  productOfferId uint [ref: > ProductOffer.id, not null]
+  offerId uint [ref: > SellerOffer.id, not null]
   quantity uint [not null]
   price amount [not null, note: 'snapshot value']
   discountPrice amount [null, note: 'snapshot value']
@@ -296,15 +323,15 @@ Table OrderProduct {
   deletedAt timestamptz [null]
 
   Indexes {
-    (orderId, productOfferId) [pk]
-    productOfferId
+    (orderId, offerId) [pk]
+    offerId
   }
 
   Note: '''
-  M:N между Order и ProductOffer.
+  M:N между Order и SellerOffer.
   CHECK: discountPrice IS NULL OR discountPrice <= price
   quantity > 0 через домен uint
-  FK orderId ON DELETE CASCADE, productOfferId ON DELETE RESTRICT —
+  FK orderId ON DELETE CASCADE, offerId ON DELETE RESTRICT —
   удаление оффера не должно уносить позиции исторических заказов.
   '''
 }

@@ -2,10 +2,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { OrderModule } from '../../src/order/order.module.js';
 import { OrderRepository } from '../../src/order/repository/order.repository.js';
 import { OrderProductRepository } from '../../src/order/repository/order-product.repository.js';
-import { CurrencyEnum } from '../../src/entities/enums.js';
+import { CurrencyEnum } from '../../src/generic/enum/enums.js';
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
-import { anOrderRecipient, aProductOffer } from '../support/builders.js';
+import { anOrderRecipient, aSellerOffer } from '../support/builders.js';
 
 describe('OrderRepository', () => {
   let testModule: TestModule;
@@ -58,7 +58,7 @@ describe('OrderRepository', () => {
 
   it('findByIdOrFail joins items and orderRecipient in one read', async () => {
     const recipient = await anOrderRecipient(testModule.dataSource.manager);
-    const offer = await aProductOffer(testModule.dataSource.manager, {
+    const offer = await aSellerOffer(testModule.dataSource.manager, {
       price: '50.00',
     });
 
@@ -72,7 +72,7 @@ describe('OrderRepository', () => {
     await orderProducts.create([
       {
         orderId: order.id,
-        productOfferId: offer.id,
+        offerId: offer.id,
         quantity: 2,
         price: '50.00',
         discountPrice: null,
@@ -83,7 +83,7 @@ describe('OrderRepository', () => {
 
     expect(found.orderRecipient.id).toBe(recipient.id);
     expect(found.items).toHaveLength(1);
-    expect(found.items[0].productOfferId).toBe(offer.id);
+    expect(found.items[0].offerId).toBe(offer.id);
   });
 
   it('findByIdOrFail rejects for a missing id', async () => {

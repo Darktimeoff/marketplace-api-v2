@@ -338,24 +338,42 @@ components:
           minimum: 0
           description: Units in stock for this offer
 
-    Product:
+    ProductVariant:
       type: object
-      required: [title, offers]
+      description: >
+        One sellable variant of a product (its own SKU/barcode/slug), carrying
+        the seller offers listed against it.
+      required: [id, sku, slug, offers]
       properties:
-        title:
+        id:
+          type: integer
+        sku:
           type: string
         slug:
           type: string
+        barcode:
+          type: string
           nullable: true
+        offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Offer'
+
+    Product:
+      type: object
+      required: [title, variants]
+      properties:
+        title:
+          type: string
         brand:
           type: object
           nullable: true
           allOf:
             - $ref: '#/components/schemas/Brand'
-        offers:
+        variants:
           type: array
           items:
-            $ref: '#/components/schemas/Offer'
+            $ref: '#/components/schemas/ProductVariant'
 
     CreateProductRequest:
       type: object

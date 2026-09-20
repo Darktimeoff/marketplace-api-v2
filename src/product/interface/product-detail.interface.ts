@@ -1,11 +1,19 @@
-import { CurrencyEnum } from '../../entities/enums.js';
+import { CurrencyEnum } from '../../generic/enum/enums.js';
 
-export interface ProductOfferSummaryInterface {
+export interface SellerOfferSummaryInterface {
   sellerId: number;
   price: string;
   discountPrice: string | null;
   currency: CurrencyEnum;
   quantity: number;
+}
+
+export interface ProductVariantSummaryInterface {
+  id: number;
+  sku: string;
+  slug: string;
+  barcode: string | null;
+  offers: SellerOfferSummaryInterface[];
 }
 
 export interface ProductBrandSummaryInterface {
@@ -15,9 +23,8 @@ export interface ProductBrandSummaryInterface {
 
 export interface ProductDetailInterface {
   title: string;
-  slug: string;
   brand: ProductBrandSummaryInterface | null;
-  offers: ProductOfferSummaryInterface[];
+  variants: ProductVariantSummaryInterface[];
 }
 
 export interface CategoryBreadcrumbInterface {
@@ -35,7 +42,17 @@ export interface ProductCoreRowInterface {
   id: number;
   categoryId: number;
   title: string;
-  slug: string;
   brandSlug: string | null;
   brandName: string | null;
+}
+
+export interface ProductVariantRowInterface {
+  id: number;
+  sku: string;
+  slug: string;
+  barcode: string | null;
+}
+
+export interface SellerOfferRowInterface extends SellerOfferSummaryInterface {
+  variantId: number;
 }

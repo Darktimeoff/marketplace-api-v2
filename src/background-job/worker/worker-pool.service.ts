@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { TransactionHost } from '@nestjs-cls/transactional';
 import { BackgroundJobService } from '../service/background-job.service.js';
 import { BackgroundJob } from '../entity/background-job.entity.js';
-import { BackgroundJobTypeEnum } from '../../entities/enums.js';
+import { BackgroundJobTypeEnum } from '../../generic/enum/enums.js';
 import { sleep } from '../../generic/util/sleep.util.js';
 import type { TransactionalAdapterTypeOrmWithRetry } from '../../generic/db/typeorm-retry.adapter.js';
 

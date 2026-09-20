@@ -3,7 +3,7 @@ import { TransactionHost } from '@nestjs-cls/transactional';
 import { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import { In } from 'typeorm';
 import { BackgroundJob, type BackgroundJobCreateEntityInterface } from '../entity/background-job.entity.js';
-import { BackgroundJobStatusEnum, BackgroundJobTypeEnum } from '../../entities/enums.js';
+import { BackgroundJobStatusEnum, BackgroundJobTypeEnum } from '../../generic/enum/enums.js';
 
 export interface QueueDepthInterface {
   queued: number;

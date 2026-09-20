@@ -6,11 +6,11 @@ export default defineConfig({
   test: {
     globals: true,
     root: './',
-    include: ['**/*.e2e-spec.ts'],
-    globalSetup: ['test/support/global-setup.e2e.ts'],
+    include: ['test/integration/**/*.integration-spec.ts'],
+    globalSetup: ['test/support/global-setup.integration.ts'],
     setupFiles: ['test/support/env.ts'],
     env: {
-      TEST_SUITE: 'e2e',
+      TEST_SUITE: 'integration',
     },
     fileParallelism: false,
     testTimeout: 30000,

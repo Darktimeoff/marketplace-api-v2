@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
+import { EntityNotFoundError } from 'typeorm';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
 import { OrderProductRepository } from '../repository/order-product.repository.js';
@@ -10,7 +11,10 @@ import {
 } from '../input/order-create.input.js';
 import { Order } from '../entity/order.entity.js';
 import { OrderRecipient } from '../entity/order-recipient.entity.js';
-import { OrderProduct, type OrderProductCreateEntityInterface } from '../entity/order-product.entity.js';
+import {
+  OrderProduct,
+  type OrderProductCreateEntityInterface,
+} from '../entity/order-product.entity.js';
 import { PhoneService } from '../../phone/service/phone.service.js';
 import { DeliveryAddressService } from '../../delivery-address/service/delivery-address.service.js';
 import { ProductOfferService } from '../../product-offer/service/product-offer.service.js';
@@ -38,33 +42,59 @@ export class OrderService {
     private readonly deliveryAddressService: DeliveryAddressService,
     private readonly backgroundJobService: BackgroundJobService,
     private readonly offers: ProductOfferService,
-    private readonly accounts: AccountService
+    private readonly accounts: AccountService,
   ) {}
 
   @Transactional()
   async create(input: OrderCreateInput): Promise<Order> {
-    const orderProductIds = input.items.map(item => item.productOfferId).toSorted()
+    const orderProductIds = input.items
+      .map((item) => item.productOfferId)
+      .toSorted();
 
     const phone = await this.phoneService.create(input.recipient.phone);
-    const deliveryAddress = await this.deliveryAddressService.create(input.recipient.deliveryAddress);
+    const deliveryAddress = await this.deliveryAddressService.create(
+      input.recipient.deliveryAddress,
+    );
     const offers = await this.offers.findByIds(orderProductIds);
 
-    const recipient = await this.createRecipient(input.recipient, phone.id, deliveryAddress.id);
+    const recipient = await this.createRecipient(
+      input.recipient,
+      phone.id,
+      deliveryAddress.id,
+    );
 
     const offersById = new Map(offers.map((offer) => [offer.id, offer]));
-    const pricedItems = input.items.map((item) => this.toPriceItemOrFail(item, offersById));
+    const pricedItems = input.items.map((item) =>
+      this.toPriceItemOrFail(item, offersById),
+    );
 
-    await this.reserveStockOrFail(input.items)
+    await this.reserveStockOrFail(input.items);
 
-    const order = await this.createOrder(recipient.id, pricedItems, input.currency);
+    const order = await this.createOrder(
+      recipient.id,
+      pricedItems,
+      input.currency,
+    );
 
-    await this.accounts.charge(recipient.buyerId, Number(order.totalAmount))
+    await this.accounts.charge(recipient.buyerId, Number(order.totalAmount));
 
     await this.createItems(pricedItems, order.id);
 
-    await this.backgroundJobService.create(this.toBackgroundJobInput(order))
+    await this.backgroundJobService.create(this.toBackgroundJobInput(order));
 
     return order;
+  }
+
+  async findById(id: Order['id']): Promise<Order> {
+    try {
+      return await this.orderRepository.findByIdOrFail(id);
+    } catch (error) {
+      if (error instanceof EntityNotFoundError) {
+        throw new NotFoundException(`Order with id ${id} not found`);
+      }
+
+      throw error;
+    }
   }
 
   private createRecipient(
@@ -86,7 +116,10 @@ export class OrderService {
     currency: CurrencyEnum,
   ): Promise<Order> {
     const totalAmount = items.reduce((sum, priced) => sum + priced.amount, 0);
-    const discountAmount = items.reduce((sum, priced) => sum + priced.discount, 0);
+    const discountAmount = items.reduce(
+      (sum, priced) => sum + priced.discount,
+      0,
+    );
 
     return this.orderRepository.create({
       orderRecipientId,
@@ -96,20 +129,29 @@ export class OrderService {
     });
   }
 
-  private createItems(pricedItems: PricedOrderItem[], orderId: number): Promise<OrderProduct[]> {
+  private createItems(
+    pricedItems: PricedOrderItem[],
+    orderId: number,
+  ): Promise<OrderProduct[]> {
     return this.orderProductRepository.create(
       pricedItems.map((priced) => ({ ...priced.item, orderId })),
     );
   }
 
-  private toPriceItemOrFail(item: OrderCreateItemInput, offersById: Map<number, ProductOffer>): PricedOrderItem {
+  private toPriceItemOrFail(
+    item: OrderCreateItemInput,
+    offersById: Map<number, ProductOffer>,
+  ): PricedOrderItem {
     const offer = offersById.get(item.productOfferId);
     if (!offer) {
-      throw new NotFoundException(`Product with this id ${item.productOfferId} not existed, please try again`)
+      throw new NotFoundException(
+        `Product with this id ${item.productOfferId} not existed, please try again`,
+      );
     }
 
     const price = Number(offer.price);
-    const discountPrice = offer.discountPrice !== null ? Number(offer.discountPrice) : price;
+    const discountPrice =
+      offer.discountPrice !== null ? Number(offer.discountPrice) : price;
 
     return {
       item: {
@@ -128,31 +170,39 @@ export class OrderService {
       type: BackgroundJobTypeEnum.ORDER,
       dedupeKey: order.publicId,
       orderId: order.id,
-      payload: {}
-    }
+      payload: {},
+    };
   }
 
-  private async reserveStockOrFail(items: OrderCreateInput['items']): Promise<void> {
-    const reservations = items.map(item => ({ id: item.productOfferId, quantity: item.quantity }))
-    const reserved = await this.offers.reserveQuantityByIds(reservations)
+  private async reserveStockOrFail(
+    items: OrderCreateInput['items'],
+  ): Promise<void> {
+    const reservations = items.map((item) => ({
+      id: item.productOfferId,
+      quantity: item.quantity,
+    }));
+    const reserved = await this.offers.reserveQuantityByIds(reservations);
 
     if (reserved.length === reservations.length) {
-      return
+      return;
     }
 
-    const reservedIds = new Set(reserved.map(row => row.id))
-    const failed = items.filter(item => !reservedIds.has(item.productOfferId))
+    const reservedIds = new Set(reserved.map((row) => row.id));
+    const failed = items.filter(
+      (item) => !reservedIds.has(item.productOfferId),
+    );
     const stockById = new Map(
-      (await this.offers.findByIds(failed.map(item => item.productOfferId)))
-        .map(offer => [offer.id, offer.quantity]),
-    )
+      (
+        await this.offers.findByIds(failed.map((item) => item.productOfferId))
+      ).map((offer) => [offer.id, offer.quantity]),
+    );
 
     throw new InsufficientStockException(
-      failed.map<InsufficientStockProductInterface>(item => ({
+      failed.map<InsufficientStockProductInterface>((item) => ({
         productOfferId: item.productOfferId,
         requestedQuantity: item.quantity,
         stockQuantity: stockById.get(item.productOfferId) ?? null,
       })),
-    )
+    );
   }
 }

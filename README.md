@@ -493,10 +493,47 @@ npm install
 ## Running the API (NestJS)
 
 ```bash
-npm run start:dev   # watch mode
-npm run test        # unit tests (vitest)
-npm run test:e2e    # e2e tests
+npm run start:dev          # watch mode
+npm run test               # unit tests (vitest)
+npm run test:integration   # repository tests against a real Postgres (testcontainers)
+npm run test:e2e           # e2e tests (full Nest app, supertest, real Postgres)
 ```
+
+### Integration & e2e tests
+
+`test:integration` and `test:e2e` each spin up a single `postgres:16-alpine`
+container via `testcontainers`/`@testcontainers/postgresql` for the whole
+suite run, apply the three migrations from `src/migrations/*.ts` directly
+(no build step needed), then point the app at it via env vars + `SKIP_VAULT=1`
+(`test/support/container-lifecycle.ts`, `test/support/env.ts`) — the same
+mechanism the Grading recipe above uses.
+
+**Isolation strategy: `TRUNCATE ... RESTART IDENTITY CASCADE` after every
+test**, not a per-test transaction and not a container per test file:
+
+- A wrapping-transaction-then-ROLLBACK strategy doesn't fit here — the app's
+  own `@Transactional()` decorator (`@nestjs-cls/transactional`) opens its own
+  real transaction per call, and `BackgroundJobRepository.claimNext` relies on
+  row locks (`SKIP LOCKED`) that only make sense against committed rows. Both
+  would behave differently, or deadlock, if forced to run nested inside an
+  outer test transaction.
+- A container per test file is correct but far more expensive: starting
+  Postgres is the one real cost in this suite, and it buys no isolation that
+  a table truncate doesn't already give.
+- `TRUNCATE` after each test (`test/support/isolation.ts`) walks
+  `pg_tables` generically and resets identities, so the suite is green on
+  repeated runs with no manual cleanup, and it doesn't need updating when the
+  schema grows.
+
+Integration tests live in `test/integration/*.integration-spec.ts` and
+exercise `BackgroundJobRepository` and `OrderRepository` directly (unique/FK
+constraint violations, `claimNext`'s `SKIP LOCKED` behaviour, and
+`findByIdOrFail`'s JOIN across `orderRecipient`/`items`). The e2e test in
+`test/e2e/order.e2e-spec.ts` boots the real `AppModule` with no provider
+overrides and drives `POST /order` → `GET /order/:id` over HTTP with
+`supertest`, plus a `400` from the global `ValidationPipe` and a `404` for a
+missing order. `test/support/builders.ts` has the test data builders
+(`aUser`, `aProductOffer`, ...) used by both.
 
 ## Configuration
 

@@ -48,6 +48,56 @@ services:
       timeout: 3s
       retries: 3
 
+  pact-broker-db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: pact_broker
+      POSTGRES_USER: pact_broker
+      POSTGRES_PASSWORD: pact_broker
+    volumes:
+      - pact_broker_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pact_broker -d pact_broker"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # OSS Pact Broker only supports HTTP Basic Auth (no bearer-token endpoint).
+  # PACT_BROKER_TOKEN (see README, "Contract test" section) is the Basic Auth
+  # password read here from the docker secret; the username is the fixed,
+  # non-secret constant "ci" that scripts/pact-publish.sh and
+  # scripts/pact-can-i-deploy.sh also use.
+  pact-broker:
+    image: pactfoundation/pact-broker:latest
+    restart: always
+    depends_on:
+      pact-broker-db:
+        condition: service_healthy
+    ports:
+      - "${PACT_BROKER_PORT:-9292}:9292"
+    environment:
+      PACT_BROKER_DATABASE_ADAPTER: postgres
+      PACT_BROKER_DATABASE_HOST: pact-broker-db
+      PACT_BROKER_DATABASE_NAME: pact_broker
+      PACT_BROKER_DATABASE_USERNAME: pact_broker
+      PACT_BROKER_DATABASE_PASSWORD: pact_broker
+      PACT_BROKER_BASIC_AUTH_ENABLED: 'true'
+      PACT_BROKER_BASIC_AUTH_USERNAME: ci
+      PACT_BROKER_PUBLIC_HEARTBEAT: 'true'
+    entrypoint: >
+      sh -c '
+      export PACT_BROKER_BASIC_AUTH_PASSWORD="$$(cat /run/secrets/pact_broker_password)";
+      exec sh ./entrypoint.sh config.ru'
+    secrets:
+      - pact_broker_password
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9292/diagnostic/status/heartbeat"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   infisical-backend:
     container_name: infisical-backend
     restart: unless-stopped
@@ -101,6 +151,7 @@ services:
 
 volumes:
   postgres_data:
+  pact_broker_data:
   pg_data:
     driver: local
   redis_data:
@@ -112,3 +163,5 @@ networks:
 secrets:
   db_password:
     file: ./secrets/db_password.txt
+  pact_broker_password:
+    file: ./secrets/pact_broker_password.txt

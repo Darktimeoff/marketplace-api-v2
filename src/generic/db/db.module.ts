@@ -7,7 +7,6 @@ import { TransactionalAdapterTypeOrmWithRetry } from "./typeorm-retry.adapter.js
 import { EnvironmentModule, EnvironmentService } from "../environment/environment.module.js";
 import { SecretManagerModule } from "../secret-manager/secret-manager.module.js";
 import { SecretManagerService } from "../secret-manager/secret-manager.service.js";
-import { entities as sharedEntities } from "../../entities/all.js";
 
 @Module({
   imports: [
@@ -16,11 +15,6 @@ import { entities as sharedEntities } from "../../entities/all.js";
       inject: [EnvironmentService, SecretManagerService],
       useFactory: async (environment: EnvironmentService, secrets: SecretManagerService) => ({
         type: "postgres",
-        // Entity с owner-модулем (Order, BackgroundJob, Phone, DeliveryAddress,
-        // ProductOffer, ...) сюда не добавляются — они регистрируются через
-        // TypeOrmModule.forFeature([...]) в своих модулях и подхватываются
-        // autoLoadEntities. sharedEntities — только entity без owner-модуля.
-        entities: sharedEntities,
         autoLoadEntities: true,
         synchronize: false,
         host: environment.get("DBHOST"),

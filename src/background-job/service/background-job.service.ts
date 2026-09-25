@@ -5,7 +5,7 @@ import {
 } from '../repository/background-job.repository.js';
 import { BackgroundJobCreateInput } from '../input/background-job-create.input.js';
 import { BackgroundJob } from '../entity/background-job.entity.js';
-import { BackgroundJobTypeEnum } from '../../entities/enums.js';
+import { BackgroundJobTypeEnum } from '../../generic/enum/enums.js';
 
 @Injectable()
 export class BackgroundJobService {

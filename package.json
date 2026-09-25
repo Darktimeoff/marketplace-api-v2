@@ -29,12 +29,8 @@
     "migrate:revert": "bash scripts/with-secrets.sh dev npx typeorm migration:revert -d dist/data-source.js",
     "migrate:generate": "bash scripts/with-secrets.sh dev npx typeorm migration:generate -d dist/data-source.js",
     "seed": "bash scripts/with-secrets.sh dev node dist/seed.js",
-    "worker": "bash scripts/with-secrets.sh dev node dist/worker.js",
-    "demo:nplus1": "bash scripts/with-secrets.sh dev node dist/demo-nplus1.js",
-    "demo:race": "bash scripts/with-secrets.sh dev node dist/demo-race.js",
-    "demo:workers": "bash scripts/with-secrets.sh dev node dist/demo-workers.js",
-    "demo:retry": "bash scripts/with-secrets.sh dev node dist/demo-retry.js",
-    "report": "bash scripts/with-secrets.sh dev node dist/report.js"
+    "dump": "bash scripts/backup.sh",
+    "restore": "bash scripts/restore-drill.sh"
   },
   "dependencies": {
     "@infisical/sdk": "^5.0.2",

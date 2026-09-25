@@ -1,7 +1,7 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { User } from '../../entities/user.entity.js';
-import { Phone } from '../../entities/phone.entity.js';
-import { DeliveryAddress } from '../../entities/delivery-address.entity.js';
+import { User } from '../../user/entity/user.entity.js';
+import { Phone } from '../../phone/entity/phone.entity.js';
+import { DeliveryAddress } from '../../delivery-address/entity/delivery-address.entity.js';
 import type { Order } from './order.entity.js';
 
 /**

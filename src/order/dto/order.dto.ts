@@ -1,6 +1,6 @@
 import { Expose } from 'class-transformer';
 import { IsDate, IsEnum, IsInt, IsPositive, IsString, IsUUID } from 'class-validator';
-import { CurrencyEnum, OrderStatusEnum } from '../../entities/enums.js';
+import { CurrencyEnum, OrderStatusEnum } from '../../generic/enum/enums.js';
 
 export class OrderDto {
   @Expose()

@@ -4,7 +4,7 @@ import { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-t
 import {
   DeliveryAddress,
   type DeliveryAddressCreateEntityInterface,
-} from '../../entities/delivery-address.entity.js';
+} from '../entity/delivery-address.entity.js';
 
 @Injectable()
 export class DeliveryAddressRepository {

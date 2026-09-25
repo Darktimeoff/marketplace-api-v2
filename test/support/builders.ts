@@ -1,25 +1,27 @@
 import type { EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import { Phone } from '../../src/entities/phone.entity.js';
-import { DeliveryAddress } from '../../src/entities/delivery-address.entity.js';
-import { Identity } from '../../src/entities/identity.entity.js';
-import { User } from '../../src/entities/user.entity.js';
-import { Brand } from '../../src/entities/brand.entity.js';
-import { BrandTranslation } from '../../src/entities/brand-translation.entity.js';
-import { Category } from '../../src/entities/category.entity.js';
-import { CategoryTranslation } from '../../src/entities/category-translation.entity.js';
+import { Phone } from '../../src/phone/entity/phone.entity.js';
+import { DeliveryAddress } from '../../src/delivery-address/entity/delivery-address.entity.js';
+import { Identity } from '../../src/identity/entity/identity.entity.js';
+import { User } from '../../src/user/entity/user.entity.js';
+import { Brand } from '../../src/brand/entity/brand.entity.js';
+import { BrandTranslation } from '../../src/brand/entity/brand-translation.entity.js';
+import { Category } from '../../src/category/entity/category.entity.js';
+import { CategoryTranslation } from '../../src/category/entity/category-translation.entity.js';
 import { Product } from '../../src/product/entity/product.entity.js';
-import { ProductTranslation } from '../../src/entities/product-translation.entity.js';
-import { ProductOffer } from '../../src/entities/product-offer.entity.js';
+import { ProductTranslation } from '../../src/product/entity/product-translation.entity.js';
+import { ProductVariant } from '../../src/product-variant/entity/product-variant.entity.js';
+import { Seller } from '../../src/seller/entity/seller.entity.js';
+import { SellerOffer } from '../../src/seller-offer/entity/seller-offer.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
 import {
   CountryCodeEnum,
   CurrencyEnum,
   LanguageEnum,
   RoleEnum,
-} from '../../src/entities/enums.js';
+} from '../../src/generic/enum/enums.js';
 import type { BackgroundJobCreateEntityInterface } from '../../src/background-job/entity/background-job.entity.js';
-import { BackgroundJobTypeEnum } from '../../src/entities/enums.js';
+import { BackgroundJobTypeEnum } from '../../src/generic/enum/enums.js';
 
 let counter = 0;
 function nextSeq(): number {
@@ -116,50 +118,69 @@ export async function anOrderRecipient(
   );
 }
 
-export async function aProductOffer(
+export async function aSellerOffer(
   manager: EntityManager,
   overrides: Partial<
     Pick<
-      ProductOffer,
+      SellerOffer,
       | 'sellerId'
-      | 'productId'
-      | 'sku'
+      | 'variantId'
+      | 'sellerSku'
       | 'price'
       | 'discountPrice'
       | 'quantity'
       | 'currency'
     >
   > = {},
-): Promise<ProductOffer> {
+): Promise<SellerOffer> {
   const seq = nextSeq();
   const brands = manager.getRepository(Brand);
   const categories = manager.getRepository(Category);
   const products = manager.getRepository(Product);
-  const offers = manager.getRepository(ProductOffer);
+  const variants = manager.getRepository(ProductVariant);
+  const sellers = manager.getRepository(Seller);
+  const offers = manager.getRepository(SellerOffer);
 
-  const [seller, brand, category] = await Promise.all([
-    overrides.sellerId === undefined ? aUser(manager) : undefined,
-    brands.save(brands.create({ slug: `brand-${seq}` })),
-    categories.save(categories.create({ slug: `category-${seq}` })),
-  ]);
+  let variantId = overrides.variantId;
 
-  const productId =
-    overrides.productId ??
-    (
-      await products.save(
-        products.create({
-          categoryId: category.id,
-          brandId: brand.id,
-          slug: `product-${seq}`,
-        }),
-      )
-    ).id;
+  if (variantId === undefined) {
+    const [brand, category] = await Promise.all([
+      brands.save(brands.create({ slug: `brand-${seq}` })),
+      categories.save(categories.create({ slug: `category-${seq}` })),
+    ]);
+
+    const product = await products.save(
+      products.create({ categoryId: category.id, brandId: brand.id }),
+    );
+
+    const variant = await variants.save(
+      variants.create({
+        productId: product.id,
+        sku: `sku-${seq}`,
+        slug: `product-${seq}`,
+        barcode: null,
+      }),
+    );
+
+    variantId = variant.id;
+  }
+
+  let sellerId = overrides.sellerId;
+
+  if (sellerId === undefined) {
+    const sellerUser = await aUser(manager);
+    const seller = await sellers.save(
+      sellers.create({ userId: sellerUser.id }),
+    );
+
+    sellerId = seller.id;
+  }
 
   return offers.save(
     offers.create({
-      productId,
-      sellerId: overrides.sellerId ?? seller!.id,
-      sku: overrides.sku ?? `SKU-${seq}`,
+      variantId,
+      sellerId,
+      sellerSku: overrides.sellerSku ?? `SKU-${seq}`,
       price: overrides.price ?? '100.00',
       currency: overrides.currency ?? CurrencyEnum.UAH,
       discountPrice: overrides.discountPrice ?? null,
@@ -214,11 +235,10 @@ export async function aBrandWithTranslation(
 export async function aCatalogProduct(
   manager: EntityManager,
   options: { slug: string; title: string; categoryId: number; brandId: number },
-): Promise<Product> {
+): Promise<{ product: Product; variant: ProductVariant }> {
   const products = manager.getRepository(Product);
   const product = await products.save(
     products.create({
-      slug: options.slug,
       categoryId: options.categoryId,
       brandId: options.brandId,
     }),
@@ -233,7 +253,17 @@ export async function aCatalogProduct(
     }),
   );
 
-  return product;
+  const variants = manager.getRepository(ProductVariant);
+  const variant = await variants.save(
+    variants.create({
+      productId: product.id,
+      sku: options.slug,
+      slug: options.slug,
+      barcode: null,
+    }),
+  );
+
+  return { product, variant };
 }
 
 export function aBackgroundJobInput(

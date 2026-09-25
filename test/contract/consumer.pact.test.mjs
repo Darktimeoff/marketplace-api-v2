@@ -13,7 +13,7 @@ const provider = new PactV3({
   dir: path.resolve(dirname, '..', '..', 'pacts'),
 })
 
-test('GET /product/{id} returns the product with its offers and category breadcrumbs', async () => {
+test('GET /product/{id} returns the product with its variants and category breadcrumbs', async () => {
   provider
     .given('product 1 exists in category "phones"')
     .uponReceiving('a request for product 1')
@@ -29,18 +29,25 @@ test('GET /product/{id} returns the product with its offers and category breadcr
         data: {
           product: {
             title: like('iPhone 15'),
-            slug: like('iphone-15'),
             brand: {
               name: like('Apple'),
               slug: like('apple'),
             },
-            offers: like([
+            variants: like([
               {
-                sellerId: integer(1),
-                price: like('999.99'),
-                discountPrice: null,
-                currency: like('USD'),
-                quantity: integer(5),
+                id: integer(1),
+                sku: like('iphone-15'),
+                slug: like('iphone-15'),
+                barcode: null,
+                offers: like([
+                  {
+                    sellerId: integer(1),
+                    price: like('999.99'),
+                    discountPrice: null,
+                    currency: like('USD'),
+                    quantity: integer(5),
+                  },
+                ]),
               },
             ]),
           },
@@ -61,7 +68,7 @@ test('GET /product/{id} returns the product with its offers and category breadcr
     assert.equal(response.status, 200)
     assert.equal(body.error, null)
     assert.equal(body.data.product.title, 'iPhone 15')
-    assert.equal(body.data.product.offers[0].sellerId, 1)
+    assert.equal(body.data.product.variants[0].offers[0].sellerId, 1)
     assert.equal(body.data.breadcrumbs[0].slug, 'phones')
   })
 })

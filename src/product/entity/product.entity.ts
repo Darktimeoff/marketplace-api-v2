@@ -10,13 +10,12 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { Category } from '../../entities/category.entity.js';
-import { Brand } from '../../entities/brand.entity.js';
-import type { ProductTranslation } from '../../entities/product-translation.entity.js';
-import type { ProductOffer } from '../../entities/product-offer.entity.js';
+import { Category } from '../../category/entity/category.entity.js';
+import { Brand } from '../../brand/entity/brand.entity.js';
+import type { ProductTranslation } from './product-translation.entity.js';
+import type { ProductVariant } from '../../product-variant/entity/product-variant.entity.js';
 
 @Entity('Product')
-@Check('Product_slug_format', `"slug" ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`)
 @Check(
   'Product_deletedAt_order',
   `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`,
@@ -33,9 +32,6 @@ export class Product {
 
   @Column({ type: 'integer' })
   brandId: number;
-
-  @Column({ type: 'varchar', length: 120, unique: true })
-  slug: string;
 
   @CreateDateColumn({ type: 'timestamptz', default: () => 'now()' })
   createdAt: Date;
@@ -62,6 +58,6 @@ export class Product {
   )
   translations: ProductTranslation[];
 
-  @OneToMany('ProductOffer', (offer: ProductOffer) => offer.product)
-  offers: ProductOffer[];
+  @OneToMany('ProductVariant', (variant: ProductVariant) => variant.product)
+  variants: ProductVariant[];
 }

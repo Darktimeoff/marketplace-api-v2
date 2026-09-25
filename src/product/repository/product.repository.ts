@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { TransactionHost } from '@nestjs-cls/transactional';
 import { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
-import { LanguageEnum } from '../../entities/enums.js';
+import { LanguageEnum } from '../../generic/enum/enums.js';
 import type {
   CategoryBreadcrumbInterface,
   ProductCoreRowInterface,
-  ProductOfferSummaryInterface,
+  ProductVariantRowInterface,
+  SellerOfferRowInterface,
 } from '../interface/product-detail.interface.js';
 
 @Injectable()
@@ -22,7 +23,6 @@ export class ProductRepository {
       `SELECT p.id,
               p."categoryId" AS "categoryId",
               pt.title,
-              p.slug,
               b.slug AS "brandSlug",
               bt.name AS "brandName"
          FROM "Product" p
@@ -38,19 +38,28 @@ export class ProductRepository {
     return rows[0] ?? null;
   }
 
-  findOffersByProductId(
-    productId: number,
-  ): Promise<ProductOfferSummaryInterface[]> {
+  findVariantsByProductId(productId: number): Promise<ProductVariantRowInterface[]> {
     return this.txHost.tx.query(
-      `SELECT "sellerId" AS "sellerId",
-              price,
-              "discountPrice" AS "discountPrice",
-              currency,
-              quantity
-         FROM "ProductOffer"
-        WHERE "productId" = $1 AND "deletedAt" IS NULL
-     ORDER BY id ASC`,
+      `SELECT v.id, v.sku, v.slug, v.barcode
+         FROM "ProductVariant" v
+        WHERE v."productId" = $1 AND v."deletedAt" IS NULL
+     ORDER BY v.id ASC`,
       [productId],
+    );
+  }
+
+  findOffersByVariantIds(variantIds: number[]): Promise<SellerOfferRowInterface[]> {
+    return this.txHost.tx.query(
+      `SELECT o."variantId" AS "variantId",
+              o."sellerId" AS "sellerId",
+              o.price,
+              o."discountPrice" AS "discountPrice",
+              o.currency,
+              o.quantity
+         FROM "SellerOffer" o
+        WHERE o."variantId" = ANY($1) AND o."deletedAt" IS NULL
+     ORDER BY o.id ASC`,
+      [variantIds],
     );
   }
 

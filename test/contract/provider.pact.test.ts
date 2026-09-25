@@ -12,8 +12,9 @@ import {
   aCategoryWithTranslation,
   aUser,
 } from '../support/builders.js';
-import { CurrencyEnum } from '../../src/entities/enums.js';
-import { ProductOffer } from '../../src/entities/product-offer.entity.js';
+import { CurrencyEnum } from '../../src/generic/enum/enums.js';
+import { Seller } from '../../src/seller/entity/seller.entity.js';
+import { SellerOffer } from '../../src/seller-offer/entity/seller-offer.entity.js';
 
 // Non-secret by design: local docker-compose always exposes the broker on
 // this loopback address. CI/staging point PACT_BROKER_URL at the real broker.
@@ -63,20 +64,24 @@ describe('Provider verification: marketplace-api', () => {
         slug: 'apple',
         name: 'Apple',
       });
-      const product = await aCatalogProduct(dataSource.manager, {
+      const { variant } = await aCatalogProduct(dataSource.manager, {
         slug: 'iphone-15',
         title: 'iPhone 15',
         categoryId: category.id,
         brandId: brand.id,
       });
-      const seller = await aUser(dataSource.manager);
+      const sellerUser = await aUser(dataSource.manager);
+      const sellers = dataSource.manager.getRepository(Seller);
+      const seller = await sellers.save(
+        sellers.create({ userId: sellerUser.id }),
+      );
 
-      const offers = dataSource.manager.getRepository(ProductOffer);
+      const offers = dataSource.manager.getRepository(SellerOffer);
       await offers.save(
         offers.create({
-          productId: product.id,
+          variantId: variant.id,
           sellerId: seller.id,
-          sku: 'IPHONE15-BASE',
+          sellerSku: 'IPHONE15-BASE',
           price: '999.99',
           currency: CurrencyEnum.USD,
           discountPrice: null,

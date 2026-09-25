@@ -9,7 +9,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { CurrencyEnum } from '../../entities/enums.js';
+import { CurrencyEnum } from '../../generic/enum/enums.js';
 import { PhoneCreateInput } from '../../phone/input/phone-create.input.js';
 import { DeliveryAddressCreateInput } from '../../delivery-address/input/delivery-address-create.input.js';
 
@@ -34,7 +34,7 @@ export class OrderCreateRecipientInput {
 export class OrderCreateItemInput {
   @IsInt()
   @IsPositive()
-  productOfferId: number;
+  offerId: number;
 
   @IsInt()
   @Min(1)

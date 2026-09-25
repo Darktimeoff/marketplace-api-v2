@@ -17,9 +17,9 @@ import {
 } from '../entity/order-product.entity.js';
 import { PhoneService } from '../../phone/service/phone.service.js';
 import { DeliveryAddressService } from '../../delivery-address/service/delivery-address.service.js';
-import { ProductOfferService } from '../../product-offer/service/product-offer.service.js';
-import { ProductOffer } from '../../entities/product-offer.entity.js';
-import { BackgroundJobTypeEnum, CurrencyEnum } from '../../entities/enums.js';
+import { SellerOfferService } from '../../seller-offer/service/seller-offer.service.js';
+import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
+import { BackgroundJobTypeEnum, CurrencyEnum } from '../../generic/enum/enums.js';
 import { BackgroundJobService } from '../../background-job/service/background-job.service.js';
 import { BackgroundJobCreateInput } from '../../background-job/input/background-job-create.input.js';
 import { InsufficientStockProductInterface } from '../interface/insufficient-stock-product.interface.js';
@@ -41,14 +41,14 @@ export class OrderService {
     private readonly phoneService: PhoneService,
     private readonly deliveryAddressService: DeliveryAddressService,
     private readonly backgroundJobService: BackgroundJobService,
-    private readonly offers: ProductOfferService,
+    private readonly offers: SellerOfferService,
     private readonly accounts: AccountService,
   ) {}
 
   @Transactional()
   async create(input: OrderCreateInput): Promise<Order> {
     const orderProductIds = input.items
-      .map((item) => item.productOfferId)
+      .map((item) => item.offerId)
       .toSorted();
 
     const phone = await this.phoneService.create(input.recipient.phone);
@@ -140,12 +140,12 @@ export class OrderService {
 
   private toPriceItemOrFail(
     item: OrderCreateItemInput,
-    offersById: Map<number, ProductOffer>,
+    offersById: Map<number, SellerOffer>,
   ): PricedOrderItem {
-    const offer = offersById.get(item.productOfferId);
+    const offer = offersById.get(item.offerId);
     if (!offer) {
       throw new NotFoundException(
-        `Product with this id ${item.productOfferId} not existed, please try again`,
+        `Product with this id ${item.offerId} not existed, please try again`,
       );
     }
 
@@ -155,7 +155,7 @@ export class OrderService {
 
     return {
       item: {
-        productOfferId: item.productOfferId,
+        offerId: item.offerId,
         quantity: item.quantity,
         price: offer.price,
         discountPrice: offer.discountPrice,
@@ -178,7 +178,7 @@ export class OrderService {
     items: OrderCreateInput['items'],
   ): Promise<void> {
     const reservations = items.map((item) => ({
-      id: item.productOfferId,
+      id: item.offerId,
       quantity: item.quantity,
     }));
     const reserved = await this.offers.reserveQuantityByIds(reservations);
@@ -189,19 +189,19 @@ export class OrderService {
 
     const reservedIds = new Set(reserved.map((row) => row.id));
     const failed = items.filter(
-      (item) => !reservedIds.has(item.productOfferId),
+      (item) => !reservedIds.has(item.offerId),
     );
     const stockById = new Map(
       (
-        await this.offers.findByIds(failed.map((item) => item.productOfferId))
+        await this.offers.findByIds(failed.map((item) => item.offerId))
       ).map((offer) => [offer.id, offer.quantity]),
     );
 
     throw new InsufficientStockException(
       failed.map<InsufficientStockProductInterface>((item) => ({
-        productOfferId: item.productOfferId,
+        offerId: item.offerId,
         requestedQuantity: item.quantity,
-        stockQuantity: stockById.get(item.productOfferId) ?? null,
+        stockQuantity: stockById.get(item.offerId) ?? null,
       })),
     );
   }

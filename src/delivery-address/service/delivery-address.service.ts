@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DeliveryAddressRepository } from '../repository/delivery-address.repository.js';
 import { DeliveryAddressCreateInput } from '../input/delivery-address-create.input.js';
-import { DeliveryAddress } from '../../entities/delivery-address.entity.js';
+import { DeliveryAddress } from '../entity/delivery-address.entity.js';
 
 @Injectable()
 export class DeliveryAddressService {

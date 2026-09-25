@@ -4,14 +4,14 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module.js';
-import { Transaction } from '../../src/entities/transaction.entity.js';
+import { Transaction } from '../../src/account/entity/transaction.entity.js';
 import {
   CountryCodeEnum,
   CurrencyEnum,
   TransactionStatusEnum,
   TransactionTypeEnum,
-} from '../../src/entities/enums.js';
-import { aProductOffer, aUser } from '../support/builders.js';
+} from '../../src/generic/enum/enums.js';
+import { aSellerOffer, aUser } from '../support/builders.js';
 import { truncateAllTables } from '../support/isolation.js';
 
 describe('Order (e2e)', () => {
@@ -52,7 +52,7 @@ describe('Order (e2e)', () => {
   it('creates an order and reads it back over HTTP', async () => {
     const buyer = await aUser(dataSource.manager);
     await fundBuyer(buyer.id, '1000.00');
-    const offer = await aProductOffer(dataSource.manager, {
+    const offer = await aSellerOffer(dataSource.manager, {
       price: '50.00',
       quantity: 5,
     });
@@ -74,7 +74,7 @@ describe('Order (e2e)', () => {
             city: 'Kyiv',
           },
         },
-        items: [{ productOfferId: offer.id, quantity: 2 }],
+        items: [{ offerId: offer.id, quantity: 2 }],
         currency: CurrencyEnum.UAH,
       })
       .expect(201);

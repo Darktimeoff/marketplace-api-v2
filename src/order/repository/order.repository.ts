@@ -13,10 +13,10 @@ export class OrderRepository {
     return orders.save(orders.create(input));
   }
 
-  async updateStatusById(id: Order['id'], status: OrderStatusEnum) {
-    return await this.txHost.tx.getRepository(Order).update(id, {
-     status
-   })
+  async updateStatusById(id: Order['id'], status: OrderStatusEnum): Promise<Order> {
+    const orders = this.txHost.tx.getRepository(Order);
+    await orders.update(id, { status });
+    return this.findByIdOrFail(id);
   }
 
   async findByIdOrFail(id: Order['id']): Promise<Order> {

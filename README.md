@@ -690,6 +690,39 @@ every new pool connection and has a `pool.on('error', ...)` handler so a
 terminated idle connection is logged and replaced instead of crashing the
 process.
 
+## Realtime order status (HM-18)
+
+The status endpoint is `PATCH /orders/:id/status` with `{ "userId": <buyerId>, "status": "preparing" }`. The buyer ID is a homework-only ownership hint, not authentication. SSE is available at `GET /orders/:id/events`; it accepts an optional `userId` query parameter for the same ownership check and replays buffered events after `Last-Event-ID` (the in-memory history retains the most recent 100 events per order).
+
+Build the compiled app before starting it; this project relies on emitted decorator metadata and does not run its server through `tsx`:
+
+```bash
+npm run build
+npm run migrate
+npm run seed
+npm run start
+```
+
+Once the API is listening on port 3000, run the two-client Socket.IO demo with seeded order and buyer IDs:
+
+```bash
+API_URL=http://localhost:3000 ORDER_ID_A=1 ORDER_ID_B=2 BUYER_ID_A=3 BUYER_ID_B=4 node scripts/realtime-demo.mjs
+API_URL=http://localhost:3000 ORDER_ID_A=1 BUYER_ID_A=3 node scripts/realtime-demo.mjs --same-room
+```
+
+Set `ORDER_STATUS` to any `OrderStatusEnum` value and `EVENT_TIMEOUT_MS` to change the target status or receive deadline. The first run expects client A to receive the event and client B not to; `--same-room` makes both clients join order A and expects both to receive it.
+
+## Trade-offs: WebSocket vs SSE
+
+| Criterion | WebSocket | SSE |
+|---|---|---|
+| Channel direction | Bidirectional, client and server | Server-to-client; client commands use HTTP |
+| Reconnect and recovery | Client-managed reconnect; replay needs application support | Browser `EventSource` reconnects and sends `Last-Event-ID`; server replays buffered events |
+| Infrastructure requirements | WebSocket upgrade support and shared Socket.IO adapter for multiple instances | Long-lived HTTP response support and shared event replay state across instances |
+| Cost per event | Framing and protocol state are more involved; efficient for frequent two-way messages | Small UTF-8 text event over HTTP; reconnects are straightforward |
+
+For one-way order notifications, I would keep SSE in production because the server only needs to push updates and native `EventSource` reconnects with `Last-Event-ID`. WebSockets are a better fit when clients also need frequent real-time commands or interactive bidirectional traffic. With two app instances, process-local Socket.IO rooms and event buffers split subscribers and replay history; use a shared Socket.IO adapter and shared pub/sub or event store to coordinate delivery and recovery.
+
 ## Checks (acceptance criteria)
 
 ```bash

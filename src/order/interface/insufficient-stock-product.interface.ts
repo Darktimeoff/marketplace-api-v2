@@ -1,5 +1,5 @@
 export interface InsufficientStockProductInterface {
-  productOfferId: number;
+  offerId: number;
   requestedQuantity: number;
   stockQuantity: number | null;
 }

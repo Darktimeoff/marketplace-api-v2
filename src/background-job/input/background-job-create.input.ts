@@ -1,5 +1,5 @@
 import { IsEnum, IsInt, IsObject, IsOptional, IsPositive, IsString, MaxLength, MinLength } from 'class-validator';
-import { BackgroundJobTypeEnum } from '../../entities/enums.js';
+import { BackgroundJobTypeEnum } from '../../generic/enum/enums.js';
 
 export class BackgroundJobCreateInput {
   @IsEnum(BackgroundJobTypeEnum)

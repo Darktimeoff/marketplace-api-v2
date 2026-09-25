@@ -1,5 +1,5 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
-import { BackgroundJobStatusEnum, BackgroundJobTypeEnum } from '../../entities/enums.js';
+import { BackgroundJobStatusEnum, BackgroundJobTypeEnum } from '../../generic/enum/enums.js';
 import { Order } from '../../order/entity/order.entity.js';
 
 /**

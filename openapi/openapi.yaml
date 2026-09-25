@@ -312,73 +312,82 @@ components:
         slug:
           type: string
 
-    Media:
+    Offer:
       type: object
-      required: [url, format, type]
+      description: >
+        One seller's listing of a product, Amazon/eBay-style: a product has
+        many sellers, each with their own price and stock.
+      required: [sellerId, price, currency, quantity]
       properties:
-        url:
+        sellerId:
+          type: integer
+        price:
           type: string
-          format: uri
-        format:
+          description: Decimal amount as a string (no floating point), e.g. "129.99"
+          example: '129.99'
+        discountPrice:
           type: string
-          enum: [JPEG, PNG, WEBP]
-        type:
+          nullable: true
+          description: Discounted decimal amount, when lower than `price`
+          example: '99.99'
+        currency:
           type: string
-          enum: [IMAGE, VIDEO]
+          enum: [UAH, EUR, USD]
+        quantity:
+          type: integer
+          minimum: 0
+          description: Units in stock for this offer
 
-    Product:
+    ProductVariant:
       type: object
-      required: [title, priceCents, media]
+      description: >
+        One sellable variant of a product (its own SKU/barcode/slug), carrying
+        the seller offers listed against it.
+      required: [id, sku, slug, offers]
       properties:
-        title:
+        id:
+          type: integer
+        sku:
           type: string
         slug:
           type: string
+        barcode:
+          type: string
           nullable: true
-        priceCents:
-          type: integer
-          minimum: 0
-          description: Product price in integer cents (no floating point)
-        oldPriceCents:
-          type: integer
-          nullable: true
-          minimum: 0
-          description: Previous price in integer cents, when the product is discounted
+        offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Offer'
+
+    Product:
+      type: object
+      required: [title, variants]
+      properties:
+        title:
+          type: string
         brand:
           type: object
           nullable: true
           allOf:
             - $ref: '#/components/schemas/Brand'
-        media:
+        variants:
           type: array
           items:
-            $ref: '#/components/schemas/Media'
+            $ref: '#/components/schemas/ProductVariant'
 
     CreateProductRequest:
       type: object
-      required: [title, priceCents, media]
+      required: [title, categoryId]
       properties:
         title:
           type: string
         slug:
           type: string
-        priceCents:
-          type: integer
-          minimum: 0
-        oldPriceCents:
-          type: integer
-          nullable: true
-          minimum: 0
         brandId:
           type: integer
           nullable: true
         categoryId:
           type: integer
-        media:
-          type: array
-          minItems: 1
-          items:
-            $ref: '#/components/schemas/Media'
 
     Pagination:
       type: object

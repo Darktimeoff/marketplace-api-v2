@@ -1,5 +1,5 @@
 import { IsEnum, IsString, Matches, MaxLength } from 'class-validator';
-import { CountryCodeEnum } from '../../entities/enums.js';
+import { CountryCodeEnum } from '../../generic/enum/enums.js';
 
 export class PhoneCreateInput {
   @IsEnum(CountryCodeEnum)

@@ -9,5 +9,9 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.spec.ts'],
+    // Vitest picks a different default reporter depending on the environment
+    // it detects (TTY vs CI vs piped output) — pinning it keeps output
+    // identical no matter where this runs.
+    reporters: ['default'],
   },
 });

@@ -1,10 +1,10 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 import { Order } from './order.entity.js';
-import { ProductOffer } from '../../entities/product-offer.entity.js';
-import { moneyTransformer } from '../../entities/money.transformer.js';
+import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
+import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
 
 /**
- * M:N между Order и ProductOffer с данными на связи (количество и цены на момент
+ * M:N между Order и SellerOffer с данными на связи (количество и цены на момент
  * заказа), поэтому это явная join-entity с составным PK, а не @ManyToMany.
  */
 @Entity('OrderProduct')
@@ -15,7 +15,7 @@ export class OrderProduct {
   orderId: number;
 
   @PrimaryColumn({ type: 'integer' })
-  productOfferId: number;
+  offerId: number;
 
   @Column({ type: 'integer' })
   quantity: number;
@@ -42,10 +42,10 @@ export class OrderProduct {
 
   // RESTRICT от оффера: удаление оффера не должно вычищать позиции
   // из уже оформленных исторических заказов.
-  @ManyToOne(() => ProductOffer, (offer) => offer.orderItems, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'productOfferId' })
-  productOffer: ProductOffer;
+  @ManyToOne(() => SellerOffer, (offer) => offer.orderItems, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'offerId' })
+  offer: SellerOffer;
 }
 
 export interface OrderProductCreateEntityInterface
-  extends Pick<OrderProduct, 'orderId' | 'productOfferId' | 'quantity' | 'price' | 'discountPrice'> {}
+  extends Pick<OrderProduct, 'orderId' | 'offerId' | 'quantity' | 'price' | 'discountPrice'> {}

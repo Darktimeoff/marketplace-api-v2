@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AccountRepository } from '../repository/account.repository.js';
-import { TransactionStatusEnum, TransactionTypeEnum } from '../../entities/enums.js';
-import { User } from '../../entities/user.entity.js';
+import { TransactionStatusEnum, TransactionTypeEnum } from '../../generic/enum/enums.js';
+import { User } from '../../user/entity/user.entity.js';
 import { Transactional } from '@nestjs-cls/transactional';
 import { InsufficientBalanceException } from '../exception/insufficient-stock.exception.js';
 

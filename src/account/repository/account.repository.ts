@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { TransactionHost } from '@nestjs-cls/transactional';
 import { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
-import { Transaction, type TransactionCreateEntityInterface } from '../../entities/transaction.entity.js';
-import { TransactionStatusEnum, TransactionTypeEnum } from '../../entities/enums.js';
-import { User } from '../../entities/user.entity.js';
+import { Transaction, type TransactionCreateEntityInterface } from '../entity/transaction.entity.js';
+import { TransactionStatusEnum, TransactionTypeEnum } from '../../generic/enum/enums.js';
+import { User } from '../../user/entity/user.entity.js';
 
 @Injectable()
 export class AccountRepository {

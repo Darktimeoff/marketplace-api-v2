@@ -10,7 +10,7 @@ import { OrderService } from "./service/order.service.js";
 import { OrderController } from "./controller/order.controller.js";
 import { PhoneModule } from "../phone/phone.module.js";
 import { DeliveryAddressModule } from "../delivery-address/delivery-address.module.js";
-import { ProductOfferModule } from "../product-offer/product-offer.module.js";
+import { SellerOfferModule } from "../seller-offer/seller-offer.module.js";
 import { BackgroundJobModule } from "../background-job/background-job.module.js";
 import { AccountModule } from "../account/account.module.js";
 
@@ -19,7 +19,7 @@ import { AccountModule } from "../account/account.module.js";
     TypeOrmModule.forFeature([Order, OrderProduct, OrderRecipient]),
     PhoneModule,
     DeliveryAddressModule,
-    ProductOfferModule,
+    SellerOfferModule,
     BackgroundJobModule,
     AccountModule,
   ],

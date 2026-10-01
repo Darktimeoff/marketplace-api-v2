@@ -12,9 +12,9 @@ import {
 import { CurrencyEnum } from '../../generic/enum/enums.js';
 import { PhoneCreateInput } from '../../phone/input/phone-create.input.js';
 import { DeliveryAddressCreateInput } from '../../delivery-address/input/delivery-address-create.input.js';
-import type { OrderCreateItemRequest, OrderCreateRecipientRequest, OrderCreateRequest } from '@marketplace/contracts-core';
+import type { OrderCreateItemRequestInterface, OrderCreateRecipientRequestInterface, OrderCreateRequestInterface } from '@marketplace/contracts-core';
 
-export class OrderCreateRecipientInput implements OrderCreateRecipientRequest {
+export class OrderCreateRecipientInput implements OrderCreateRecipientRequestInterface {
   @IsInt()
   @IsPositive()
   buyerId: number;
@@ -32,7 +32,7 @@ export class OrderCreateRecipientInput implements OrderCreateRecipientRequest {
   deliveryAddress: DeliveryAddressCreateInput;
 }
 
-export class OrderCreateItemInput implements OrderCreateItemRequest {
+export class OrderCreateItemInput implements OrderCreateItemRequestInterface {
   @IsInt()
   @IsPositive()
   offerId: number;
@@ -42,7 +42,7 @@ export class OrderCreateItemInput implements OrderCreateItemRequest {
   quantity: number;
 }
 
-export class OrderCreateInput implements OrderCreateRequest {
+export class OrderCreateInput implements OrderCreateRequestInterface {
   @ValidateNested()
   @Type(() => OrderCreateRecipientInput)
   recipient: OrderCreateRecipientInput;

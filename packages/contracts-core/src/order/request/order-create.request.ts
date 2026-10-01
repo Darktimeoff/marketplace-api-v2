@@ -1,21 +1,21 @@
-import type { Currency } from '../../generic/type/currency.type.js';
-import type { PhoneCreateRequest } from '../../phone/request/phone-create.request.js';
-import type { DeliveryAddressCreateRequest } from '../../delivery-address/request/delivery-address-create.request.js';
+import type { CurrencyType } from '../../generic/type/currency.type.js';
+import type { PhoneCreateRequestInterface } from '../../phone/request/phone-create.request.js';
+import type { DeliveryAddressCreateRequestInterface } from '../../delivery-address/request/delivery-address-create.request.js';
 
-export interface OrderCreateRecipientRequest {
+export interface OrderCreateRecipientRequestInterface {
   buyerId: number;
   fullName: string;
-  phone: PhoneCreateRequest;
-  deliveryAddress: DeliveryAddressCreateRequest;
+  phone: PhoneCreateRequestInterface;
+  deliveryAddress: DeliveryAddressCreateRequestInterface;
 }
 
-export interface OrderCreateItemRequest {
+export interface OrderCreateItemRequestInterface {
   offerId: number;
   quantity: number;
 }
 
-export interface OrderCreateRequest {
-  recipient: OrderCreateRecipientRequest;
-  items: OrderCreateItemRequest[];
-  currency: Currency;
+export interface OrderCreateRequestInterface {
+  recipient: OrderCreateRecipientRequestInterface;
+  items: OrderCreateItemRequestInterface[];
+  currency: CurrencyType;
 }

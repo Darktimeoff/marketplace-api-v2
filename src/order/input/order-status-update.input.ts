@@ -1,8 +1,8 @@
 import { IsEnum, IsInt, IsPositive } from 'class-validator';
 import { OrderStatusEnum } from '../../generic/enum/enums.js';
-import type { OrderStatusUpdateRequest } from '@marketplace/contracts-core';
+import type { OrderStatusUpdateRequestInterface } from '@marketplace/contracts-core';
 
-export class OrderStatusUpdateInput implements OrderStatusUpdateRequest {
+export class OrderStatusUpdateInput implements OrderStatusUpdateRequestInterface {
   @IsInt()
   @IsPositive()
   userId: number;

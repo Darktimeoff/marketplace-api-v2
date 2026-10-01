@@ -1,8 +1,8 @@
 import { IsEnum, IsString, Matches, MaxLength } from 'class-validator';
 import { CountryCodeEnum } from '../../generic/enum/enums.js';
-import type { PhoneCreateRequest } from '@marketplace/contracts-core';
+import type { PhoneCreateRequestInterface } from '@marketplace/contracts-core';
 
-export class PhoneCreateInput implements PhoneCreateRequest {
+export class PhoneCreateInput implements PhoneCreateRequestInterface {
   @IsEnum(CountryCodeEnum)
   countryCode: CountryCodeEnum;
 

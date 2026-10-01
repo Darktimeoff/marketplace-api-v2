@@ -30,10 +30,7 @@ import { OrderNotifyService } from './order-notify.service.js';
 import { OrderAccessService } from './order-access.service.js';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ConfirmChannel, ConsumeMessage } from 'amqplib';
-import { OrderCreatedJobInterface } from '../../generic/rabbitmq/interface/order-created-job.interface.js';
-import { JobTypeEnum } from '../../generic/rabbitmq/enum/job-type.enum.js';
-import { RABBITMQ_EXCHANGE_NAME } from '../../generic/rabbitmq/constant/rabbitmq_exchange_name.constant.js';
-import { RABBITMQ_ROUTING_KEY } from '../../generic/rabbitmq/constant/rabbitmq_routing_key.constant.js';
+import { CLOUD_EVENT_CONTENT_TYPE, OrderPlacedEvent } from '@marketplace/messaging-contracts';
 
 interface PricedOrderItem {
   item: Omit<OrderProductCreateEntityInterface, 'orderId'>;
@@ -103,7 +100,9 @@ export class OrderService implements OnModuleInit {
     await this.createItems(pricedItems, order.id);
 
     await this.backgroundJobService.create(this.toBackgroundJobInput(order));
-    await this.amqpConnection.publish(RABBITMQ_EXCHANGE_NAME, RABBITMQ_ROUTING_KEY, this.toOrderCreatedJob(order))
+    await this.amqpConnection.publish(OrderPlacedEvent.TOPIC, OrderPlacedEvent.TYPE, this.toOrderPlacedEvent(order), {
+      contentType: CLOUD_EVENT_CONTENT_TYPE,
+    })
 
     return order;
   }
@@ -208,10 +207,16 @@ export class OrderService implements OnModuleInit {
     };
   }
 
-  private toOrderCreatedJob(order: Order): OrderCreatedJobInterface {
+  private toOrderPlacedEvent(order: Order): OrderPlacedEvent.MessageType {
     return {
+      specversion: '1.0',
       id: order.publicId,
-      type: JobTypeEnum.ORDER_CREATED,
+      source: OrderPlacedEvent.SOURCE,
+      type: OrderPlacedEvent.TYPE,
+      time: new Date().toISOString(),
+      datacontenttype: 'application/json',
+      subject: order.publicId,
+      correlationid: order.publicId,
       data: {
         id: order.id,
         publicId: order.publicId,
@@ -219,11 +224,9 @@ export class OrderService implements OnModuleInit {
         discountAmount: order.discountAmount,
         status: order.status,
         currency: order.currency,
-        createdAt: order.createdAt,
-        updatedAt: order.updatedAt
+        createdAt: order.createdAt.toISOString(),
+        updatedAt: order.updatedAt.toISOString()
       },
-      correlationId: order.publicId,
-      createdAt: new Date()
     }
   }
 

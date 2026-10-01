@@ -1,6 +1,6 @@
-import type { OrderStatus } from '../type/order-status.type.js';
+import type { OrderStatusType } from '../type/order-status.type.js';
 
-export interface OrderStatusUpdateRequest {
+export interface OrderStatusUpdateRequestInterface {
   userId: number;
-  status: OrderStatus;
+  status: OrderStatusType;
 }

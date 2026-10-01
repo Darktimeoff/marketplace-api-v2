@@ -1,4 +1,4 @@
-export type OrderStatus =
+export type OrderStatusType =
   | 'created'
   | 'pending_payment'
   | 'failed_payment'

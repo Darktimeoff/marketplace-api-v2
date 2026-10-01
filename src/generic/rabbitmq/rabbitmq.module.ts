@@ -3,7 +3,7 @@ import { RabbitMQModule } from "@golevelup/nestjs-rabbitmq";
 import { EnvironmentModule, EnvironmentService } from "../environment/environment.module.js";
 import { SecretManagerModule } from "../secret-manager/secret-manager.module.js";
 import { SecretManagerService } from "../secret-manager/secret-manager.service.js";
-import { RABBITMQ_EXCHANGE_NAME } from "./constant/rabbitmq_exchange_name.constant.js";
+import { OrderPlacedEvent } from "@marketplace/messaging-contracts";
 import { RABBITMQ_EMAIL_CHANNEL_NAME } from "./constant/rabbitmq_email_channel_name.constant.js";
 import { getRabbitMqConnectionUri } from "./util/get-rabbitmq-connection-uri.util.js";
 
@@ -15,7 +15,7 @@ import { getRabbitMqConnectionUri } from "./util/get-rabbitmq-connection-uri.uti
       useFactory: async (environment: EnvironmentService, secrets: SecretManagerService) => ({
         exchanges: [
           {
-            name: RABBITMQ_EXCHANGE_NAME,
+            name: OrderPlacedEvent.TOPIC,
             type: 'topic',
             options: { durable: true },
           },

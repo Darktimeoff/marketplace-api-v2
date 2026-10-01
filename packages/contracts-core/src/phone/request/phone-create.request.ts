@@ -1,7 +1,7 @@
-import type { CountryCode } from '../type/country-code.type.js';
+import type { CountryCodeType } from '../type/country-code.type.js';
 
-export interface PhoneCreateRequest {
-  countryCode: CountryCode;
+export interface PhoneCreateRequestInterface {
+  countryCode: CountryCodeType;
   rawNumber: string;
   fullNumber: string;
   nationalNumber: string;

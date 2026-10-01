@@ -1,14 +1,14 @@
-import type { Currency } from '../../generic/type/currency.type.js';
-import type { OrderStatus } from '../type/order-status.type.js';
+import type { CurrencyType } from '../../generic/type/currency.type.js';
+import type { OrderStatusType } from '../type/order-status.type.js';
 
 export interface OrderEntityInterface {
   id: number;
   publicId: string;
   orderRecipientId: number;
-  status: OrderStatus;
+  status: OrderStatusType;
   totalAmount: string;
   discountAmount: string;
-  currency: Currency;
+  currency: CurrencyType;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;

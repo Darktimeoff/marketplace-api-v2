@@ -1,1 +1,0 @@
-export const RABBITMQ_ROUTING_KEY = 'order.placed'

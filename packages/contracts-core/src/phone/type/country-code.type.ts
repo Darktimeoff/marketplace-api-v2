@@ -1,1 +1,1 @@
-export type CountryCode = 'UA' | 'US' | 'PL' | 'DE' | 'GB';
+export type CountryCodeType = 'UA' | 'US' | 'PL' | 'DE' | 'GB';

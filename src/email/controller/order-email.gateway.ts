@@ -1,11 +1,9 @@
 import { Nack, RabbitSubscribe } from "@golevelup/nestjs-rabbitmq";
 import { Controller, Logger } from "@nestjs/common";
 import { isUUID } from "class-validator";
-import { RABBITMQ_EXCHANGE_NAME } from "../../generic/rabbitmq/constant/rabbitmq_exchange_name.constant.js";
-import { RABBITMQ_ROUTING_KEY } from "../../generic/rabbitmq/constant/rabbitmq_routing_key.constant.js";
+import { OrderPlacedEvent } from "@marketplace/messaging-contracts";
 import { RABBITMQ_QUEUE_NAME } from "../../generic/rabbitmq/constant/rabbitmq_queue_name.constant.js";
 import { RABBITMQ_EMAIL_CHANNEL_NAME } from "../../generic/rabbitmq/constant/rabbitmq_email_channel_name.constant.js";
-import type { OrderCreatedJobInterface } from "../../generic/rabbitmq/interface/order-created-job.interface.js";
 import { EmailService } from "../service/email.service.js";
 import { InboxService } from "../service/inbox.service.js";
 import { ORDER_EMAIL_CONSUMER } from "../constant/order-email-consumer.constant.js";
@@ -21,8 +19,8 @@ export class OrderEmailGateway {
   }
 
   @RabbitSubscribe({
-    exchange: RABBITMQ_EXCHANGE_NAME,
-    routingKey: RABBITMQ_ROUTING_KEY,
+    exchange: OrderPlacedEvent.TOPIC,
+    routingKey: OrderPlacedEvent.TYPE,
     queue: RABBITMQ_QUEUE_NAME,
     queueOptions: {
       durable: true,
@@ -37,10 +35,10 @@ export class OrderEmailGateway {
       }
     }
   })
-  async handleOrderPlaced(msg: OrderCreatedJobInterface) {
+  async handleOrderPlaced(msg: OrderPlacedEvent.MessageType) {
     this.logger.log(`delivered id=${msg?.id}`)
 
-    if (!isUUID(msg?.id) || !msg.data) {
+    if (msg?.specversion !== '1.0' || msg.type !== OrderPlacedEvent.TYPE || !isUUID(msg.id) || !msg.data) {
       this.logger.warn(`rejected id=${msg?.id}`)
       return new Nack(false)
     }

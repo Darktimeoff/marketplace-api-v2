@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { OrderCreatedDataJobInterface } from "../../generic/rabbitmq/interface/order-created-data-job.interface.js";
+import type { OrderPlacedEvent } from "@marketplace/messaging-contracts";
 import { Transactional } from "@nestjs-cls/transactional";
 import { sleep } from "../../generic/util/sleep.util.js";
 
@@ -11,7 +11,7 @@ export class EmailService {
 
 
   @Transactional()
-  async sendOrderCreated(order: OrderCreatedDataJobInterface) {
+  async sendOrderCreated(order: OrderPlacedEvent.DataInterface) {
     console.log('Send order to user email', order)
     await sleep(1000)
     console.log('Succesfully sent to user email, and saved to db')

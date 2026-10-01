@@ -5,12 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { config as loadEnv } from 'dotenv';
 import amqp from 'amqplib';
 import pg from 'pg';
+import { CLOUD_EVENT_CONTENT_TYPE, OrderPlacedEvent } from '@marketplace/messaging-contracts';
 
 const rootDir = path.resolve(fileURLToPath(import.meta.url), '../..');
 loadEnv({ path: path.join(rootDir, '.env'), quiet: true });
 
-const { RABBITMQ_EXCHANGE_NAME } = await import('../dist/generic/rabbitmq/constant/rabbitmq_exchange_name.constant.js');
-const { RABBITMQ_ROUTING_KEY } = await import('../dist/generic/rabbitmq/constant/rabbitmq_routing_key.constant.js');
 const { RABBITMQ_QUEUE_NAME } = await import('../dist/generic/rabbitmq/constant/rabbitmq_queue_name.constant.js');
 const { RABBITMQ_QUEUE_EMAIL_DLQ } = await import('../dist/generic/rabbitmq/constant/rabbitmq_queue_email_dlq.constant.js');
 const { ORDER_EMAIL_CONSUMER } = await import('../dist/email/constant/order-email-consumer.constant.js');
@@ -149,10 +148,10 @@ async function publishConfirmed(channel, body) {
   let returned = false;
   const onReturn = () => (returned = true);
   channel.on('return', onReturn);
-  channel.publish(RABBITMQ_EXCHANGE_NAME, RABBITMQ_ROUTING_KEY, Buffer.from(JSON.stringify(body)), {
+  channel.publish(OrderPlacedEvent.TOPIC, OrderPlacedEvent.TYPE, Buffer.from(JSON.stringify(body)), {
     persistent: true,
     mandatory: true,
-    contentType: 'application/json',
+    contentType: CLOUD_EVENT_CONTENT_TYPE,
   });
   await channel.waitForConfirms();
   channel.off('return', onReturn);
@@ -160,13 +159,17 @@ async function publishConfirmed(channel, body) {
 }
 
 function orderEvent(id) {
-  const now = new Date();
+  const now = new Date().toISOString();
   return {
+    specversion: '1.0',
     id,
-    type: 'ORDER_CREATED',
+    source: OrderPlacedEvent.SOURCE,
+    type: OrderPlacedEvent.TYPE,
+    time: now,
+    datacontenttype: 'application/json',
+    subject: id,
+    correlationid: id,
     data: { id: 0, publicId: id, totalAmount: '0.00', discountAmount: '0.00', status: 'created', currency: 'UAH', createdAt: now, updatedAt: now },
-    correlationId: id,
-    createdAt: now,
   };
 }
 

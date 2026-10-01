@@ -759,9 +759,20 @@ For one-way order notifications, I would keep SSE in production because the serv
 
 ### Публикация
 
-- Контракт события: `{ id, type, data, correlationId, createdAt }`. `id` — это
-  `order.publicId`: стабильный ключ, по которому консюмер узнаёт дубль. `data` —
-  отдельно собранный объект, а не ORM-сущность.
+- Событие — CloudEvents 1.0 в structured mode: весь конверт в теле JSON,
+  `content-type: application/cloudevents+json`.
+
+  | Атрибут | Значение | Зачем |
+  |---|---|---|
+  | `specversion` | `1.0` | версия стандарта |
+  | `id` | `order.publicId` | стабильный ключ: по нему консюмер узнаёт дубль |
+  | `source` | `/order-service` | кто опубликовал; уникальность события по стандарту — `(source, id)` |
+  | `type` | `order.placed` | тип события, он же routing key |
+  | `time` | ISO 8601 | когда опубликовано |
+  | `datacontenttype` | `application/json` | формат `data` |
+  | `subject` | `order.publicId` | о какой сущности событие |
+  | `correlationid` | `order.publicId` | расширение для сквозной трассировки (в CloudEvents только lowercase) |
+  | `data` | поля заказа | отдельно собранный объект, а не ORM-сущность; даты — ISO-строки |
 - Канал — confirm-канал (golevelup/amqp-connection-manager открывает его по
   умолчанию), `await publish()` ждёт `basic.ack` брокера.
 - `mandatory: true` + обработчик `return` в `OrderService.onModuleInit`: сообщение без
@@ -769,11 +780,33 @@ For one-way order notifications, I would keep SSE in production because the serv
   при этом всё равно приходит, поэтому одного confirm мало.
 - `persistent: true` для всех публикаций (`defaultPublishOptions`).
 
+### Контракты
+
+Контракты вынесены в два workspace-пакета и не знают про брокер:
+
+```
+packages/contracts-core/        @marketplace/contracts-core: доменные формы
+  order/entity/                 OrderEntityInterface — его реализует ORM-сущность Order
+  order/request/, response/     OrderCreateRequestInterface, OrderResponseInterface — их реализуют input и dto
+  generic/type/                 CurrencyType, SerializedType<T> (Date → string)
+packages/messaging-contracts/   @marketplace/messaging-contracts: сообщения
+  generic/interface/            CloudEventInterface, MessageContractInterface
+  order/event/                  OrderPlacedEvent { TOPIC, TYPE, SOURCE, DataInterface, MessageType }
+```
+
+Сущность, HTTP-ответ и событие выводятся из одного `OrderEntityInterface`, поэтому
+не расходятся: `OrderPlacedEvent.DataInterface = SerializedType<Pick<OrderEntityInterface, …>>`.
+`TOPIC`/`TYPE` — нейтральные имена; в RabbitMQ их превращает в exchange и routing key
+только инфраструктура приложения (`@RabbitSubscribe`, `publish`), при переходе на
+Kafka контракты не меняются. Пакеты отдают TypeScript-исходники для типов
+(`npx tsc --noEmit` работает на свежем клоне без сборки) и `dist/` для рантайма;
+`npm run build` сначала собирает их, потом приложение.
+
 ### Консюмер
 
 - `noAck: false`. golevelup отправляет `ack` только после того, как промис хендлера
   зарезолвился, то есть после коммита эффекта.
-- Ошибка формы события (нет валидного `id` или `data`) — `Nack(false)`: такое
+- Ошибка формы события (не CloudEvents 1.0, чужой `type`, невалидный `id`, нет `data`) — `Nack(false)`: такое
   сообщение не обработается никогда, поэтому сразу уходит в DLQ (причина `rejected`).
 - Временная ошибка (БД, отправка письма) — `Nack(true)`: повтор.
 
@@ -797,7 +830,9 @@ NOTHING` (`InboxRepository.createIfAbsent`). `InboxService.processOnce` откр
 бизнес, ничего не знает ни о брокере, ни о дублях. Ключ составной
 `(consumer, messageId)`: второй обработчик того же события в email-сервисе получит
 своё имя консюмера и не будет пропускать работу из-за чужой строки. Таблица живёт
-в данных email-сервиса, рядом с эффектом, который она защищает. Хранилище — Postgres, поэтому
+в данных email-сервиса, рядом с эффектом, который она защищает. По CloudEvents событие
+уникально по `(source, id)`; источник сейчас один, поэтому хватает `(consumer, id)` — со
+вторым источником в ключ добавится `source`. Хранилище — Postgres, поэтому
 гарантия переживает рестарт и работает между несколькими инстансами (а не `Set` в
 памяти).
 

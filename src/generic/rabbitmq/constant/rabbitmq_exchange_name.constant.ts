@@ -1,1 +1,0 @@
-export const RABBITMQ_EXCHANGE_NAME = 'order.events'

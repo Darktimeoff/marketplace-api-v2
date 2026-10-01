@@ -1,6 +1,7 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
+import type { DeliveryAddressCreateRequest } from '@marketplace/contracts-core';
 
-export class DeliveryAddressCreateInput {
+export class DeliveryAddressCreateInput implements DeliveryAddressCreateRequest {
   @IsString()
   @MaxLength(255)
   addressLine: string;

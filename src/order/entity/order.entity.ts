@@ -4,10 +4,11 @@ import { OrderRecipient } from './order-recipient.entity.js';
 import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
 import type { OrderProduct } from './order-product.entity.js';
 import type { BackgroundJob } from '../../background-job/entity/background-job.entity.js';
+import type { OrderEntityInterface } from '@marketplace/contracts-core';
 
 @Entity('Order')
 @Check('Order_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class Order {
+export class Order implements OrderEntityInterface {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 

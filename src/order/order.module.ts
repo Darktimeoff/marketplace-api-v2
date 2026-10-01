@@ -18,12 +18,11 @@ import { SellerOfferModule } from "../seller-offer/seller-offer.module.js";
 import { BackgroundJobModule } from "../background-job/background-job.module.js";
 import { AccountModule } from "../account/account.module.js";
 import { OrderAccessGuard } from "./guard/order-access.guard.js";
-import { RabbitMQModule } from '@golevelup/nestjs-rabbitmq';
-import { createRabbitMqConfig } from "./config/create-rabbitmq.config.js";
+import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
 
 @Module({
   imports: [
-    RabbitMQModule.forRootAsync(createRabbitMqConfig()),
+    RabbitMqModule,
     TypeOrmModule.forFeature([Order, OrderProduct, OrderRecipient]),
     PhoneModule,
     DeliveryAddressModule,

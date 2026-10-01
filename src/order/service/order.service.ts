@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { EntityNotFoundError } from 'typeorm';
 import { OrderRepository } from '../repository/order.repository.js';
@@ -29,6 +29,7 @@ import { OrderStatusEnum } from '../../generic/enum/enums.js';
 import { OrderNotifyService } from './order-notify.service.js';
 import { OrderAccessService } from './order-access.service.js';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
+import { ConfirmChannel, ConsumeMessage } from 'amqplib';
 import { OrderCreatedJobInterface } from '../../generic/rabbitmq/interface/order-created-job.interface.js';
 import { JobTypeEnum } from '../../generic/rabbitmq/enum/job-type.enum.js';
 import { RABBITMQ_EXCHANGE_NAME } from '../../generic/rabbitmq/constant/rabbitmq_exchange_name.constant.js';
@@ -41,7 +42,9 @@ interface PricedOrderItem {
 }
 
 @Injectable()
-export class OrderService {
+export class OrderService implements OnModuleInit {
+  private readonly logger = new Logger(OrderService.name)
+  
   constructor(
     private readonly orderRepository: OrderRepository,
     private readonly orderRecipientRepository: OrderRecipientRepository,
@@ -54,7 +57,15 @@ export class OrderService {
     private readonly orderNotify: OrderNotifyService,
     private readonly orderAccess: OrderAccessService,
     private readonly amqpConnection: AmqpConnection
-  ) {}
+  ) { }
+
+  async onModuleInit() {
+    await this.amqpConnection.managedChannel.addSetup(async (channel: ConfirmChannel) => {
+        channel.on('return', (msg: ConsumeMessage) => {
+          this.logger.error(`unroutable ${msg.fields.exchange}/${msg.fields.routingKey}`);
+        });
+      });
+  }
 
   @Transactional()
   async create(input: OrderCreateInput): Promise<Order> {

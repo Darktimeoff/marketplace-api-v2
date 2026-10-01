@@ -71,6 +71,7 @@
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.16.1",
     "@testcontainers/postgresql": "^12.1.0",
+    "@types/amqplib": "^0.10.8",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
     "@types/pg": "^8.23.1",

@@ -22,7 +22,10 @@ export class OrderEmailGateway {
     queueOptions: {
       durable: true,
       arguments: { 'x-queue-type': 'quorum' },
-    },
+      consumerOptions: {
+        noAck: false
+      }
+    }
   })
   async handleOrderPlaced(msg: OrderCreatedJobInterface) {
     console.log('handleOrderPlaced', msg)
@@ -31,8 +34,8 @@ export class OrderEmailGateway {
     }
 
     try {
-      await this.emails.sendOrderCreated(msg.data)
       await this.inbox.create(msg.id)
+      await this.emails.sendOrderCreated(msg.data)
     } catch (e) {
       return new Nack(true)
     }

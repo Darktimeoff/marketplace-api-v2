@@ -10,12 +10,12 @@ import { CLOUD_EVENT_CONTENT_TYPE, OrderPlacedEvent } from '@marketplace/messagi
 const rootDir = path.resolve(fileURLToPath(import.meta.url), '../..');
 loadEnv({ path: path.join(rootDir, '.env'), quiet: true });
 
-const { RABBITMQ_QUEUE_NAME } = await import('../dist/generic/rabbitmq/constant/rabbitmq_queue_name.constant.js');
-const { RABBITMQ_QUEUE_EMAIL_DLQ } = await import('../dist/generic/rabbitmq/constant/rabbitmq_queue_email_dlq.constant.js');
+const { EMAIL_ORDER_PLACED_QUEUE } = await import('../dist/email/constant/order-placed-queue.constant.js');
+const { EMAIL_ORDER_PLACED_DLQ } = await import('../dist/email/constant/order-placed-dlq.constant.js');
 const { ORDER_EMAIL_CONSUMER } = await import('../dist/email/constant/order-email-consumer.constant.js');
 
-const WORK_QUEUE = RABBITMQ_QUEUE_NAME;
-const DLQ = RABBITMQ_QUEUE_EMAIL_DLQ;
+const WORK_QUEUE = EMAIL_ORDER_PLACED_QUEUE;
+const DLQ = EMAIL_ORDER_PLACED_DLQ;
 const DEATH_REASONS = ['rejected', 'expired', 'maxlen', 'delivery_limit'];
 const EVENTS = 5;
 

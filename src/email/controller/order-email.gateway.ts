@@ -3,6 +3,7 @@ import { Controller } from "@nestjs/common";
 import { RABBITMQ_EXCHANGE_NAME } from "../../generic/rabbitmq/constant/rabbitmq_exchange_name.constant.js";
 import { RABBITMQ_ROUTING_KEY } from "../../generic/rabbitmq/constant/rabbitmq_routing_key.constant.js";
 import { RABBITMQ_QUEUE_NAME } from "../../generic/rabbitmq/constant/rabbitmq_queue_name.constant.js";
+import { RABBITMQ_EMAIL_CHANNEL_NAME } from "../../generic/rabbitmq/constant/rabbitmq_email_channel_name.constant.js";
 import { EmailInboxRepository } from "../repository/email-inbox.repository.js";
 import { Transactional } from "@nestjs-cls/transactional";
 import type { OrderCreatedJobInterface } from "../../generic/rabbitmq/interface/order-created-job.interface.js";
@@ -22,6 +23,7 @@ export class OrderEmailGateway {
     queueOptions: {
       durable: true,
       arguments: { 'x-queue-type': 'quorum' },
+      channel: RABBITMQ_EMAIL_CHANNEL_NAME,
       consumerOptions: {
         noAck: false
       }

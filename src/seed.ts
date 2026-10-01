@@ -4,15 +4,17 @@ import { AppDataSource } from './data-source.js';
 import {
   BackgroundJobStatusEnum,
   BackgroundJobTypeEnum,
-  CountryCodeEnum,
-  CurrencyEnum,
   GenderEnum,
   LanguageEnum,
   RoleEnum,
-  OrderStatusEnum,
   TransactionStatusEnum,
   TransactionTypeEnum,
 } from './generic/enum/enums.js';
+import {
+  CountryCodeEnum,
+  CurrencyEnum,
+  OrderStatusEnum,
+} from '@marketplace/contracts-core';
 import { Identity } from './identity/entity/identity.entity.js';
 import { User } from './user/entity/user.entity.js';
 import { Phone } from './phone/entity/phone.entity.js';

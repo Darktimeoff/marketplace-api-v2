@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { OrderModule } from '../../src/order/order.module.js';
 import { OrderRepository } from '../../src/order/repository/order.repository.js';
 import { OrderProductRepository } from '../../src/order/repository/order-product.repository.js';
-import { CurrencyEnum } from '../../src/generic/enum/enums.js';
+import { CurrencyEnum } from '@marketplace/contracts-core';
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
 import { anOrderRecipient, aSellerOffer } from '../support/builders.js';

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { OrderNotifyService, ORDER_EVENT_HISTORY_LIMIT } from '../../src/order/service/order-notify.service.js';
-import { OrderStatusEnum } from '../../src/generic/enum/enums.js';
+import { OrderStatusEnum } from '@marketplace/contracts-core';
 
 describe('OrderNotifyService', () => {
   it('assigns increasing IDs and replays only events after the requested ID', () => {

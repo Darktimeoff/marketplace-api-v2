@@ -9,7 +9,7 @@ import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module.js';
 import { Order } from '../../src/order/entity/order.entity.js';
 import { OrderNotifyService } from '../../src/order/service/order-notify.service.js';
-import { OrderStatusEnum, CurrencyEnum } from '../../src/generic/enum/enums.js';
+import { OrderStatusEnum, CurrencyEnum } from '@marketplace/contracts-core';
 import { anOrderRecipient, aUser } from '../support/builders.js';
 import { truncateAllTables } from '../support/isolation.js';
 

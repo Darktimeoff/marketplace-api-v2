@@ -1,5 +1,5 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { CountryCodeEnum } from '../../generic/enum/enums.js';
+import { CountryCodeEnum } from '@marketplace/contracts-core';
 import type { Identity } from '../../identity/entity/identity.entity.js';
 import type { OrderRecipient } from '../../order/entity/order-recipient.entity.js';
 

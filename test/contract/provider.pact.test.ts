@@ -12,7 +12,7 @@ import {
   aCategoryWithTranslation,
   aUser,
 } from '../support/builders.js';
-import { CurrencyEnum } from '../../src/generic/enum/enums.js';
+import { CurrencyEnum } from '@marketplace/contracts-core';
 import { Seller } from '../../src/seller/entity/seller.entity.js';
 import { SellerOffer } from '../../src/seller-offer/entity/seller-offer.entity.js';
 

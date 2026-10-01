@@ -788,7 +788,9 @@ For one-way order notifications, I would keep SSE in production because the serv
 packages/contracts-core/        @marketplace/contracts-core: доменные формы
   order/entity/                 OrderEntityInterface — его реализует ORM-сущность Order
   order/request/, response/     OrderCreateRequestInterface, OrderResponseInterface — их реализуют input и dto
-  generic/type/                 CurrencyType, SerializedType<T> (Date → string)
+  order/enum/, phone/enum/      OrderStatusEnum, CountryCodeEnum — единственный источник, приложение импортирует их отсюда
+  generic/enum/                 CurrencyEnum
+  generic/type/                 SerializedType<T> (Date → string)
 packages/messaging-contracts/   @marketplace/messaging-contracts: сообщения
   generic/enum/                 TopicEnum — каталог топиков (exchange'ей), из него RabbitMqModule объявляет exchange'и
   generic/interface/            CloudEventInterface, MessageContractInterface

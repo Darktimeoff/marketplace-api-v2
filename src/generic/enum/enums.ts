@@ -19,34 +19,6 @@ export enum GenderEnum {
   female = 'female',
 }
 
-export enum CountryCodeEnum {
-  UA = 'UA',
-  US = 'US',
-  PL = 'PL',
-  DE = 'DE',
-  GB = 'GB',
-}
-
-export enum CurrencyEnum {
-  UAH = 'UAH',
-  EUR = 'EUR',
-  USD = 'USD',
-}
-
-export enum OrderStatusEnum {
-  created = 'created',
-  pending_payment = 'pending_payment',
-  failed_payment = 'failed_payment',
-  paid = 'paid',
-  confirmed = 'confirmed',
-  preparing = 'preparing',
-  shipped = 'shipped',
-  delivered = 'delivered',
-  completed = 'completed',
-  canceled = 'canceled',
-  refunded = 'refunded',
-}
-
 // Направление денег кодирует TransactionType; amount у Transaction — всегда
 // неотрицательная величина (тот же домен "amount", что и у денег в остальной схеме).
 export enum TransactionTypeEnum {

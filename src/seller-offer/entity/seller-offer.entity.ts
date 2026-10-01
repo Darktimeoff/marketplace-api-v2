@@ -1,5 +1,5 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
-import { CurrencyEnum } from '../../generic/enum/enums.js';
+import { CurrencyEnum } from '@marketplace/contracts-core';
 import { Seller } from '../../seller/entity/seller.entity.js';
 import { ProductVariant } from '../../product-variant/entity/product-variant.entity.js';
 import { moneyTransformer } from '../../generic/transformer/money.transformer.js';

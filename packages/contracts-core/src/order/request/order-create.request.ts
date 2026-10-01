@@ -1,4 +1,4 @@
-import type { CurrencyType } from '../../generic/type/currency.type.js';
+import type { CurrencyEnum } from '../../generic/enum/currency.enum.js';
 import type { PhoneCreateRequestInterface } from '../../phone/request/phone-create.request.js';
 import type { DeliveryAddressCreateRequestInterface } from '../../delivery-address/request/delivery-address-create.request.js';
 
@@ -17,5 +17,5 @@ export interface OrderCreateItemRequestInterface {
 export interface OrderCreateRequestInterface {
   recipient: OrderCreateRecipientRequestInterface;
   items: OrderCreateItemRequestInterface[];
-  currency: CurrencyType;
+  currency: CurrencyEnum;
 }

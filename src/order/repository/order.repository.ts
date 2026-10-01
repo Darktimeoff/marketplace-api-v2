@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { TransactionHost } from '@nestjs-cls/transactional';
 import { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import { Order, type OrderCreateEntityInterface } from '../entity/order.entity.js';
-import { OrderStatusEnum } from '../../generic/enum/enums.js';
+import { OrderStatusEnum } from '@marketplace/contracts-core';
 
 @Injectable()
 export class OrderRepository {

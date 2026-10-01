@@ -1,4 +1,4 @@
-import { OrderStatusEnum } from '../../generic/enum/enums.js';
+import { OrderStatusEnum } from '@marketplace/contracts-core';
 
 export interface OrderStatusEvent {
   id: number;

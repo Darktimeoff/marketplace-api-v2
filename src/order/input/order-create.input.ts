@@ -9,10 +9,9 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { CurrencyEnum } from '../../generic/enum/enums.js';
+import { CurrencyEnum, type OrderCreateItemRequestInterface, type OrderCreateRecipientRequestInterface, type OrderCreateRequestInterface } from '@marketplace/contracts-core';
 import { PhoneCreateInput } from '../../phone/input/phone-create.input.js';
 import { DeliveryAddressCreateInput } from '../../delivery-address/input/delivery-address-create.input.js';
-import type { OrderCreateItemRequestInterface, OrderCreateRecipientRequestInterface, OrderCreateRequestInterface } from '@marketplace/contracts-core';
 
 export class OrderCreateRecipientInput implements OrderCreateRecipientRequestInterface {
   @IsInt()

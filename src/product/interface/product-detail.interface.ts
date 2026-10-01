@@ -1,4 +1,4 @@
-import { CurrencyEnum } from '../../generic/enum/enums.js';
+import { CurrencyEnum } from '@marketplace/contracts-core';
 
 export interface SellerOfferSummaryInterface {
   sellerId: number;

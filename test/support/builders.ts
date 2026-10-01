@@ -15,11 +15,13 @@ import { Seller } from '../../src/seller/entity/seller.entity.js';
 import { SellerOffer } from '../../src/seller-offer/entity/seller-offer.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
 import {
-  CountryCodeEnum,
-  CurrencyEnum,
   LanguageEnum,
   RoleEnum,
 } from '../../src/generic/enum/enums.js';
+import {
+  CountryCodeEnum,
+  CurrencyEnum,
+} from '@marketplace/contracts-core';
 import type { BackgroundJobCreateEntityInterface } from '../../src/background-job/entity/background-job.entity.js';
 import { BackgroundJobTypeEnum } from '../../src/generic/enum/enums.js';
 

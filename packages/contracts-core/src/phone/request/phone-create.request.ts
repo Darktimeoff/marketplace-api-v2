@@ -1,7 +1,7 @@
-import type { CountryCodeType } from '../type/country-code.type.js';
+import type { CountryCodeEnum } from '../enum/country-code.enum.js';
 
 export interface PhoneCreateRequestInterface {
-  countryCode: CountryCodeType;
+  countryCode: CountryCodeEnum;
   rawNumber: string;
   fullNumber: string;
   nationalNumber: string;

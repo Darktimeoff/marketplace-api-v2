@@ -1,14 +1,14 @@
-import type { CurrencyType } from '../../generic/type/currency.type.js';
-import type { OrderStatusType } from '../type/order-status.type.js';
+import type { CurrencyEnum } from '../../generic/enum/currency.enum.js';
+import type { OrderStatusEnum } from '../enum/order-status.enum.js';
 
 export interface OrderEntityInterface {
   id: number;
   publicId: string;
   orderRecipientId: number;
-  status: OrderStatusType;
+  status: OrderStatusEnum;
   totalAmount: string;
   discountAmount: string;
-  currency: CurrencyType;
+  currency: CurrencyEnum;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;

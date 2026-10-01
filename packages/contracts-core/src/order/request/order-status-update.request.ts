@@ -1,6 +1,6 @@
-import type { OrderStatusType } from '../type/order-status.type.js';
+import type { OrderStatusEnum } from '../enum/order-status.enum.js';
 
 export interface OrderStatusUpdateRequestInterface {
   userId: number;
-  status: OrderStatusType;
+  status: OrderStatusEnum;
 }

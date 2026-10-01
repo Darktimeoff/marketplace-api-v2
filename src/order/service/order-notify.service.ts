@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Subject } from 'rxjs';
-import { OrderStatusEnum } from '../../generic/enum/enums.js';
+import { OrderStatusEnum } from '@marketplace/contracts-core';
 import { OrderStatusEvent } from '../interface/order-status-event.interface.js';
 
 export const ORDER_EVENT_HISTORY_LIMIT = 100;

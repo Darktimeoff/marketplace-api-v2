@@ -10,7 +10,7 @@ import { EmailService } from "./service/email.service.js";
 
 @Module({
   imports: [
-    RabbitMQModule.forRootAsync(createRabbitMqConfig),
+    RabbitMQModule.forRootAsync(createRabbitMqConfig()),
     TypeOrmModule.forFeature([EmailInbox]),
   ],
   providers: [OrderEmailGateway, EmailInboxRepository, EmailService]

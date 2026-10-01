@@ -20,10 +20,12 @@ export class OrderEmailGateway {
     routingKey: RABBITMQ_ROUTING_KEY,
     queue: RABBITMQ_QUEUE_NAME,
     queueOptions: {
-      durable: true
+      durable: true,
+      arguments: { 'x-queue-type': 'quorum' },
     },
   })
   async handleOrderPlaced(msg: OrderCreatedJobInterface) {
+    console.log('handleOrderPlaced', msg)
     if (await this.inbox.isExisted(msg.id)) {
       return true;
     }

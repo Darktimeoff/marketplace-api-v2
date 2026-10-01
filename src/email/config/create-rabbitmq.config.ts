@@ -1,5 +1,4 @@
 import { RabbitMQConfig } from "@golevelup/nestjs-rabbitmq";
-import { ConfigurableModuleAsyncOptions } from "@nestjs/common";
 import { EnvironmentModule, EnvironmentService } from "../../generic/environment/environment.module.js";
 import { SecretManagerService } from "../../generic/secret-manager/secret-manager.service.js";
 import { SecretManagerModule } from "../../generic/secret-manager/secret-manager.module.js";
@@ -13,12 +12,12 @@ type RabbitMqAsyncOptions = {
 };
 
 
-export function createRabbitMqConfig(options: ConfigurableModuleAsyncOptions<RabbitMQConfig, "create">): RabbitMqAsyncOptions {
+export function createRabbitMqConfig(): RabbitMqAsyncOptions {
   return {
     imports: [EnvironmentModule, SecretManagerModule],
     inject: [EnvironmentService, SecretManagerService],
     useFactory: async (environment: EnvironmentService, secrets: SecretManagerService) => ({
-      uri: getRabbitMqConnectionUri(environment, secrets),
+      uri: await getRabbitMqConnectionUri(environment, secrets),
       connectionInitOptions: { wait: true, timeout: 5000 },
       enableControllerDiscovery: true
     })

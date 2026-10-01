@@ -23,7 +23,7 @@ import { createRabbitMqConfig } from "./config/create-rabbitmq.config.js";
 
 @Module({
   imports: [
-    RabbitMQModule.forRootAsync(createRabbitMqConfig),
+    RabbitMQModule.forRootAsync(createRabbitMqConfig()),
     TypeOrmModule.forFeature([Order, OrderProduct, OrderRecipient]),
     PhoneModule,
     DeliveryAddressModule,

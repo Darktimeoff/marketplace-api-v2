@@ -1,2 +1,2 @@
 
-export const RABBITMQ_ROUTING_KEY_EMAIL_DLX = 'email.dead-letter'
+export const RABBITMQ_ROUTING_KEY_EMAIL_DLX = 'email.order-placed'

@@ -12,10 +12,11 @@ loadEnv({ path: path.join(rootDir, '.env'), quiet: true });
 const { RABBITMQ_EXCHANGE_NAME } = await import('../dist/generic/rabbitmq/constant/rabbitmq_exchange_name.constant.js');
 const { RABBITMQ_ROUTING_KEY } = await import('../dist/generic/rabbitmq/constant/rabbitmq_routing_key.constant.js');
 const { RABBITMQ_QUEUE_NAME } = await import('../dist/generic/rabbitmq/constant/rabbitmq_queue_name.constant.js');
+const { RABBITMQ_QUEUE_EMAIL_DLQ } = await import('../dist/generic/rabbitmq/constant/rabbitmq_queue_email_dlq.constant.js');
 const { ORDER_EMAIL_CONSUMER } = await import('../dist/email/constant/order-email-consumer.constant.js');
 
 const WORK_QUEUE = RABBITMQ_QUEUE_NAME;
-const DLQ = 'email.dlq';
+const DLQ = RABBITMQ_QUEUE_EMAIL_DLQ;
 const DEATH_REASONS = ['rejected', 'expired', 'maxlen', 'delivery_limit'];
 const EVENTS = 5;
 

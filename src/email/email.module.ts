@@ -5,6 +5,7 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { Inbox } from "./entity/inbox.entity.js";
 import { InboxRepository } from "./repository/inbox.repository.js";
 import { InboxService } from "./service/inbox.service.js";
+import { EmailTopologyService } from "./service/email-topology.service.js";
 import { EmailService } from "./service/email.service.js";
 ;
 
@@ -13,6 +14,6 @@ import { EmailService } from "./service/email.service.js";
     RabbitMqModule,
     TypeOrmModule.forFeature([Inbox]),
   ],
-  providers: [OrderEmailGateway, InboxRepository, InboxService, EmailService]
+  providers: [EmailTopologyService, OrderEmailGateway, InboxRepository, InboxService, EmailService]
 })
 export class EmailModule {}

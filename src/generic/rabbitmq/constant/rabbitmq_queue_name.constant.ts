@@ -1,1 +1,1 @@
-export const RABBITMQ_QUEUE_NAME = 'order'
+export const RABBITMQ_QUEUE_NAME = 'email.order-placed'

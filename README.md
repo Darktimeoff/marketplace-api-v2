@@ -739,17 +739,23 @@ For one-way order notifications, I would keep SSE in production because the serv
 
 ### Топология
 
+Имена — как в микросервисах: exchange и routing key принадлежат продюсеру (это
+контракт события), очередь, DLX и DLQ — консюмеру и названы его именем.
+
 | Что | Имя | Кто объявляет |
 |---|---|---|
-| topic-exchange событий | `shop.events` | `RabbitMqModule` (`src/generic/rabbitmq/rabbitmq.module.ts`) |
-| рабочая очередь, quorum | `order` | консюмер (`@RabbitSubscribe` в `OrderEmailGateway`) |
-| binding | `shop.events` → `order` по `order.placed` | консюмер |
-| DLX | `email.dlx` (topic) | `RabbitMqModule` |
-| DLQ, quorum | `email.dlq`, binding `email.dead-letter` | `RabbitMqModule` |
+| topic-exchange событий заказа | `order.events` | продюсер (`RabbitMqModule`); консюмер повторяет идемпотентно в `EmailTopologyService`, чтобы стартовать раньше продюсера |
+| routing key | `order.placed` | контракт события |
+| рабочая очередь, quorum | `email.order-placed` | консюмер (`@RabbitSubscribe` в `OrderEmailGateway`) |
+| binding | `order.events` → `email.order-placed` по `order.placed` | консюмер |
+| DLX | `email.dlx` (topic) | консюмер (`EmailTopologyService`) |
+| DLQ, quorum | `email.order-placed.dlq`, binding `email.order-placed` | консюмер (`EmailTopologyService`) |
 
-Продюсер (`OrderService`) только публикует в `shop.events` и не знает, кто слушает.
-DLX висит на рабочей очереди аргументами `x-dead-letter-exchange` /
-`x-dead-letter-routing-key`.
+Продюсер (`OrderService`) только публикует в `order.events` и не знает, кто слушает:
+второй подписчик заведёт свою очередь (`analytics.order-placed`) и получит свою
+копию. DLX висит на рабочей очереди аргументами `x-dead-letter-exchange` /
+`x-dead-letter-routing-key`; dead-letter routing key равен имени очереди, поэтому один
+`email.dlx` разводит мёртвые сообщения всех очередей email-сервиса по их DLQ.
 
 ### Публикация
 
@@ -819,7 +825,7 @@ NOTHING` (`InboxRepository.createIfAbsent`). `InboxService.processOnce` откр
   `Inbox`, `acked` — по статистике очереди в management API, `prefetch` — у
   живого консюмера.
 - `demo:dlq` — публикует событие без `data`; консюмер делает `Nack(false)`, демо
-  читает сообщение из `email.dlq` и причину из `x-first-death-reason`.
+  читает сообщение из `email.order-placed.dlq` и причину из `x-first-death-reason`.
 - `demo:duplicate` — повторная доставка через **настоящий `kill -9` дочернего
   процесса-консюмера**: консюмер берёт событие (`noAck: false`), применяет эффект
   (та же вставка в `Inbox`), и его убивают до `ack`. Брокер возвращает

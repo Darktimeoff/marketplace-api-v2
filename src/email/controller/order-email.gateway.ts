@@ -27,7 +27,7 @@ export class OrderEmailGateway {
   async handleOrderPlaced(msg: OrderCreatedJobInterface) {
     console.log('handleOrderPlaced', msg)
     if (await this.inbox.isExisted(msg.id)) {
-      return true;
+      return;
     }
 
     try {
@@ -37,6 +37,6 @@ export class OrderEmailGateway {
       return new Nack(true)
     }
 
-    return true
+    return
   }
 }

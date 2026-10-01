@@ -70,3 +70,5 @@ secrets/*
 backups/
 # agent instructions
 AGENTS.md
+
+graphify-out

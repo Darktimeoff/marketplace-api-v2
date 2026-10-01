@@ -25,6 +25,9 @@ import { BackgroundJobCreateInput } from '../../background-job/input/background-
 import { InsufficientStockProductInterface } from '../interface/insufficient-stock-product.interface.js';
 import { InsufficientStockException } from '../exception/insufficient-stock.exception.js';
 import { AccountService } from '../../account/service/account.service.js';
+import { OrderStatusEnum } from '../../generic/enum/enums.js';
+import { OrderNotifyService } from './order-notify.service.js';
+import { OrderAccessService } from './order-access.service.js';
 
 interface PricedOrderItem {
   item: Omit<OrderProductCreateEntityInterface, 'orderId'>;
@@ -43,6 +46,8 @@ export class OrderService {
     private readonly backgroundJobService: BackgroundJobService,
     private readonly offers: SellerOfferService,
     private readonly accounts: AccountService,
+    private readonly orderNotify: OrderNotifyService,
+    private readonly orderAccess: OrderAccessService,
   ) {}
 
   @Transactional()
@@ -95,6 +100,17 @@ export class OrderService {
 
       throw error;
     }
+  }
+
+  async updateStatus(
+    orderId: number,
+    userId: number,
+    status: OrderStatusEnum,
+  ): Promise<Order> {
+    await this.orderAccess.canAccess(orderId, userId);
+    const updatedOrder = await this.orderRepository.updateStatusById(orderId, status);
+    this.orderNotify.notifyStatusChanged(orderId, status);
+    return updatedOrder;
   }
 
   private createRecipient(

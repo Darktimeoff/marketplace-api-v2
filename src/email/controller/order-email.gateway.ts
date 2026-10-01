@@ -8,6 +8,8 @@ import { EmailInboxRepository } from "../repository/email-inbox.repository.js";
 import { Transactional } from "@nestjs-cls/transactional";
 import type { OrderCreatedJobInterface } from "../../generic/rabbitmq/interface/order-created-job.interface.js";
 import { EmailService } from "../service/email.service.js";
+import { RABBITMQ_EXCHANGE_EMAIL_DLX } from "../../generic/rabbitmq/constant/rabbitmq_exchange_email_dlx.constant.js";
+import { RABBITMQ_ROUTING_KEY_EMAIL_DLX } from "../../generic/rabbitmq/constant/rabbitmq_routing_key_email_dlx.constant.js";
 
 @Controller()
 export class OrderEmailGateway {
@@ -22,7 +24,11 @@ export class OrderEmailGateway {
     queue: RABBITMQ_QUEUE_NAME,
     queueOptions: {
       durable: true,
-      arguments: { 'x-queue-type': 'quorum' },
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': RABBITMQ_EXCHANGE_EMAIL_DLX,
+        'x-dead-letter-routing-key': RABBITMQ_ROUTING_KEY_EMAIL_DLX
+      },
       channel: RABBITMQ_EMAIL_CHANNEL_NAME,
       consumerOptions: {
         noAck: false
@@ -33,6 +39,10 @@ export class OrderEmailGateway {
     console.log('handleOrderPlaced', msg)
     if (await this.inbox.isExisted(msg.id)) {
       return;
+    }
+
+    if (Math.random() > 0.5) {
+      return new Nack(false)
     }
 
     try {

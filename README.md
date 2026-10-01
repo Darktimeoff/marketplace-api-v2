@@ -790,6 +790,7 @@ packages/contracts-core/        @marketplace/contracts-core: доменные ф
   order/request/, response/     OrderCreateRequestInterface, OrderResponseInterface — их реализуют input и dto
   generic/type/                 CurrencyType, SerializedType<T> (Date → string)
 packages/messaging-contracts/   @marketplace/messaging-contracts: сообщения
+  generic/enum/                 TopicEnum — каталог топиков (exchange'ей), из него RabbitMqModule объявляет exchange'и
   generic/interface/            CloudEventInterface, MessageContractInterface
   order/event/                  OrderPlacedEvent { TOPIC, TYPE, SOURCE, DataInterface, MessageType }
 ```

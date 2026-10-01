@@ -1,9 +1,10 @@
 import type { OrderEntityInterface, SerializedType } from '@marketplace/contracts-core';
 import type { CloudEventInterface } from '../../generic/interface/cloud-event.interface.js';
 import type { MessageContractInterface } from '../../generic/interface/message-contract.interface.js';
+import { TopicEnum } from '../../generic/enum/topic.enum.js';
 
 export namespace OrderPlacedEvent {
-  export const TOPIC = 'order.events';
+  export const TOPIC = TopicEnum.ORDER_EVENTS;
   export const TYPE = 'order.placed';
   export const SOURCE = '/order-service';
 

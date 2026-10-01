@@ -12,6 +12,7 @@ import { CategoryModule } from './category/category.module.js';
 import { SellerModule } from './seller/seller.module.js';
 import { ProductVariantModule } from './product-variant/product-variant.module.js';
 import { ValidationResponseInterceptor } from './generic/validation/validation-response.interceptor.js';
+import { EmailModule } from './email/email.module.js';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ValidationResponseInterceptor } from './generic/validation/validation-r
     CategoryModule,
     SellerModule,
     ProductVariantModule,
+    EmailModule
   ],
   controllers: [],
   providers: [

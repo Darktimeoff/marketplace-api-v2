@@ -1,6 +1,6 @@
 import { JobTypeEnum } from "../enum/job-type.enum.js";
 
-export interface BaseJobInterface<TType extends JobTypeEnum, TData extends object> {
+export interface BaseJobInterface<TType extends JobTypeEnum = any, TData extends object = object> {
   id: string;
   type: TType;
   data: TData;

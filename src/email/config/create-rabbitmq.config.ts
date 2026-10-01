@@ -20,6 +20,7 @@ export function createRabbitMqConfig(options: ConfigurableModuleAsyncOptions<Rab
     useFactory: async (environment: EnvironmentService, secrets: SecretManagerService) => ({
       uri: getRabbitMqConnectionUri(environment, secrets),
       connectionInitOptions: { wait: true, timeout: 5000 },
+      enableControllerDiscovery: true
     })
   }
 }

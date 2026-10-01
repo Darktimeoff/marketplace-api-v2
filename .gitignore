@@ -9,6 +9,7 @@ docs.html
 
 # compiled output
 /dist
+packages/*/dist
 /build
 *.tsbuildinfo
 

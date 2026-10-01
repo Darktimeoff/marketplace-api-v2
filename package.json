@@ -6,12 +6,15 @@
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "build": "nest build",
+    "build": "npm run build --workspaces --if-present && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "npm run bootstrap:secrets && nest start",
     "start:dev": "npm run bootstrap:secrets && nest start --watch",
-    "lint": "oxlint src/ test/",
+    "lint": "oxlint src/ test/ packages/",
     "check:env": "node scripts/check-env-example.mjs",
     "rotate:db-password": "node scripts/rotate-db-password.mjs",
     "bootstrap:secrets": "node scripts/bootstrap-secrets.mjs",
@@ -41,6 +44,8 @@
     "restore": "bash scripts/restore-drill.sh"
   },
   "dependencies": {
+    "@marketplace/contracts-core": "*",
+    "@marketplace/messaging-contracts": "*",
     "@golevelup/nestjs-rabbitmq": "^9.1.0",
     "@infisical/sdk": "^5.0.2",
     "@nestjs-cls/transactional": "^3.3.0",

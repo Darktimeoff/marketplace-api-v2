@@ -5,6 +5,9 @@ export default defineConfig({
   // Resolves the path aliases declared in tsconfig.json, including the ones
   // added by `nest g library`.
   plugins: [tsconfigPaths()],
+  resolve: {
+    conditions: ['development'],
+  },
   test: {
     globals: true,
     root: './',

@@ -18,9 +18,12 @@ Course project homework #1: OpenAPI contract for the Marketplace API
 ```bash
 cp .env.example .env
 cp secrets/db_password.txt.example secrets/db_password.txt
-docker compose up -d --wait db
+cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
+docker compose up -d --wait db rabbitmq
 
 export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
+export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
+export BROKER_URL=amqp://root:changeme@127.0.0.1:5672   # схема amqp, порт AMQP 5672 (15672 — веб-морда)
 export SKIP_VAULT=1    # у грейдера нет доступа к хранилищу
 
 npm ci
@@ -38,6 +41,11 @@ npm run report
 npm run demo:race
 npm run demo:workers
 npm run demo:retry
+
+# ДЗ #19 — RabbitMQ (API на :3000 должен быть остановлен: демо сами поднимают приложение)
+npm run demo:publish
+npm run demo:dlq
+npm run demo:duplicate
 
 npm run migrate:revert && npm run migrate
 ```
@@ -722,6 +730,108 @@ Set `ORDER_STATUS` to any `OrderStatusEnum` value and `EVENT_TIMEOUT_MS` to chan
 | Cost per event | Framing and protocol state are more involved; efficient for frequent two-way messages | Small UTF-8 text event over HTTP; reconnects are straightforward |
 
 For one-way order notifications, I would keep SSE in production because the server only needs to push updates and native `EventSource` reconnects with `Last-Event-ID`. WebSockets are a better fit when clients also need frequent real-time commands or interactive bidirectional traffic. With two app instances, process-local Socket.IO rooms and event buffers split subscribers and replay history; use a shared Socket.IO adapter and shared pub/sub or event store to coordinate delivery and recovery.
+
+## Async-події через RabbitMQ (ДЗ #19)
+
+Оформление заказа (`POST /order`) публикует событие `order.placed`, а email-консюмер
+подтверждает заказ письмом. Брокер — RabbitMQ 4.3 (`rabbitmq:4.3-management` в
+`docker-compose.yml`), healthcheck — `rabbitmq-diagnostics -q check_running`.
+
+### Топология
+
+| Что | Имя | Кто объявляет |
+|---|---|---|
+| topic-exchange событий | `shop.events` | `RabbitMqModule` (`src/generic/rabbitmq/rabbitmq.module.ts`) |
+| рабочая очередь, quorum | `order` | консюмер (`@RabbitSubscribe` в `OrderEmailGateway`) |
+| binding | `shop.events` → `order` по `order.placed` | консюмер |
+| DLX | `email.dlx` (topic) | `RabbitMqModule` |
+| DLQ, quorum | `email.dlq`, binding `email.dead-letter` | `RabbitMqModule` |
+
+Продюсер (`OrderService`) только публикует в `shop.events` и не знает, кто слушает.
+DLX висит на рабочей очереди аргументами `x-dead-letter-exchange` /
+`x-dead-letter-routing-key`.
+
+### Публикация
+
+- Контракт события: `{ id, type, data, correlationId, createdAt }`. `id` — это
+  `order.publicId`: стабильный ключ, по которому консюмер узнаёт дубль. `data` —
+  отдельно собранный объект, а не ORM-сущность.
+- Канал — confirm-канал (golevelup/amqp-connection-manager открывает его по
+  умолчанию), `await publish()` ждёт `basic.ack` брокера.
+- `mandatory: true` + обработчик `return` в `OrderService.onModuleInit`: сообщение без
+  binding не исчезает молча, а логируется как `unroutable`. Положительный confirm
+  при этом всё равно приходит, поэтому одного confirm мало.
+- `persistent: true` для всех публикаций (`defaultPublishOptions`).
+
+### Консюмер
+
+- `noAck: false`. golevelup отправляет `ack` только после того, как промис хендлера
+  зарезолвился, то есть после коммита эффекта.
+- Ошибка формы события (нет валидного `id` или `data`) — `Nack(false)`: такое
+  сообщение не обработается никогда, поэтому сразу уходит в DLQ (причина `rejected`).
+- Временная ошибка (БД, отправка письма) — `Nack(true)`: повтор.
+
+### prefetch
+
+`prefetchCount: 10` на отдельном канале `email` консюмера: обработка события ≈1 с
+(`EmailService.sendOrderCreated`), значит 10 × 1 с = 10 с ≪ 30 мин `consumer_timeout`,
+а не-ноль не даёт одному консюмеру забрать всю очередь у второго.
+
+### Идемпотентность
+
+Паттерн — Idempotent Consumer / Transactional Inbox. Эффект выражен через
+натуральный ключ: `INSERT INTO "Inbox" ("consumer", "messageId") … ON CONFLICT DO
+NOTHING` (`InboxRepository.createIfAbsent`). `InboxService.processOnce` открывает
+транзакцию, вставляет строку и только если она вставилась, вызывает эффект
+(`EmailService.sendOrderCreated`) — в той же транзакции. Не вставилась — это дубль,
+консюмер логирует `skipped` и подтверждает.
+
+Слои: `OrderEmailGateway` — адаптер RabbitMQ (валидация конверта, результат →
+`ack`/`nack`), `InboxService` — дедуп и граница транзакции, `EmailService` — только
+бизнес, ничего не знает ни о брокере, ни о дублях. Ключ составной
+`(consumer, messageId)`: второй обработчик того же события в email-сервисе получит
+своё имя консюмера и не будет пропускать работу из-за чужой строки. Таблица живёт
+в данных email-сервиса, рядом с эффектом, который она защищает. Хранилище — Postgres, поэтому
+гарантия переживает рестарт и работает между несколькими инстансами (а не `Set` в
+памяти).
+
+### Почему это at-least-once, а не exactly-once
+
+Доставка у RabbitMQ — at-least-once: брокер повторяет всё, на что не получил `ack`,
+а `ack` может не доехать (падение консюмера после эффекта, обрыв сети). Exactly-once
+доставки нет ни у кого. Чтобы *результат* был один, понадобилось три вещи: `ack`
+строго после эффекта (иначе работа теряется), эффект с ключом идемпотентности
+`id` события в Postgres (иначе повтор удваивает эффект) и DLQ для сообщений,
+которые не обработаются никогда (иначе они крутятся вечно). At-least-once доставка
++ идемпотентный эффект = один результат. Граница честности: дедуп защищает запись в
+БД, а не внешнее письмо — если письмо ушло, а коммит упал, повтор отправит его ещё
+раз. В проде это закрывается ключом идемпотентности у почтового провайдера
+(тот же `id`).
+
+### Демо
+
+Каждое демо поднимает настоящее приложение (`dist/main.js`) дочерним процессом на
+порту `DEMO_APP_PORT` (3109), чистит обе очереди, проверяет, что других консюмеров
+нет, печатает `ключ=значение` и завершается с кодом ≠ 0, если инвариант нарушен.
+
+- `demo:publish` — 5 заказов через `POST /order` (перед этим докидывает остаток
+  оффера и депозит покупателю), считает доставки по логам консюмера, эффекты по
+  `Inbox`, `acked` — по статистике очереди в management API, `prefetch` — у
+  живого консюмера.
+- `demo:dlq` — публикует событие без `data`; консюмер делает `Nack(false)`, демо
+  читает сообщение из `email.dlq` и причину из `x-first-death-reason`.
+- `demo:duplicate` — повторная доставка через **настоящий `kill -9` дочернего
+  процесса-консюмера**: консюмер берёт событие (`noAck: false`), применяет эффект
+  (та же вставка в `Inbox`), и его убивают до `ack`. Брокер возвращает
+  сообщение в очередь, приложение получает его повторно и пропускает как дубль.
+
+Мои прогоны (два подряд, числа совпали):
+
+| Демо | Вывод |
+|---|---|
+| `demo:publish` | `published=5 delivered=5 effect=5 acked=5 work=0 dlq=0 prefetch=10` |
+| `demo:dlq` | `rejected=1 work=0 dlq=1 dlq-reason=rejected effect=0` |
+| `demo:duplicate` | `deliveries=2 effect=1 skipped=1 work=0` |
 
 ## Checks (acceptance criteria)
 

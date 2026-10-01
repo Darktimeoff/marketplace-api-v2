@@ -7,6 +7,7 @@ import { createAuthenticatedInfisicalClient } from './lib/infisical.mjs';
 const rootDir = path.resolve(fileURLToPath(import.meta.url), '../..');
 const envPath = path.join(rootDir, '.env');
 const dbPasswordPath = path.join(rootDir, 'secrets', 'db_password.txt');
+const rabbitmqPasswordPath = path.join(rootDir, 'secrets', 'rabbitmq_password.txt');
 
 async function main() {
   const envSource = await readFile(envPath, 'utf8');
@@ -20,16 +21,17 @@ async function main() {
   });
   const secretsMap = Object.fromEntries(secrets.map((secret) => [secret.secretKey, secret.secretValue]));
 
-  for (const key of ['DBUSER', 'DBPASSWORD']) {
+  for (const key of ['DBUSER', 'DBPASSWORD', 'RABBITMQ_PASSWORD', 'RABBITMQ_USER']) {
     if (!secretsMap[key]) {
       throw new Error(`Infisical project/environment is missing the "${key}" secret`);
     }
   }
 
   await writeFileAtomic(dbPasswordPath, secretsMap.DBPASSWORD, { mode: 0o600 });
+  await writeFileAtomic(rabbitmqPasswordPath, secretsMap.RABBITMQ_PASSWORD, { mode: 0o600 });
 
-  const updatedEnvSource = upsertEnvVar(envSource, 'DBUSER', secretsMap.DBUSER);
-  await writeFileAtomic(envPath, updatedEnvSource);
+  await writeFileAtomic(envPath, upsertEnvVar(envSource, 'DBUSER', secretsMap.DBUSER));
+  await writeFileAtomic(envPath, upsertEnvVar(envSource, 'RABBITMQ_USER', secretsMap.RABBITMQ_USER));
 
   console.log(
     `Pulled DBUSER and DBPASSWORD from Infisical (${env.INFISICAL_ENVIRONMENT}) into ${path.relative(rootDir, envPath)} and ${path.relative(rootDir, dbPasswordPath)}.`,

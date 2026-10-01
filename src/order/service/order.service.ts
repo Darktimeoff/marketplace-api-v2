@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { EntityNotFoundError } from 'typeorm';
 import { OrderRepository } from '../repository/order.repository.js';
@@ -28,6 +28,12 @@ import { AccountService } from '../../account/service/account.service.js';
 import { OrderStatusEnum } from '../../generic/enum/enums.js';
 import { OrderNotifyService } from './order-notify.service.js';
 import { OrderAccessService } from './order-access.service.js';
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
+import { ConfirmChannel, ConsumeMessage } from 'amqplib';
+import { OrderCreatedJobInterface } from '../../generic/rabbitmq/interface/order-created-job.interface.js';
+import { JobTypeEnum } from '../../generic/rabbitmq/enum/job-type.enum.js';
+import { RABBITMQ_EXCHANGE_NAME } from '../../generic/rabbitmq/constant/rabbitmq_exchange_name.constant.js';
+import { RABBITMQ_ROUTING_KEY } from '../../generic/rabbitmq/constant/rabbitmq_routing_key.constant.js';
 
 interface PricedOrderItem {
   item: Omit<OrderProductCreateEntityInterface, 'orderId'>;
@@ -36,7 +42,9 @@ interface PricedOrderItem {
 }
 
 @Injectable()
-export class OrderService {
+export class OrderService implements OnModuleInit {
+  private readonly logger = new Logger(OrderService.name)
+  
   constructor(
     private readonly orderRepository: OrderRepository,
     private readonly orderRecipientRepository: OrderRecipientRepository,
@@ -48,7 +56,16 @@ export class OrderService {
     private readonly accounts: AccountService,
     private readonly orderNotify: OrderNotifyService,
     private readonly orderAccess: OrderAccessService,
-  ) {}
+    private readonly amqpConnection: AmqpConnection
+  ) { }
+
+  async onModuleInit() {
+    await this.amqpConnection.managedChannel.addSetup(async (channel: ConfirmChannel) => {
+        channel.on('return', (msg: ConsumeMessage) => {
+          this.logger.error(`unroutable ${msg.fields.exchange}/${msg.fields.routingKey}`);
+        });
+      });
+  }
 
   @Transactional()
   async create(input: OrderCreateInput): Promise<Order> {
@@ -86,6 +103,7 @@ export class OrderService {
     await this.createItems(pricedItems, order.id);
 
     await this.backgroundJobService.create(this.toBackgroundJobInput(order));
+    await this.amqpConnection.publish(RABBITMQ_EXCHANGE_NAME, RABBITMQ_ROUTING_KEY, this.toOrderCreatedJob(order))
 
     return order;
   }
@@ -188,6 +206,25 @@ export class OrderService {
       orderId: order.id,
       payload: {},
     };
+  }
+
+  private toOrderCreatedJob(order: Order): OrderCreatedJobInterface {
+    return {
+      id: order.publicId,
+      type: JobTypeEnum.ORDER_CREATED,
+      data: {
+        id: order.id,
+        publicId: order.publicId,
+        totalAmount: order.totalAmount,
+        discountAmount: order.discountAmount,
+        status: order.status,
+        currency: order.currency,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt
+      },
+      correlationId: order.publicId,
+      createdAt: new Date()
+    }
   }
 
   private async reserveStockOrFail(

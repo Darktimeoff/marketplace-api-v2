@@ -38,6 +38,7 @@
     "restore": "bash scripts/restore-drill.sh"
   },
   "dependencies": {
+    "@golevelup/nestjs-rabbitmq": "^9.1.0",
     "@infisical/sdk": "^5.0.2",
     "@nestjs-cls/transactional": "^3.3.0",
     "@nestjs-cls/transactional-adapter-typeorm": "^1.4.0",

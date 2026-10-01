@@ -11,6 +11,8 @@ const environmentSchema = z.object({
   INFISICAL_PROJECT_ID: z.string().min(1),
   INFISICAL_ENVIRONMENT: z.enum(['dev', 'stagin', 'prod']),
   WORKER_POOL_SIZE: z.coerce.number().int().min(1).default(4),
+  RABBITMQ_HOST: z.string().min(1).default('rabbitmq'),
+  RABBITMQ_PORT: z.coerce.number().int().min(1).max(65535).default(5672),
 })
 
 export type EnvironmentType = z.infer<typeof environmentSchema>

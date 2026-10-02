@@ -7,11 +7,19 @@ import { User } from '../../user/entity/user.entity.js';
 
 @Injectable()
 export class AccountRepository {
-  constructor(private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>) {}
+  constructor(private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>) { }
 
-  async lockUserForUpdate(userId: User['id']): Promise<void> {
-    await this.txHost.tx.getRepository(User).findOne({
-      where: { id: userId },
+  async isCustomerHasBalance(userId: number) {
+    return await this.txHost.tx.getRepository(Transaction).exists({
+      where: {
+        userId
+      }
+    })
+  }
+
+  async lockForUpdate(userId: User['id']): Promise<void> {
+    await this.txHost.tx.getRepository(Transaction).findOne({
+      where: { userId },
       lock: { mode: 'pessimistic_write' },
     });
   }

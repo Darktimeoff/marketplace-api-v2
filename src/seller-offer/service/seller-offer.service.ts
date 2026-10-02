@@ -53,4 +53,9 @@ export class SellerOfferService {
         .map((item) => ({ ...item, available: stockById.get(item.offerId) ?? 0 })),
     );
   }
+
+  @Transactional()
+  release(orderPublicId: string): Promise<number> {
+    return this.stockReservationRepository.release(orderPublicId);
+  }
 }

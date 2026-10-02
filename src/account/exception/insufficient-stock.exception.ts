@@ -1,9 +1,12 @@
-import { UnprocessableEntityException } from '@nestjs/common';
+import { AccountCustomerChargeRequest } from "@marketplace/messaging-contracts";
 
-export class InsufficientBalanceException extends UnprocessableEntityException {
+type RejectedResponseDataType = Extract<AccountCustomerChargeRequest.ResponseDataType, { status: 'rejected' }>;
+
+export class AccountCustomerChargeRejectedException extends Error {
   constructor(
-    readonly balance: number,
-    readonly amount: number,
+    readonly reason: RejectedResponseDataType['reason'],
+    readonly amount: number = 0,
+    readonly balance: number = 0
   ) {
     super(`Insufficient balance: ${balance} available, ${amount} required`);
   }

@@ -42,4 +42,24 @@ export class StockReservationRepository {
 
     return outcomes;
   }
+
+  async release(orderPublicId: StockReservationCreateEntityInterface['orderPublicId']): Promise<number> {
+    const [rows]: [{ id: number }[], number] = await this.txHost.tx.query(
+      `WITH released AS (
+         UPDATE "StockReservation"
+            SET "status" = 'released'
+          WHERE "orderPublicId" = $1
+            AND "status" IN ('reserved', 'confirmed')
+         RETURNING "offerId", "quantity"
+       )
+       UPDATE "SellerOffer" AS offer
+          SET "reservedQuantity" = offer."reservedQuantity" - released."quantity"
+         FROM released
+        WHERE offer."id" = released."offerId"
+       RETURNING offer."id"`,
+      [orderPublicId],
+    );
+
+    return rows.length;
+  }
 }

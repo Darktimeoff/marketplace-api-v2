@@ -1,9 +1,10 @@
-import { Nack, RabbitRPC } from "@golevelup/nestjs-rabbitmq";
-import { StockReserveRequest } from "@marketplace/messaging-contracts";
+import { Nack, RabbitRPC, RabbitSubscribe } from "@golevelup/nestjs-rabbitmq";
+import { StockReleaseCommand, StockReserveRequest } from "@marketplace/messaging-contracts";
 import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { isUUID } from "class-validator";
 import { SellerOfferReserveTopologyEnum } from "../enum/seller-offer-reserve-topology.enum.js";
+import { SellerOfferReleaseTopologyEnum } from "../enum/seller-offer-release-topology.enum.js";
 import { SellerOfferService } from "../service/seller-offer.service.js";
 import { StockReservationRejectedException } from "../exception/stock-reservation-rejected.exception.js";
 
@@ -44,6 +45,37 @@ export class OrderSellerOfferGateway {
       }
 
       throw e
+    }
+  }
+
+  @RabbitSubscribe({
+    exchange: StockReleaseCommand.TOPIC,
+    routingKey: StockReleaseCommand.TYPE,
+    queue: SellerOfferReleaseTopologyEnum.QUEUE,
+    queueOptions: {
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': SellerOfferReleaseTopologyEnum.DLX,
+        'x-dead-letter-routing-key': SellerOfferReleaseTopologyEnum.QUEUE
+      },
+      consumerOptions: {
+        noAck: false
+      }
+    }
+  })
+  async handleStockRelease(msg: StockReleaseCommand.MessageType): Promise<Nack | void> {
+    if (msg?.specversion !== '1.0' || msg.type !== StockReleaseCommand.TYPE || typeof msg.data?.orderPublicId !== 'string' || !isUUID(msg.data.orderPublicId)) {
+      this.logger.warn(`rejected id=${msg?.id}`)
+      return new Nack(false)
+    }
+
+    try {
+      const released = await this.offers.release(msg.data.orderPublicId)
+      this.logger.log(`released order=${msg.data.orderPublicId} offers=${released}`)
+    } catch (e) {
+      this.logger.error(`failed release order=${msg.data.orderPublicId}`, e instanceof Error ? e.stack : String(e))
+      return new Nack(true)
     }
   }
 

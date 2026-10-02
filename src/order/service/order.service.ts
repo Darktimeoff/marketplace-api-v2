@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { EntityNotFoundError } from 'typeorm';
@@ -25,12 +26,12 @@ import { BackgroundJobService } from '../../background-job/service/background-jo
 import { BackgroundJobCreateInput } from '../../background-job/input/background-job-create.input.js';
 import { InsufficientStockProductInterface } from '../interface/insufficient-stock-product.interface.js';
 import { InsufficientStockException } from '../exception/insufficient-stock.exception.js';
-import { AccountService } from '../../account/service/account.service.js';
 import { OrderNotifyService } from './order-notify.service.js';
 import { OrderAccessService } from './order-access.service.js';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ConfirmChannel, ConsumeMessage } from 'amqplib';
-import { CLOUD_EVENT_CONTENT_TYPE, OrderPlacedEvent, StockReserveRequest } from '@marketplace/messaging-contracts';
+import { AccountCustomerChargeRequest, CLOUD_EVENT_CONTENT_TYPE, OrderPlacedEvent, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
+import { BalanceException } from '../exception/balance.exception.js';
 
 interface PricedOrderItem {
   item: Omit<OrderProductCreateEntityInterface, 'orderId'>;
@@ -50,7 +51,6 @@ export class OrderService implements OnModuleInit {
     private readonly deliveryAddressService: DeliveryAddressService,
     private readonly backgroundJobService: BackgroundJobService,
     private readonly offers: SellerOfferService,
-    private readonly accounts: AccountService,
     private readonly orderNotify: OrderNotifyService,
     private readonly orderAccess: OrderAccessService,
     private readonly amqpConnection: AmqpConnection
@@ -93,6 +93,22 @@ export class OrderService implements OnModuleInit {
       input.currency,
     );
 
+    await this.createItems(pricedItems, order.id);
+
+    try {
+      await this.reserveChargeAndPublish(order, input);
+    } catch (error) {
+      if (!(error instanceof InsufficientStockException)) {
+        await this.releaseStock(order.publicId);
+      }
+
+      throw error;
+    }
+
+    return order;
+  }
+
+  private async reserveChargeAndPublish(order: Order, input: OrderCreateInput): Promise<void> {
     const { data: result } = await this.amqpConnection.request<StockReserveRequest.ResponseMessageType>({
       exchange: StockReserveRequest.TOPIC,
       routingKey: StockReserveRequest.TYPE,
@@ -110,16 +126,31 @@ export class OrderService implements OnModuleInit {
       );
     }
 
-    await this.accounts.charge(recipient.buyerId, Number(order.totalAmount));
+    const chargeResult = await this.amqpConnection.request<AccountCustomerChargeRequest.ResponseMessageType>({
+      exchange: AccountCustomerChargeRequest.TOPIC,
+      routingKey: AccountCustomerChargeRequest.TYPE,
+      payload: this.toAccountCustomerChargeRequest(order.publicId, input.recipient.buyerId, order.totalAmount),
+      timeout: 5000
+    })
 
-    await this.createItems(pricedItems, order.id);
-
+    if (chargeResult.data.status === 'rejected') { 
+      throw new BalanceException(input.recipient.buyerId, Number(chargeResult.data.available), Number(order.totalAmount))
+    }
+    
     await this.backgroundJobService.create(this.toBackgroundJobInput(order));
     await this.amqpConnection.publish(OrderPlacedEvent.TOPIC, OrderPlacedEvent.TYPE, this.toOrderPlacedEvent(order), {
       contentType: CLOUD_EVENT_CONTENT_TYPE,
     })
+  }
 
-    return order;
+  private async releaseStock(orderPublicId: string): Promise<void> {
+    try {
+      await this.amqpConnection.publish(StockReleaseCommand.TOPIC, StockReleaseCommand.TYPE, this.toStockReleaseCommand(orderPublicId), {
+        contentType: CLOUD_EVENT_CONTENT_TYPE,
+      })
+    } catch (error) {
+      this.logger.error(`failed to release stock for order=${orderPublicId}`, error instanceof Error ? error.stack : String(error));
+    }
   }
 
   async findById(id: Order['id']): Promise<Order> {
@@ -245,6 +276,20 @@ export class OrderService implements OnModuleInit {
     }
   }
 
+  private toStockReleaseCommand(orderPublicId: string): StockReleaseCommand.MessageType {
+    return {
+      specversion: '1.0',
+      id: randomUUID(),
+      source: StockReleaseCommand.SOURCE,
+      type: StockReleaseCommand.TYPE,
+      time: new Date().toISOString(),
+      datacontenttype: 'application/json',
+      subject: orderPublicId,
+      correlationid: orderPublicId,
+      data: { orderPublicId },
+    }
+  }
+
   private toStockReserveRequest(id: string, items: OrderCreateInput['items']): StockReserveRequest.MessageType {
     return {
       specversion: '1.0',
@@ -256,6 +301,20 @@ export class OrderService implements OnModuleInit {
       subject: id,
       correlationid: id,
       data: { items: items.map(({ offerId, quantity }) => ({ offerId, quantity })) },
+    }
+  }
+
+  private toAccountCustomerChargeRequest(id: string, customerId: OrderCreateRecipientInput['buyerId'], amount: string): AccountCustomerChargeRequest.MessageType {
+    return {
+      specversion: '1.0',
+      id,
+      source: AccountCustomerChargeRequest.SOURCE,
+      type: AccountCustomerChargeRequest.TYPE,
+      time: new Date().toISOString(),
+      datacontenttype: 'application/json',
+      subject: id,
+      correlationid: id,
+      data: { customerId, amount  },
     }
   }
 }

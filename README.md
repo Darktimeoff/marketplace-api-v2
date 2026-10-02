@@ -42,11 +42,6 @@ npm run demo:race
 npm run demo:workers
 npm run demo:retry
 
-# ДЗ #19 — RabbitMQ (API на :3000 должен быть остановлен: демо сами поднимают приложение)
-npm run demo:publish
-npm run demo:dlq
-npm run demo:duplicate
-
 npm run migrate:revert && npm run migrate
 ```
 
@@ -386,37 +381,6 @@ npm run demo:retry     # повтор транзакции на 40001
 сериализуются локом, а не пулом. Ни одному checkout-у не нужно второе соединение,
 пока он держит первое, поэтому взаимной блокировки на пуле возникнуть не может.
 
-### Воркер-пул и SKIP LOCKED
-
-`claimNext` (`src/background-job/repository/background-job.repository.ts`) берёт
-следующую задачу запросом `SELECT … FOR UPDATE SKIP LOCKED` — через
-QueryBuilder это `setLock('pessimistic_write')` + `setOnLocked('skip_locked')`.
-Без `SKIP LOCKED` второй воркер встал бы в очередь за первым на ту же строку и
-пул из четырёх работал бы со скоростью одного.
-
-Транзакция держится открытой **всё время обработки** задачи, а не закрывается
-сразу после claim: лок снимается только на `COMMIT`, поэтому «упал воркер —
-задачу подберёт другой» получается бесплатно. Если процесс умрёт на середине,
-транзакция не закоммитится, лок исчезнет вместе с соединением, и задача вернётся
-в `QUEUED` сама — без отдельного cron-а «отпусти зависшие». Статус `done` и
-результат работы пишутся одним оператором и коммитятся вместе с самой работой,
-так что разъехаться они не могут.
-
-Пустой результат `SKIP LOCKED` означает «свободных нет **прямо сейчас**», а не
-«очередь пуста»: оставшиеся строки могут быть просто залочены соседями. Поэтому
-воркер на пустом ответе не выходит, а переспрашивает счётчик по статусам
-(`countPending`) и останавливается, только если в `QUEUED` и `PROCESSING` не
-осталось ничего (`src/background-job/worker/worker-pool.service.ts`).
-
-«Ровно один раз» доказывает колонка `processedCount` **в самой строке задачи**, а
-не счётчик в памяти скрипта: счётчик в памяти доказывал бы только то, что скрипт
-умеет считать. `demo:workers` печатает `обработано дважды: 0` по результату
-запроса `count(*) FILTER (WHERE "processedCount" > 1)`.
-
-Тот же пул работает и как долгоживущий процесс: `npm run worker` (размер пула —
-`WORKER_POOL_SIZE`). Несколько таких процессов можно запускать параллельно —
-разводит их по разным задачам не код, а `SKIP LOCKED`.
-
 ### Почему retry ловит всего два кода
 
 `DEADLOCK_ERROR_CODES = { '40P01', '40001' }`
@@ -655,7 +619,6 @@ immediately with a validation error if any are missing or invalid.
 | `DBPORT`  | no       | `3000`  | Postgres port (host-mapped, see `docker-compose.yml`) |
 | `DBUSER`  | yes      | —       | Postgres role/user                    |
 | `DBNAME`  | yes      | —       | Postgres database name                |
-| `WORKER_POOL_SIZE` | no | `4` | Сколько воркеров поднимает `npm run worker` |
 
 Секрет подключения к базе живёт **в хранилище секретов из ДЗ #11**, а не в env-файле:
 пароль `DBPASSWORD` `SecretManagerService` читает из Infisical (окружения `dev` и
@@ -730,152 +693,6 @@ Set `ORDER_STATUS` to any `OrderStatusEnum` value and `EVENT_TIMEOUT_MS` to chan
 | Cost per event | Framing and protocol state are more involved; efficient for frequent two-way messages | Small UTF-8 text event over HTTP; reconnects are straightforward |
 
 For one-way order notifications, I would keep SSE in production because the server only needs to push updates and native `EventSource` reconnects with `Last-Event-ID`. WebSockets are a better fit when clients also need frequent real-time commands or interactive bidirectional traffic. With two app instances, process-local Socket.IO rooms and event buffers split subscribers and replay history; use a shared Socket.IO adapter and shared pub/sub or event store to coordinate delivery and recovery.
-
-## Async-події через RabbitMQ (ДЗ #19)
-
-Оформление заказа (`POST /order`) публикует событие `order.placed`, а email-консюмер
-подтверждает заказ письмом. Брокер — RabbitMQ 4.3 (`rabbitmq:4.3-management` в
-`docker-compose.yml`), healthcheck — `rabbitmq-diagnostics -q check_running`.
-
-### Топология
-
-Имена — как в микросервисах: exchange и routing key принадлежат продюсеру (это
-контракт события), очередь, DLX и DLQ — консюмеру и названы его именем.
-
-| Что | Имя | Кто объявляет |
-|---|---|---|
-| topic-exchange событий заказа | `order.events` | продюсер (`RabbitMqModule`); консюмер повторяет идемпотентно в `EmailTopologyService`, чтобы стартовать раньше продюсера |
-| routing key | `order.placed` | контракт события |
-| рабочая очередь, quorum | `email.order-placed` | консюмер (`@RabbitSubscribe` в `OrderEmailGateway`) |
-| binding | `order.events` → `email.order-placed` по `order.placed` | консюмер |
-| DLX | `email.dlx` (topic) | консюмер (`EmailTopologyService`) |
-| DLQ, quorum | `email.order-placed.dlq`, binding `email.order-placed` | консюмер (`EmailTopologyService`) |
-
-Продюсер (`OrderService`) только публикует в `order.events` и не знает, кто слушает:
-второй подписчик заведёт свою очередь (`analytics.order-placed`) и получит свою
-копию. DLX висит на рабочей очереди аргументами `x-dead-letter-exchange` /
-`x-dead-letter-routing-key`; dead-letter routing key равен имени очереди, поэтому один
-`email.dlx` разводит мёртвые сообщения всех очередей email-сервиса по их DLQ.
-
-### Публикация
-
-- Событие — CloudEvents 1.0 в structured mode: весь конверт в теле JSON,
-  `content-type: application/cloudevents+json`.
-
-  | Атрибут | Значение | Зачем |
-  |---|---|---|
-  | `specversion` | `1.0` | версия стандарта |
-  | `id` | `order.publicId` | стабильный ключ: по нему консюмер узнаёт дубль |
-  | `source` | `/order-service` | кто опубликовал; уникальность события по стандарту — `(source, id)` |
-  | `type` | `order.placed` | тип события, он же routing key |
-  | `time` | ISO 8601 | когда опубликовано |
-  | `datacontenttype` | `application/json` | формат `data` |
-  | `subject` | `order.publicId` | о какой сущности событие |
-  | `correlationid` | `order.publicId` | расширение для сквозной трассировки (в CloudEvents только lowercase) |
-  | `data` | поля заказа | отдельно собранный объект, а не ORM-сущность; даты — ISO-строки |
-- Канал — confirm-канал (golevelup/amqp-connection-manager открывает его по
-  умолчанию), `await publish()` ждёт `basic.ack` брокера.
-- `mandatory: true` + обработчик `return` в `OrderService.onModuleInit`: сообщение без
-  binding не исчезает молча, а логируется как `unroutable`. Положительный confirm
-  при этом всё равно приходит, поэтому одного confirm мало.
-- `persistent: true` для всех публикаций (`defaultPublishOptions`).
-
-### Контракты
-
-Контракты вынесены в два workspace-пакета и не знают про брокер:
-
-```
-packages/contracts-core/        @marketplace/contracts-core: доменные формы
-  order/entity/                 OrderEntityInterface — его реализует ORM-сущность Order
-  order/request/, response/     OrderCreateRequestInterface, OrderResponseInterface — их реализуют input и dto
-  order/enum/, phone/enum/      OrderStatusEnum, CountryCodeEnum — единственный источник, приложение импортирует их отсюда
-  generic/enum/                 CurrencyEnum
-  generic/type/                 SerializedType<T> (Date → string)
-packages/messaging-contracts/   @marketplace/messaging-contracts: сообщения
-  generic/enum/                 TopicEnum — каталог топиков (exchange'ей), из него RabbitMqModule объявляет exchange'и
-  generic/interface/            CloudEventInterface, MessageContractInterface
-  order/event/                  OrderPlacedEvent { TOPIC, TYPE, SOURCE, DataInterface, MessageType }
-```
-
-Сущность, HTTP-ответ и событие выводятся из одного `OrderEntityInterface`, поэтому
-не расходятся: `OrderPlacedEvent.DataInterface = SerializedType<Pick<OrderEntityInterface, …>>`.
-`TOPIC`/`TYPE` — нейтральные имена; в RabbitMQ их превращает в exchange и routing key
-только инфраструктура приложения (`@RabbitSubscribe`, `publish`), при переходе на
-Kafka контракты не меняются. Пакеты отдают TypeScript-исходники для типов
-(`npx tsc --noEmit` работает на свежем клоне без сборки) и `dist/` для рантайма;
-`npm run build` сначала собирает их, потом приложение.
-
-### Консюмер
-
-- `noAck: false`. golevelup отправляет `ack` только после того, как промис хендлера
-  зарезолвился, то есть после коммита эффекта.
-- Ошибка формы события (не CloudEvents 1.0, чужой `type`, невалидный `id`, нет `data`) — `Nack(false)`: такое
-  сообщение не обработается никогда, поэтому сразу уходит в DLQ (причина `rejected`).
-- Временная ошибка (БД, отправка письма) — `Nack(true)`: повтор.
-
-### prefetch
-
-`prefetchCount: 10` на отдельном канале `email` консюмера: обработка события ≈1 с
-(`EmailService.sendOrderCreated`), значит 10 × 1 с = 10 с ≪ 30 мин `consumer_timeout`,
-а не-ноль не даёт одному консюмеру забрать всю очередь у второго.
-
-### Идемпотентность
-
-Паттерн — Idempotent Consumer / Transactional Inbox. Эффект выражен через
-натуральный ключ: `INSERT INTO "Inbox" ("consumer", "messageId") … ON CONFLICT DO
-NOTHING` (`InboxRepository.createIfAbsent`). `InboxService.processOnce` открывает
-транзакцию, вставляет строку и только если она вставилась, вызывает эффект
-(`EmailService.sendOrderCreated`) — в той же транзакции. Не вставилась — это дубль,
-консюмер логирует `skipped` и подтверждает.
-
-Слои: `OrderEmailGateway` — адаптер RabbitMQ (валидация конверта, результат →
-`ack`/`nack`), `InboxService` — дедуп и граница транзакции, `EmailService` — только
-бизнес, ничего не знает ни о брокере, ни о дублях. Ключ составной
-`(consumer, messageId)`: второй обработчик того же события в email-сервисе получит
-своё имя консюмера и не будет пропускать работу из-за чужой строки. Таблица живёт
-в данных email-сервиса, рядом с эффектом, который она защищает. По CloudEvents событие
-уникально по `(source, id)`; источник сейчас один, поэтому хватает `(consumer, id)` — со
-вторым источником в ключ добавится `source`. Хранилище — Postgres, поэтому
-гарантия переживает рестарт и работает между несколькими инстансами (а не `Set` в
-памяти).
-
-### Почему это at-least-once, а не exactly-once
-
-Доставка у RabbitMQ — at-least-once: брокер повторяет всё, на что не получил `ack`,
-а `ack` может не доехать (падение консюмера после эффекта, обрыв сети). Exactly-once
-доставки нет ни у кого. Чтобы *результат* был один, понадобилось три вещи: `ack`
-строго после эффекта (иначе работа теряется), эффект с ключом идемпотентности
-`id` события в Postgres (иначе повтор удваивает эффект) и DLQ для сообщений,
-которые не обработаются никогда (иначе они крутятся вечно). At-least-once доставка
-+ идемпотентный эффект = один результат. Граница честности: дедуп защищает запись в
-БД, а не внешнее письмо — если письмо ушло, а коммит упал, повтор отправит его ещё
-раз. В проде это закрывается ключом идемпотентности у почтового провайдера
-(тот же `id`).
-
-### Демо
-
-Каждое демо поднимает настоящее приложение (`dist/main.js`) дочерним процессом на
-порту `DEMO_APP_PORT` (3109), чистит обе очереди, проверяет, что других консюмеров
-нет, печатает `ключ=значение` и завершается с кодом ≠ 0, если инвариант нарушен.
-
-- `demo:publish` — 5 заказов через `POST /order` (перед этим докидывает остаток
-  оффера и депозит покупателю), считает доставки по логам консюмера, эффекты по
-  `Inbox`, `acked` — по статистике очереди в management API, `prefetch` — у
-  живого консюмера.
-- `demo:dlq` — публикует событие без `data`; консюмер делает `Nack(false)`, демо
-  читает сообщение из `email.order-placed.dlq` и причину из `x-first-death-reason`.
-- `demo:duplicate` — повторная доставка через **настоящий `kill -9` дочернего
-  процесса-консюмера**: консюмер берёт событие (`noAck: false`), применяет эффект
-  (та же вставка в `Inbox`), и его убивают до `ack`. Брокер возвращает
-  сообщение в очередь, приложение получает его повторно и пропускает как дубль.
-
-Мои прогоны (два подряд, числа совпали):
-
-| Демо | Вывод |
-|---|---|
-| `demo:publish` | `published=5 delivered=5 effect=5 acked=5 work=0 dlq=0 prefetch=10` |
-| `demo:dlq` | `rejected=1 work=0 dlq=1 dlq-reason=rejected effect=0` |
-| `demo:duplicate` | `deliveries=2 effect=1 skipped=1 work=0` |
 
 ## Checks (acceptance criteria)
 

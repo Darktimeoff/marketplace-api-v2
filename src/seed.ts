@@ -2,8 +2,6 @@ import 'reflect-metadata';
 import { DeepPartial, FindOptionsWhere, ObjectLiteral, Repository } from 'typeorm';
 import { AppDataSource } from './data-source.js';
 import {
-  BackgroundJobStatusEnum,
-  BackgroundJobTypeEnum,
   GenderEnum,
   LanguageEnum,
   RoleEnum,
@@ -29,7 +27,6 @@ import { ProductVariant } from './product-variant/entity/product-variant.entity.
 import { Seller } from './seller/entity/seller.entity.js';
 import { SellerOffer } from './seller-offer/entity/seller-offer.entity.js';
 import { Transaction } from './account/entity/transaction.entity.js';
-import { BackgroundJob } from './background-job/entity/background-job.entity.js';
 import { Order } from './order/entity/order.entity.js';
 import { OrderProduct } from './order/entity/order-product.entity.js';
 import { OrderRecipient } from './order/entity/order-recipient.entity.js';
@@ -86,7 +83,6 @@ async function seed(): Promise<void> {
   const orders = AppDataSource.getRepository(Order);
   const orderProducts = AppDataSource.getRepository(OrderProduct);
   const transactions = AppDataSource.getRepository(Transaction);
-  const backgroundJobs = AppDataSource.getRepository(BackgroundJob);
 
   const cities = ['Kyiv', 'Lviv', 'Odesa', 'Kharkiv', 'Dnipro'];
 
@@ -363,20 +359,6 @@ async function seed(): Promise<void> {
         status: paidStatuses.includes(order.status) ? TransactionStatusEnum.SUCCESS : TransactionStatusEnum.PENDING,
       },
     );
-
-    // Фоновая задача обработки заказа. dedupeKey строится из publicId, а не из
-    // order.id: тот же ключ идемпотентности, что и у самого заказа.
-    await ensure(
-      backgroundJobs,
-      { dedupeKey: `order:${publicId}` } as FindOptionsWhere<BackgroundJob>,
-      {
-        type: BackgroundJobTypeEnum.ORDER,
-        status: paidStatuses.includes(order.status) ? BackgroundJobStatusEnum.READY : BackgroundJobStatusEnum.QUEUED,
-        payload: { orderId: order.id, publicId },
-        dedupeKey: `order:${publicId}`,
-        orderId: order.id,
-      },
-    );
   }
 
   await AppDataSource.query(
@@ -396,7 +378,7 @@ async function main(): Promise<void> {
     await seed();
 
     const counts = await Promise.all(
-      ['Category', 'Brand', 'User', 'Product', 'Seller', 'ProductVariant', 'SellerOffer', 'Order', 'OrderProduct', 'Transaction', 'BackgroundJob'].map(
+      ['Category', 'Brand', 'User', 'Product', 'Seller', 'ProductVariant', 'SellerOffer', 'Order', 'OrderProduct', 'Transaction'].map(
         async (table) => {
           const [row] = await AppDataSource.query(`SELECT count(*)::int AS count FROM "${table}"`);
 

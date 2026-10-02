@@ -3,7 +3,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
-import { AccountCustomerChargeRequest, AccountCustomerRefundCommand, CLOUD_EVENT_CONTENT_TYPE, OrderPlacedEvent, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
+import { AccountCustomerChargeRequest, AccountCustomerRefundCommand, CLOUD_EVENT_CONTENT_TYPE, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
 import { OrderProductRepository } from '../repository/order-product.repository.js';
@@ -22,9 +22,6 @@ import { PhoneService } from '../../phone/service/phone.service.js';
 import { DeliveryAddressService } from '../../delivery-address/service/delivery-address.service.js';
 import { SellerOfferService } from '../../seller-offer/service/seller-offer.service.js';
 import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
-import { BackgroundJobTypeEnum } from '../../generic/enum/enums.js';
-import { BackgroundJobService } from '../../background-job/service/background-job.service.js';
-import { BackgroundJobCreateInput } from '../../background-job/input/background-job-create.input.js';
 import { InsufficientStockProductInterface } from '../interface/insufficient-stock-product.interface.js';
 import { InsufficientStockException } from '../exception/insufficient-stock.exception.js';
 import { BalanceException } from '../exception/balance.exception.js';
@@ -46,7 +43,6 @@ export class OrderPlaceCommandHandler {
     private readonly orderProductRepository: OrderProductRepository,
     private readonly phoneService: PhoneService,
     private readonly deliveryAddressService: DeliveryAddressService,
-    private readonly backgroundJobService: BackgroundJobService,
     private readonly offers: SellerOfferService,
     private readonly orderNotify: OrderNotifyService,
     private readonly amqpConnection: AmqpConnection,
@@ -60,11 +56,7 @@ export class OrderPlaceCommandHandler {
       await this.reserveStockOrFail(order, input);
       isChargeSent = true;
       await this.chargeOrFail(order, input);
-      const paid = await this.markPaid(order);
-      await this.amqpConnection.publish(OrderPlacedEvent.TOPIC, OrderPlacedEvent.TYPE, this.toOrderPlacedEvent(paid), {
-        contentType: CLOUD_EVENT_CONTENT_TYPE,
-      })
-      return paid;
+      return await this.markPaid(order);
     } catch (error) {
       if (isChargeSent && !(error instanceof BalanceException)) {
         await this.refundCharge(order, input.recipient.buyerId);
@@ -113,10 +105,8 @@ export class OrderPlaceCommandHandler {
     return order;
   }
 
-  @Transactional()
   private async markPaid(order: Order): Promise<Order> {
     const paid = await this.orderRepository.updateStatusById(order.id, OrderStatusEnum.paid);
-    await this.backgroundJobService.create(this.toBackgroundJobInput(paid));
     this.orderNotify.notifyStatusChanged(paid.id, paid.status);
     return paid;
   }
@@ -197,38 +187,6 @@ export class OrderPlaceCommandHandler {
       amount: discountPrice * item.quantity,
       discount: (price - discountPrice) * item.quantity,
     };
-  }
-
-  private toBackgroundJobInput(order: Order): BackgroundJobCreateInput {
-    return {
-      type: BackgroundJobTypeEnum.ORDER,
-      dedupeKey: order.publicId,
-      orderId: order.id,
-      payload: {},
-    };
-  }
-
-  private toOrderPlacedEvent(order: Order): OrderPlacedEvent.MessageType {
-    return {
-      specversion: '1.0',
-      id: order.publicId,
-      source: OrderPlacedEvent.SOURCE,
-      type: OrderPlacedEvent.TYPE,
-      time: new Date().toISOString(),
-      datacontenttype: 'application/json',
-      subject: order.publicId,
-      correlationid: order.publicId,
-      data: {
-        id: order.id,
-        publicId: order.publicId,
-        totalAmount: order.totalAmount,
-        discountAmount: order.discountAmount,
-        status: order.status,
-        currency: order.currency,
-        createdAt: order.createdAt.toISOString(),
-        updatedAt: order.updatedAt.toISOString()
-      },
-    }
   }
 
   private toAccountCustomerRefundCommand(order: Order, customerId: OrderCreateRecipientInput['buyerId']): AccountCustomerRefundCommand.MessageType {

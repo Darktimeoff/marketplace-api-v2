@@ -16,7 +16,6 @@ import { OrderAccessService } from './service/order-access.service.js';
 import { PhoneModule } from "../phone/phone.module.js";
 import { DeliveryAddressModule } from "../delivery-address/delivery-address.module.js";
 import { SellerOfferModule } from "../seller-offer/seller-offer.module.js";
-import { BackgroundJobModule } from "../background-job/background-job.module.js";
 import { AccountModule } from "../account/account.module.js";
 import { OrderAccessGuard } from "./guard/order-access.guard.js";
 import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
@@ -28,7 +27,6 @@ import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
     PhoneModule,
     DeliveryAddressModule,
     SellerOfferModule,
-    BackgroundJobModule,
     AccountModule,
   ],
   controllers: [OrderController, OrdersController],

@@ -1,5 +1,4 @@
 import type { EntityManager } from 'typeorm';
-import { randomUUID } from 'node:crypto';
 import { Phone } from '../../src/phone/entity/phone.entity.js';
 import { DeliveryAddress } from '../../src/delivery-address/entity/delivery-address.entity.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
@@ -22,8 +21,6 @@ import {
   CountryCodeEnum,
   CurrencyEnum,
 } from '@marketplace/contracts-core';
-import type { BackgroundJobCreateEntityInterface } from '../../src/background-job/entity/background-job.entity.js';
-import { BackgroundJobTypeEnum } from '../../src/generic/enum/enums.js';
 
 let counter = 0;
 function nextSeq(): number {
@@ -266,16 +263,4 @@ export async function aCatalogProduct(
   );
 
   return { product, variant };
-}
-
-export function aBackgroundJobInput(
-  overrides: Partial<BackgroundJobCreateEntityInterface> = {},
-): BackgroundJobCreateEntityInterface {
-  return {
-    type: BackgroundJobTypeEnum.ORDER,
-    dedupeKey: `job-${randomUUID()}`,
-    payload: {},
-    orderId: null,
-    ...overrides,
-  };
 }

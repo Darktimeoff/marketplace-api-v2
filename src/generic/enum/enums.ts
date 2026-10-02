@@ -34,18 +34,6 @@ export enum TransactionStatusEnum {
   SUCCESS = 'SUCCESS',
 }
 
-export enum BackgroundJobTypeEnum {
-  ORDER = 'ORDER',
-}
-
-export enum BackgroundJobStatusEnum {
-  QUEUED = 'QUEUED',
-  PROCESSING = 'PROCESSING',
-  READY = 'READY',
-  FAILED = 'FAILED',
-  INTERRUPTED = 'INTERRUPTED',
-}
-
 export enum StockReservationStatusEnum {
   RESERVED = 'reserved',
   CONFIRMED = 'confirmed',

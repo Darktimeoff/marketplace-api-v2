@@ -20,7 +20,6 @@ import { Transaction } from '../../src/account/entity/transaction.entity.js';
 import { Order } from '../../src/order/entity/order.entity.js';
 import { OrderProduct } from '../../src/order/entity/order-product.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
-import { BackgroundJob } from '../../src/background-job/entity/background-job.entity.js';
 
 export const testMigrations: (new () => MigrationInterface)[] = [
   InitSchema1788889879820,
@@ -47,5 +46,4 @@ export const testEntities = [
   Order,
   OrderProduct,
   OrderRecipient,
-  BackgroundJob,
 ];

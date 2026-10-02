@@ -1,5 +1,4 @@
 export * from './generic/enum/currency.enum.js';
-export * from './generic/type/serialized.type.js';
 export * from './order/enum/order-status.enum.js';
 export * from './order/entity/order-entity.interface.js';
 export * from './order/request/order-create.request.js';

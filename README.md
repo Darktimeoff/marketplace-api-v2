@@ -94,7 +94,7 @@ Delivery over RabbitMQ is at-least-once, so every consumer makes its effect safe
 
 Two npm workspaces, transport-agnostic, with folders mirroring `src/<domain>/`:
 
-- `@marketplace/contracts-core`: entity interfaces (`OrderEntityInterface`), request/response interfaces, domain enums (`OrderStatusEnum`, `CurrencyEnum`, `CountryCodeEnum`), `SerializedType<T>` (Date → ISO string). The app imports the enums from here, and ORM entities, inputs and DTOs `implements` these interfaces.
+- `@marketplace/contracts-core`: entity interfaces (`OrderEntityInterface`), request/response interfaces, domain enums (`OrderStatusEnum`, `CurrencyEnum`, `CountryCodeEnum`). The app imports the enums from here, and ORM entities, inputs and DTOs `implements` these interfaces.
 - `@marketplace/messaging-contracts`: `CloudEventInterface`, `TopicEnum` and one namespace per message (`TOPIC`, `TYPE`, `SOURCE`, `DataInterface`, `MessageType`, and for requests `RESPONSE_TYPE`, `ResponseMessageType`).
 
 Packages export TypeScript sources for types (so `npx tsc --noEmit` works without building them) and `dist/` for Node. Mapping `TOPIC`/`TYPE` to an exchange and routing key happens only in the app's infrastructure.

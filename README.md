@@ -8,7 +8,7 @@ Marketplace backend in NestJS, built as a modular monolith whose modules behave 
 | `seller-offer` | `SellerOffer`, `StockReservation` | answers `seller-offer.stock.reserve`, handles `seller-offer.stock.release` |
 | `account` | `Account`, `Transaction`, `AccountInbox` | answers `account.customer.charge`, handles `account.customer.refund` |
 
-Catalog modules (`product`, `product-variant`, `category`, `brand`, `seller`, `user`, `identity`, `phone`, `delivery-address`) are plain HTTP/DB modules.
+The other modules (`product`, `product-variant`, `category`, `brand`, `seller`, `user`, `identity`, `phone`, `delivery-address`) only own entities; `phone` and `delivery-address` also provide the create services order uses, and order reads offers from `seller-offer` for pricing.
 
 ## Quick start
 
@@ -64,7 +64,7 @@ Any other failure after step 1 compensates whatever was already done: `account.c
 
 ### Stock: on hand + reserved
 
-`SellerOffer.quantity` is stock on hand, `SellerOffer.reservedQuantity` is what active reservations hold, and **available = `quantity - reservedQuantity`** (`GET /product/:id` reports available stock as `quantity`). `CHECK (0 <= reservedQuantity <= quantity)` guards it in the database.
+`SellerOffer.quantity` is stock on hand, `SellerOffer.reservedQuantity` is what active reservations hold, and **available = `quantity - reservedQuantity`**. `CHECK (0 <= reservedQuantity <= quantity)` guards it in the database.
 
 Each reservation is a `StockReservation` row keyed by `(orderPublicId, offerId)` with a status (`reserved`, `confirmed`, `fulfilled`, `released`). Reserving inserts the row with `ON CONFLICT DO NOTHING` and, in the same statement, increments `reservedQuantity` only `WHERE quantity - "reservedQuantity" >= $n`. A redelivered request therefore holds stock once; releasing moves active rows to `released` and subtracts their quantity once.
 

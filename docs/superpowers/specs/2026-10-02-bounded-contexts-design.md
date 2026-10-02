@@ -40,7 +40,9 @@ identity ◄── user ◄──── order ───► seller ───► c
 3. Account keeps `customerId`. Order maps `order.userId` to `customerId` when it sends the charge and refund messages. Both contexts name the same person in their own language.
 4. `OrderRecipient` is the delivery contact snapshot only: `fullName`, a phone value object and an address value object, written once at checkout. It holds no id of another context.
 5. `Transaction` keeps its name.
-6. Value objects are TypeORM embedded columns, not tables.
+6. Value objects are TypeORM embedded columns, not tables: ordinary typed columns with their own constraints, not JSON.
+7. `OrderRecipient` stays a separate table rather than being folded into `Order`, leaving room for per-seller shipments with their own recipient.
+8. Contract packages contain only the published language: what crosses a context boundary (HTTP requests and responses, messages, and the enums those use). A context's entities, internal enums and repository types stay inside the context. Entity interfaces are removed from `@marketplace/contracts-core`; ORM entity classes are each context's model and implement no shared interface.
 
 ## Naming changes
 
@@ -108,11 +110,19 @@ One hand-written migration per context. Each `down` restores the exact previous 
 
 **Contracts (`@marketplace/contracts-core`)**
 
-- `CountryCodeEnum` moves from `phone/enum/` to `generic/enum/`.
-- Removed: `PhoneEntityInterface`, `PhoneCreateRequestInterface`, `DeliveryAddressCreateRequestInterface`.
-- New value-object interfaces: `order/value-object/recipient-phone.interface.ts`, `order/value-object/recipient-address.interface.ts`, `identity/value-object/login-phone.interface.ts`.
-- Updated: `OrderEntityInterface` (+ `userId`); `OrderRecipientEntityInterface` (`fullName`, `phone`, `address`); `OrderLineEntityInterface` (renamed, unit prices); `IdentityEntityInterface` (`loginPhone` instead of `phoneId`); `AddressEntityInterface` (renamed); `UserEntityInterface.addressId`; `SellerOfferEntityInterface.onHandQuantity`.
-- The order request gets its own nested phone and address request interfaces.
+Stage 0 reduces the package to the published language (decision 8):
+
+- Removed: all 20 entity interfaces (`<module>/entity/*-entity.interface.ts`); every ORM entity drops its `implements` clause.
+- Moved back into their context (as `src/<module>/enum/<name>.enum.ts`): `TransactionTypeEnum`, `TransactionStatusEnum` (account), `StockReservationStatusEnum` (seller-offer), `RoleEnum` (identity), `GenderEnum` (user).
+- Kept: `OrderStatusEnum`, `CurrencyEnum`, `CountryCodeEnum` (used by requests, responses or messages) and `LanguageEnum` (shared kernel value used by catalog and user).
+- `OrderResponseInterface` becomes a standalone interface with its own fields instead of `Pick<OrderEntityInterface, …>`.
+- The request interfaces stay.
+
+Later stages:
+
+- `CountryCodeEnum` moves from `phone/enum/` to `generic/enum/` (stage 2, when the phone domain disappears).
+- Removed: `PhoneCreateRequestInterface`, `DeliveryAddressCreateRequestInterface` (stages 1 and 3).
+- The order request gets its own nested phone and address request interfaces, `OrderCreateRecipientPhoneRequestInterface` and `OrderCreateRecipientAddressRequestInterface` (stage 1).
 - `@marketplace/messaging-contracts` is unchanged.
 
 **Order behaviour**
@@ -137,16 +147,17 @@ One hand-written migration per context. Each `down` restores the exact previous 
 
 ## Delivery
 
-Each stage is one migration with its code, contracts and tests, verified and committed on its own; the app works after every commit.
+Stage 0 changes code only. Every other stage is one migration with its code, contracts and tests. Each stage is verified and committed on its own; the app works after every commit.
 
 | # | Stage | Commit |
 |---|---|---|
+| 0 | Contracts keep only the published language: entity interfaces removed, single-context enums moved into their contexts, `OrderResponseInterface` standalone; no migration | `refactor: keep entity interfaces in contexts` |
 | 1 | Order owns its user reference and recipient contact; new request body | `refactor: snapshot recipient contact on order` |
 | 2 | Identity owns its login phone; `phone` module and `Phone` table removed | `refactor: embed login phone in identity` |
 | 3 | `Address` moves into user; `delivery-address` module removed; `User.identityId` FK dropped | `refactor: move address into user` |
 | 4 | `OrderProduct` → `OrderLine`, unit prices; `offerId` FK dropped | `refactor: rename order product to line` |
 | 5 | `onHandQuantity`; `variantId` and `Seller.userId` FKs dropped | `refactor: rename on hand quantity` |
-| 6 | README domain section; local `AGENTS.md` naming rules | `chore: document bounded contexts` |
+| 6 | README domain section; local `AGENTS.md` naming and contracts rules | `chore: document bounded contexts` |
 
 ## Verification
 
@@ -158,6 +169,8 @@ Every stage:
 - back-filled values equal their source rows;
 - `migrate:generate` shows only the known pre-existing drift;
 - the seed runs twice with the same result.
+
+Stage 0 has no migration, so it skips the migration, back-fill and drift steps. It adds a check that `@marketplace/contracts-core` exports no `*EntityInterface`, and that no file imports an enum from another context's `src/<module>/enum/`.
 
 Stages 1, 4 and 5 also run the order flows against the app: success → `paid`, out of stock → `canceled`, charge refused → `failed_payment`, failure after the charge → refunded and released, SSE ownership through `Order.userId`.
 

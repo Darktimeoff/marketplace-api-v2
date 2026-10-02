@@ -29,7 +29,7 @@ export class TokenService implements OnModuleInit {
     return createHash('sha256').update(refreshToken).digest('hex');
   }
 
-  async issue(identity: Pick<Identity, 'id' | 'role' | 'email' | 'loginPhone'>, familyId: string = randomUUID()): Promise<IdentityTokenResponseInterface> {
+  async createTokenPair(identity: Pick<Identity, 'id' | 'role' | 'email' | 'loginPhone'>, familyId: string = randomUUID()): Promise<IdentityTokenResponseInterface> {
     const refreshToken = randomBytes(32).toString('base64url');
 
     await this.sessions.create({

@@ -40,6 +40,6 @@ export class IdentityRefreshCommandHandler {
       return null;
     }
 
-    return this.tokens.issue(identity, session.familyId);
+    return this.tokens.createTokenPair(identity, session.familyId);
   }
 }

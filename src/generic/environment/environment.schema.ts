@@ -9,7 +9,7 @@ const environmentSchema = z.object({
   INFISICAL_SITE_URL: z.string().min(1),
   INFISICAL_CLIENT_ID: z.string().min(1),
   INFISICAL_PROJECT_ID: z.string().min(1),
-  INFISICAL_ENVIRONMENT: z.enum(['dev', 'stagin', 'prod']),
+  INFISICAL_ENVIRONMENT: z.enum(['dev', 'staging', 'prod']),
   RABBITMQ_HOST: z.string().min(1).default('rabbitmq'),
   RABBITMQ_PORT: z.coerce.number().int().min(1).max(65535).default(5672),
 })

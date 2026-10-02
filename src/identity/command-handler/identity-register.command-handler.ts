@@ -46,6 +46,6 @@ export class IdentityRegisterCommandHandler {
       role: RoleEnum.user,
     });
 
-    return this.tokens.issue(identity);
+    return this.tokens.createTokenPair(identity);
   }
 }

@@ -22,6 +22,6 @@ export class IdentityLoginCommandHandler {
       throw new UnauthorizedException('Invalid login or password');
     }
 
-    return this.tokens.issue(identity);
+    return this.tokens.createTokenPair(identity);
   }
 }

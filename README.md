@@ -117,7 +117,6 @@ Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <com
 - **Generated migrations need review**: `migration:generate` also emits unrelated drift (FK renames to hash names, `User.fullName`, the `Order.publicId` default). Keep only the statements the change needs, and write a migration by hand when generation would recreate a table.
 - **`onDelete`**: `CASCADE` for compositions that can't exist without their parent (translations, `OrderProduct → Order`), `RESTRICT` everywhere else, including all money and order history.
 - **Seed**: `npm run seed` is deterministic and idempotent; every row is looked up by a natural key before it is created, so running it twice gives the same database.
-- **Backups**: `npm run dump` writes a `pg_dump -Fc` backup; `npm run restore` restores the latest one into a throwaway container and checks one table's row count and column sum against the baseline recorded at dump time.
 
 ## Testing
 

@@ -28,9 +28,7 @@
     "migrate:show": "bash scripts/with-secrets.sh dev npx typeorm migration:show -d dist/data-source.js",
     "migrate:revert": "bash scripts/with-secrets.sh dev npx typeorm migration:revert -d dist/data-source.js",
     "migrate:generate": "bash scripts/with-secrets.sh dev npx typeorm migration:generate -d dist/data-source.js",
-    "seed": "bash scripts/with-secrets.sh dev node dist/seed.js",
-    "dump": "bash scripts/backup.sh",
-    "restore": "bash scripts/restore-drill.sh"
+    "seed": "bash scripts/with-secrets.sh dev node dist/seed.js"
   },
   "dependencies": {
     "@golevelup/nestjs-rabbitmq": "^9.1.0",

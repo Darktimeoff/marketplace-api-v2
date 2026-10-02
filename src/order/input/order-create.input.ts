@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
+  IsDefined,
   IsEnum,
   IsInt,
   IsPositive,
@@ -50,12 +51,15 @@ export class OrderCreateRecipientAddressInput implements OrderCreateRecipientAdd
 export class OrderCreateRecipientInput implements OrderCreateRecipientRequestInterface {
   @IsString()
   @MaxLength(201)
+  @Matches(/\S/, { message: 'fullName must not be blank' })
   fullName: string;
 
+  @IsDefined()
   @ValidateNested()
   @Type(() => OrderCreateRecipientPhoneInput)
   phone: OrderCreateRecipientPhoneInput;
 
+  @IsDefined()
   @ValidateNested()
   @Type(() => OrderCreateRecipientAddressInput)
   address: OrderCreateRecipientAddressInput;
@@ -76,6 +80,7 @@ export class OrderCreateInput implements OrderCreateRequestInterface {
   @IsPositive()
   userId: number;
 
+  @IsDefined()
   @ValidateNested()
   @Type(() => OrderCreateRecipientInput)
   recipient: OrderCreateRecipientInput;

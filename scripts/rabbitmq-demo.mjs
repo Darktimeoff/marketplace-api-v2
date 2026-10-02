@@ -181,9 +181,15 @@ async function prepareBuyerAndOffer(db) {
   if (!offer || !buyer) throw new Error('no seller offer or user found: run "npm run seed" first');
 
   await db.query(`UPDATE "SellerOffer" SET quantity = quantity + $2 WHERE id = $1`, [offer.id, EVENTS]);
+  const deposit = (Number(offer.price) * EVENTS).toFixed(2);
   await db.query(
-    `INSERT INTO "Transaction" ("userId", amount, status, type) VALUES ($1, $2, 'SUCCESS', 'DEPOSIT')`,
-    [buyer.id, (Number(offer.price) * EVENTS).toFixed(2)],
+    `INSERT INTO "Account" ("customerId", "balance") VALUES ($1, $2)
+     ON CONFLICT ("customerId") DO UPDATE SET "balance" = "Account"."balance" + EXCLUDED."balance"`,
+    [buyer.id, deposit],
+  );
+  await db.query(
+    `INSERT INTO "Transaction" ("customerId", amount, status, type) VALUES ($1, $2, 'SUCCESS', 'DEPOSIT')`,
+    [buyer.id, deposit],
   );
   return { offerId: offer.id, buyerId: buyer.id };
 }

@@ -11,20 +11,18 @@ export class AccountCustomerChargeCommandHandler {
 
   @Transactional()
   async execute({ amount, customerId }: AccountCustomerChargeRequest.DataInterface) {
-    if (!await this.repository.isCustomerHasBalance(customerId)) {
-      throw new AccountCustomerChargeRejectedException('customer_not_found')
-    }
-    
-    await this.repository.lockForUpdate(customerId);
+    if (!await this.repository.debit(customerId, Number(amount).toFixed(2))) {
+      const balance = await this.repository.findBalance(customerId);
 
-    const balance = await this.repository.getBalance(customerId);
+      if (balance === null) {
+        throw new AccountCustomerChargeRejectedException('customer_not_found')
+      }
 
-    if (balance < Number(amount)) {
       throw new AccountCustomerChargeRejectedException('insufficient_amount', Number(amount), balance)
     }
 
     await this.repository.create({
-      userId: customerId,
+      customerId,
       amount: Number(amount).toFixed(2),
       type: TransactionTypeEnum.PAYMENT,
       status: TransactionStatusEnum.SUCCESS,

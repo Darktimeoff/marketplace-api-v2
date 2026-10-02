@@ -39,11 +39,16 @@ describe('Order (e2e)', () => {
     await app.close();
   });
 
-  async function fundBuyer(userId: number, amount: string): Promise<void> {
+  async function fundBuyer(customerId: number, amount: string): Promise<void> {
+    await dataSource.query(
+      `INSERT INTO "Account" ("customerId", "balance") VALUES ($1, $2)
+       ON CONFLICT ("customerId") DO UPDATE SET "balance" = "Account"."balance" + EXCLUDED."balance"`,
+      [customerId, amount],
+    );
     const transactions = dataSource.manager.getRepository(Transaction);
     await transactions.save(
       transactions.create({
-        userId,
+        customerId,
         amount,
         type: TransactionTypeEnum.DEPOSIT,
         status: TransactionStatusEnum.SUCCESS,

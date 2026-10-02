@@ -4,7 +4,6 @@ import { Identity } from '../../identity/entity/identity.entity.js';
 import { DeliveryAddress } from '../../delivery-address/entity/delivery-address.entity.js';
 import type { Seller } from '../../seller/entity/seller.entity.js';
 import type { OrderRecipient } from '../../order/entity/order-recipient.entity.js'
-import type { Transaction } from '../../account/entity/transaction.entity.js';
 
 @Entity('User')
 @Check('User_dateOfBirth_past', `"dateOfBirth" IS NULL OR "dateOfBirth" < current_date`)
@@ -71,7 +70,4 @@ export class User {
 
   @OneToMany('OrderRecipient', (recipient: OrderRecipient) => recipient.buyer)
   orderRecipients: OrderRecipient[];
-
-  @OneToMany('Transaction', (transaction: Transaction) => transaction.user)
-  transactions: Transaction[];
 }

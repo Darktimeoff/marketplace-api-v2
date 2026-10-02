@@ -1,6 +1,6 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { TransactionStatusEnum, TransactionTypeEnum } from '../../generic/enum/enums.js';
-import { User } from '../../user/entity/user.entity.js';
+import { Account } from './account.entity.js';
 import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
 
 /**
@@ -10,12 +10,13 @@ import { moneyTransformer } from '../../generic/transformer/money.transformer.js
  */
 @Entity('Transaction')
 @Check('Transaction_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
+@Index('Transaction_customerId_idx', ['customerId'])
 export class Transaction {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 
   @Column({ type: 'integer' })
-  userId: number;
+  customerId: number;
 
   @Column({ type: 'numeric', precision: 12, scale: 2, transformer: moneyTransformer })
   amount: string;
@@ -36,10 +37,10 @@ export class Transaction {
   deletedAt: Date | null;
 
   // RESTRICT: финансовая история пользователя не должна исчезать вместе с ним.
-  @ManyToOne(() => User, (user) => user.transactions, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'userId' })
-  user: User;
+  @ManyToOne(() => Account, (account) => account.transactions, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'customerId', foreignKeyConstraintName: 'Transaction_customerId_fkey' })
+  account: Account;
 }
 
 export interface TransactionCreateEntityInterface
-  extends Pick<Transaction, 'userId' | 'amount' | 'type' | 'status'> {}
+  extends Pick<Transaction, 'customerId' | 'amount' | 'type' | 'status'> {}

@@ -20,8 +20,9 @@ export class AccountCustomerRefundCommandHandler {
       throw new AccountCustomerRefundWithoutChargeException(chargeId)
     }
 
+    await this.repository.credit(customerId, Number(amount).toFixed(2));
     await this.repository.create({
-      userId: customerId,
+      customerId,
       amount: Number(amount).toFixed(2),
       type: TransactionTypeEnum.REFUND,
       status: TransactionStatusEnum.SUCCESS,

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Transaction } from './entity/transaction.entity.js';
 import { AccountInbox } from './entity/account-inbox.entity.js';
+import { Account } from './entity/account.entity.js';
 import { AccountInboxRepository } from './repository/account-inbox.repository.js';
 import { AccountInboxService } from './service/account-inbox.service.js';
 import { AccountCustomerRefundCommandHandler } from './command-handler/account-customer-refund.command-handler.js';
@@ -12,7 +13,7 @@ import { AccountCustomerChargeCommandHandler } from './command-handler/account-c
 import { RabbitMqModule } from '../generic/rabbitmq/rabbitmq.module.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Transaction, AccountInbox]), RabbitMqModule],
+  imports: [TypeOrmModule.forFeature([Transaction, AccountInbox, Account]), RabbitMqModule],
   providers: [AccountRepository, AccountInboxRepository, AccountInboxService, AccountCustomerChargeCommandHandler, AccountCustomerRefundCommandHandler, AccountTopology, AccountGateway],
 })
 export class AccountModule {}

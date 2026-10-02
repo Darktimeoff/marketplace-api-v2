@@ -40,7 +40,7 @@ export class AccountGateway {
     }
   })
   async handleCustomerCharge(msg: AccountCustomerChargeRequest.MessageType): Promise<AccountCustomerChargeRequest.ResponseMessageType | Nack> {
-    if (msg?.specversion !== '1.0' || msg.type !== AccountCustomerChargeRequest.TYPE || !isUUID(msg.id) || typeof msg.subject !== 'string' || !isUUID(msg.subject)) {
+    if (msg?.specversion !== '1.0' || msg.type !== AccountCustomerChargeRequest.TYPE || !isUUID(msg.id) || typeof msg.subject !== 'string' || !isUUID(msg.subject) || !this.isValidMovement(msg.data)) {
       this.logger.warn(`rejected id=${msg?.id}`)
       return new Nack(false)
     }
@@ -75,7 +75,7 @@ export class AccountGateway {
     }
   })
   async handleCustomerRefund(msg: AccountCustomerRefundCommand.MessageType): Promise<Nack | void> {
-    if (msg?.specversion !== '1.0' || msg.type !== AccountCustomerRefundCommand.TYPE || !isUUID(msg.id) || !isUUID(msg.data?.chargeId)) {
+    if (msg?.specversion !== '1.0' || msg.type !== AccountCustomerRefundCommand.TYPE || !isUUID(msg.id) || !isUUID(msg.data?.chargeId) || !this.isValidMovement(msg.data)) {
       this.logger.warn(`rejected id=${msg?.id}`)
       return new Nack(false)
     }
@@ -92,6 +92,14 @@ export class AccountGateway {
       this.logger.error(`failed refund id=${msg.id}`, e instanceof Error ? e.stack : String(e))
       return new Nack(true)
     }
+  }
+
+  private isValidMovement(data: Partial<AccountCustomerChargeRequest.DataInterface> | undefined): boolean {
+    return Number.isSafeInteger(data?.customerId)
+      && Number(data?.customerId) > 0
+      && typeof data?.amount === 'string'
+      && /^\d{1,10}(\.\d{1,2})?$/.test(data.amount)
+      && Number(data.amount) > 0
   }
 
   private toResponse(

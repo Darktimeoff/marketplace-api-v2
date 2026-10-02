@@ -35,7 +35,7 @@ export class SellerOfferGateway {
     }
   })
   async handleStockReserve(msg: StockReserveRequest.MessageType): Promise<StockReserveRequest.ResponseMessageType | Nack> {
-    if (msg?.specversion !== '1.0' || msg.type !== StockReserveRequest.TYPE || typeof msg.subject !== 'string' || !isUUID(msg.subject) || !Array.isArray(msg.data?.items) || msg.data.items.length === 0) {
+    if (msg?.specversion !== '1.0' || msg.type !== StockReserveRequest.TYPE || typeof msg.subject !== 'string' || !isUUID(msg.subject) || !this.isValidItems(msg.data?.items)) {
       this.logger.warn(`rejected id=${msg?.id}`)
       return new Nack(false)
     }
@@ -81,6 +81,12 @@ export class SellerOfferGateway {
       this.logger.error(`failed release order=${msg.data.orderPublicId}`, e instanceof Error ? e.stack : String(e))
       return new Nack(true)
     }
+  }
+
+  private isValidItems(items: StockReserveRequest.ItemInterface[] | undefined): items is StockReserveRequest.ItemInterface[] {
+    return Array.isArray(items)
+      && items.length > 0
+      && items.every((item) => Number.isSafeInteger(item?.offerId) && item.offerId > 0 && Number.isSafeInteger(item?.quantity) && item.quantity > 0)
   }
 
   private toResponse(

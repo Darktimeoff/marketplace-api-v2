@@ -10,7 +10,6 @@ import { OrderService } from "./service/order.service.js";
 import { OrderPlaceCommandHandler } from "./command-handler/order-place.command-handler.js";
 import { OrderController } from "./controller/order.controller.js";
 import { OrdersController } from './controller/orders.controller.js';
-import { OrderGateway } from './controller/order.gateway.js';
 import { OrderNotifyService } from './service/order-notify.service.js';
 import { OrderAccessService } from './service/order-access.service.js';
 import { PhoneModule } from "../phone/phone.module.js";
@@ -38,7 +37,6 @@ import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
     OrderPlaceCommandHandler,
     OrderAccessService,
     OrderNotifyService,
-    OrderGateway,
     OrderAccessGuard,
   ]
 })

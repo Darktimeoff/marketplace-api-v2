@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { OrderModule } from '../../src/order/order.module.js';
 import { OrderRepository } from '../../src/order/repository/order.repository.js';
-import { OrderProductRepository } from '../../src/order/repository/order-product.repository.js';
+import { OrderLineRepository } from '../../src/order/repository/order-line.repository.js';
 import { CurrencyEnum } from '@marketplace/contracts-core';
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
@@ -10,12 +10,12 @@ import { anOrderRecipient, aSellerOffer } from '../support/builders.js';
 describe('OrderRepository', () => {
   let testModule: TestModule;
   let repository: OrderRepository;
-  let orderProducts: OrderProductRepository;
+  let orderLines: OrderLineRepository;
 
   beforeAll(async () => {
     testModule = await createTestModule([OrderModule]);
     repository = testModule.app.get(OrderRepository);
-    orderProducts = testModule.app.get(OrderProductRepository);
+    orderLines = testModule.app.get(OrderLineRepository);
   });
 
   afterEach(async () => {
@@ -29,6 +29,7 @@ describe('OrderRepository', () => {
   it('rejects a second order for the same recipient (unique constraint)', async () => {
     const recipient = await anOrderRecipient(testModule.dataSource.manager);
     await repository.create({
+      userId: 1,
       orderRecipientId: recipient.id,
       totalAmount: '10.00',
       discountAmount: '0.00',
@@ -37,6 +38,7 @@ describe('OrderRepository', () => {
 
     await expect(
       repository.create({
+        userId: 1,
         orderRecipientId: recipient.id,
         totalAmount: '20.00',
         discountAmount: '0.00',
@@ -48,6 +50,7 @@ describe('OrderRepository', () => {
   it('rejects an order referencing a non-existent recipient (FK constraint)', async () => {
     await expect(
       repository.create({
+        userId: 1,
         orderRecipientId: 999999,
         totalAmount: '10.00',
         discountAmount: '0.00',
@@ -63,27 +66,28 @@ describe('OrderRepository', () => {
     });
 
     const order = await repository.create({
+      userId: 1,
       orderRecipientId: recipient.id,
       totalAmount: '100.00',
       discountAmount: '0.00',
       currency: CurrencyEnum.UAH,
     });
 
-    await orderProducts.create([
+    await orderLines.create([
       {
         orderId: order.id,
         offerId: offer.id,
         quantity: 2,
-        price: '50.00',
-        discountPrice: null,
+        unitPrice: '50.00',
+        unitDiscountPrice: null,
       },
     ]);
 
     const found = await repository.findByIdOrFail(order.id);
 
     expect(found.orderRecipient.id).toBe(recipient.id);
-    expect(found.items).toHaveLength(1);
-    expect(found.items[0].offerId).toBe(offer.id);
+    expect(found.lines).toHaveLength(1);
+    expect(found.lines[0].offerId).toBe(offer.id);
   });
 
   it('findByIdOrFail rejects for a missing id', async () => {

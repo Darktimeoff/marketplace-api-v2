@@ -29,7 +29,7 @@ export class StockReservationRepository {
              FROM inserted
             WHERE offer."id" = inserted."offerId"
               AND offer."deletedAt" IS NULL
-              AND offer."quantity" - offer."reservedQuantity" >= inserted."quantity"
+              AND offer."onHandQuantity" - offer."reservedQuantity" >= inserted."quantity"
            RETURNING offer."id"
          )
          SELECT (SELECT count(*) FROM inserted)::int AS "inserted",

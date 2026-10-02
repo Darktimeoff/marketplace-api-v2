@@ -1,19 +1,17 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
-import { CurrencyEnum, type SellerOfferEntityInterface } from '@marketplace/contracts-core';
+import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
+import { CurrencyEnum } from '@marketplace/contracts-core';
 import { Seller } from '../../seller/entity/seller.entity.js';
-import { ProductVariant } from '../../product-variant/entity/product-variant.entity.js';
 import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
-import type { OrderProduct } from '../../order/entity/order-product.entity.js';
 
 @Entity('SellerOffer')
 @Unique('SellerOffer_sellerId_sellerSku', ['sellerId', 'sellerSku'])
 @Unique('SellerOffer_sellerId_variantId', ['sellerId', 'variantId'])
 @Check('SellerOffer_sellerSku_notBlank', `btrim("sellerSku") <> ''`)
 @Check('SellerOffer_discount_le', `"discountPrice" IS NULL OR "discountPrice" <= "price"`)
-@Check('SellerOffer_quantity_nonneg', `"quantity" >= 0`)
-@Check('SellerOffer_reserved_range', `"reservedQuantity" >= 0 AND "reservedQuantity" <= "quantity"`)
+@Check('SellerOffer_onHandQuantity_nonneg', `"onHandQuantity" >= 0`)
+@Check('SellerOffer_reserved_range', `"reservedQuantity" >= 0 AND "reservedQuantity" <= "onHandQuantity"`)
 @Check('SellerOffer_deletedAt_ord', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class SellerOffer implements SellerOfferEntityInterface {
+export class SellerOffer {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 
@@ -41,7 +39,7 @@ export class SellerOffer implements SellerOfferEntityInterface {
   // а не домен "amount" (numeric(12,2), для денег). 0 = распродано, это
   // нормальное состояние, поэтому CHECK >= 0, а не домен "uint" (> 0).
   @Column({ type: 'integer', default: 0 })
-  quantity: number;
+  onHandQuantity: number;
 
   @Column({ type: 'integer', default: 0 })
   reservedQuantity: number;
@@ -58,11 +56,4 @@ export class SellerOffer implements SellerOfferEntityInterface {
   @ManyToOne(() => Seller, (seller) => seller.offers, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'sellerId' })
   seller: Seller;
-
-  @ManyToOne(() => ProductVariant, (variant) => variant.offers, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'variantId' })
-  variant: ProductVariant;
-
-  @OneToMany('OrderProduct', (item: OrderProduct) => item.offer)
-  orderItems: OrderProduct[];
 }

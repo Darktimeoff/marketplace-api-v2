@@ -1,11 +1,11 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 import { Category } from './category.entity.js';
-import { LanguageEnum, type CategoryTranslationEntityInterface } from '@marketplace/contracts-core';
+import { LanguageEnum } from '@marketplace/contracts-core';
 
 @Entity('CategoryTranslation')
 @Unique('CategoryTranslation_categoryId_language', ['categoryId', 'language'])
 @Check('CategoryTranslation_name_notBlank', `btrim("name") <> ''`)
-export class CategoryTranslation implements CategoryTranslationEntityInterface {
+export class CategoryTranslation {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 

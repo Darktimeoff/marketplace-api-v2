@@ -4,11 +4,51 @@ Marketplace backend in NestJS, built as a modular monolith whose modules behave 
 
 | Service (module) | Owns | Talks over RabbitMQ |
 |---|---|---|
-| `order` | `Order`, `OrderRecipient`, `OrderProduct` | sends `seller-offer.stock.reserve`, `account.customer.charge`, and the compensations `seller-offer.stock.release`, `account.customer.refund` |
+| `order` | `Order`, `OrderRecipient`, `OrderLine` | sends `seller-offer.stock.reserve`, `account.customer.charge`, and the compensations `seller-offer.stock.release`, `account.customer.refund` |
 | `seller-offer` | `SellerOffer`, `StockReservation` | answers `seller-offer.stock.reserve`, handles `seller-offer.stock.release` |
 | `account` | `Account`, `Transaction`, `AccountInbox` | answers `account.customer.charge`, handles `account.customer.refund` |
 
-The other modules (`product`, `product-variant`, `category`, `brand`, `seller`, `user`, `identity`, `phone`, `delivery-address`) only own entities; `phone` and `delivery-address` also provide the create services order uses, and order reads offers from `seller-offer` for pricing.
+The other modules (`product`, `product-variant`, `category`, `brand`, `seller`, `user`, `identity`) only own entities. Order reads offers from `seller-offer` for pricing.
+
+## Bounded contexts
+
+| Context | Owns |
+|---|---|
+| identity | `Identity`, with the login phone as a value object |
+| user | `User`, `Address` |
+| catalog | `Product`, `ProductTranslation`, `ProductVariant`, `Category`, `CategoryTranslation`, `Brand`, `BrandTranslation` |
+| seller | `Seller`, `SellerOffer`, `StockReservation` |
+| order | `Order`, `OrderRecipient`, `OrderLine` |
+| account | `Account`, `Transaction`, `AccountInbox` |
+
+```
+identity ◄── user ◄──── order ───► seller ───► catalog
+                          │
+                          └──────► account
+```
+
+An arrow means "holds an id of". Every table belongs to one context, and a context could be moved into its own service without changing its model:
+
+- **Plain ids across contexts, no foreign keys.** `User.identityId`, `Seller.userId`, `SellerOffer.variantId`, `Order.userId` and `OrderLine.offerId` are integers with no FK and no ORM relation, because a database constraint can't span two services. Foreign keys stay inside a context (`User → Address`, the catalog's own, `SellerOffer → Seller`, `StockReservation → SellerOffer`, `Order → OrderRecipient`, `OrderLine → Order`, `Transaction → Account`). The trade-off: the database no longer stops a reference to a deleted row in another context. Order validates offers at checkout, and order lines keep snapshot prices.
+- **Snapshots, not shared rows.** `OrderRecipient` is the delivery contact as written at checkout: `fullName`, a phone and an address. It references nothing outside the order, so later edits to a user's profile don't rewrite past orders. It stays its own table, leaving room for per-seller shipments with their own recipient.
+- **Value objects are embedded columns.** The recipient's phone and address and the identity's login phone are TypeORM embedded classes (`value-object/`), which give ordinary typed columns with their own CHECKs (`phoneFullNumber`, `addressCity`, `loginPhoneFullNumber`, …) rather than JSON or a shared `Phone` table.
+- **Each context names things in its own language.** Order calls the buyer `userId`, account calls the same person `customerId`, and order maps one to the other when it sends `account.customer.charge` and `account.customer.refund`. `OrderLine` holds `unitPrice`/`unitDiscountPrice` at purchase time; `SellerOffer.onHandQuantity` is the physical stock next to `reservedQuantity`.
+- **Contract packages hold only the published language**: what crosses a boundary (HTTP requests and responses, messages, and the enums those use). Entities, internal enums (`RoleEnum`, `TransactionTypeEnum`, `StockReservationStatusEnum`, …) and repository types stay inside their context.
+
+`POST /order`:
+
+```json
+{
+  "userId": 4,
+  "recipient": {
+    "fullName": "Jane Doe",
+    "phone": { "countryCode": "UA", "rawNumber": "+380501234567", "fullNumber": "+380501234567", "nationalNumber": "0501234567" },
+    "address": { "addressLine": "Khreshchatyk St, 1", "city": "Kyiv", "building": "1A" }
+  },
+  "items": [{ "offerId": 1, "quantity": 2 }],
+  "currency": "UAH"
+}
+```
 
 ## Quick start
 
@@ -94,7 +134,7 @@ Delivery over RabbitMQ is at-least-once, so every consumer makes its effect safe
 
 Two npm workspaces, transport-agnostic, with folders mirroring `src/<domain>/`:
 
-- `@marketplace/contracts-core`: an entity interface for every ORM entity (`OrderEntityInterface`, `SellerOfferEntityInterface`, …; columns only, no relations), request/response interfaces, and all domain enums (`OrderStatusEnum`, `CurrencyEnum`, `TransactionTypeEnum`, `LanguageEnum`, …). Every ORM entity, input and DTO `implements` these interfaces, and the app imports the enums from here.
+- `@marketplace/contracts-core`: HTTP request/response interfaces and the enums they use (`OrderStatusEnum`, `CurrencyEnum`, `CountryCodeEnum`, `LanguageEnum`). Inputs and DTOs `implement` these interfaces; ORM entities implement nothing shared.
 - `@marketplace/messaging-contracts`: `CloudEventInterface`, `TopicEnum` and one namespace per message (`TOPIC`, `TYPE`, `SOURCE`, `DataInterface`, `MessageType`, and for requests `RESPONSE_TYPE`, `ResponseMessageType`).
 
 Packages export TypeScript sources for types (so `npx tsc --noEmit` works without building them) and `dist/` for Node. Mapping `TOPIC`/`TYPE` to an exchange and routing key happens only in the app's infrastructure.
@@ -115,7 +155,7 @@ Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <com
 
 - **Migrations only**: `synchronize: false`. `synchronize: true` would destroy what TypeORM doesn't model: the `uint` and `amount` domains, the `User.fullName` generated column and the `setUpdatedAt` triggers.
 - **Generated migrations need review**: `migration:generate` also emits unrelated drift (FK renames to hash names, `User.fullName`, the `Order.publicId` default). Keep only the statements the change needs, and write a migration by hand when generation would recreate a table.
-- **`onDelete`**: `CASCADE` for compositions that can't exist without their parent (translations, `OrderProduct → Order`), `RESTRICT` everywhere else, including all money and order history.
+- **`onDelete`**: `CASCADE` for compositions that can't exist without their parent (translations, `OrderLine → Order`), `RESTRICT` everywhere else, including all money and order history.
 - **Seed**: `npm run seed` is deterministic and idempotent; every row is looked up by a natural key before it is created, so running it twice gives the same database.
 
 ## Testing

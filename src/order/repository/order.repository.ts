@@ -22,7 +22,7 @@ export class OrderRepository {
   async findByIdOrFail(id: Order['id']): Promise<Order> {
     return await this.txHost.tx.getRepository(Order).findOneOrFail({
       where: { id },
-      relations: { items: true, orderRecipient: true },
+      relations: { lines: true, orderRecipient: true },
     })
   }
 }

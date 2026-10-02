@@ -36,7 +36,7 @@ export class SellerOfferStockReserveCommandHandler {
       return;
     }
 
-    const stockById = new Map(offers.map((offer) => [offer.id, offer.quantity - offer.reservedQuantity]));
+    const stockById = new Map(offers.map((offer) => [offer.id, offer.onHandQuantity - offer.reservedQuantity]));
 
     throw new StockReservationRejectedException(
       'insufficient_stock',

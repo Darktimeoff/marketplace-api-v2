@@ -1,33 +1,25 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { User } from '../../user/entity/user.entity.js';
-import { Phone } from '../../phone/entity/phone.entity.js';
-import { DeliveryAddress } from '../../delivery-address/entity/delivery-address.entity.js';
+import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import type { Order } from './order.entity.js';
-import { type OrderRecipientEntityInterface } from '@marketplace/contracts-core';
+import { RecipientPhone } from '../value-object/recipient-phone.value-object.js';
+import { RecipientAddress } from '../value-object/recipient-address.value-object.js';
 
-/**
- * Снапшот получателя на момент оформления заказа. phoneId и deliveryAddressId —
- * НОВЫЕ строки Phone/DeliveryAddress, скопированные из профиля покупателя либо
- * введённые кастомно, поэтому связи 1:1. buyerId — N:1, у покупателя много заказов.
- */
 @Entity('OrderRecipient')
 @Check('OrderRecipient_fullName_notBlank', `btrim("fullName") <> ''`)
+@Check('OrderRecipient_phoneFullNumber_e164', `"phoneFullNumber" ~ '^\\+[1-9][0-9]{7,14}$'`)
+@Check('OrderRecipient_phoneNationalNumber_fmt', `"phoneNationalNumber" ~ '^[0-9]{4,15}$'`)
 @Check('OrderRecipient_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class OrderRecipient implements OrderRecipientEntityInterface {
+export class OrderRecipient {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
-
-  @Column({ type: 'integer' })
-  buyerId: number;
 
   @Column({ type: 'varchar', length: 201 })
   fullName: string;
 
-  @Column({ type: 'integer' })
-  phoneId: number;
+  @Column(() => RecipientPhone, { prefix: false })
+  phone: RecipientPhone;
 
-  @Column({ type: 'integer' })
-  deliveryAddressId: number;
+  @Column(() => RecipientAddress, { prefix: false })
+  address: RecipientAddress;
 
   @CreateDateColumn({ type: 'timestamptz', default: () => 'now()' })
   createdAt: Date;
@@ -38,23 +30,9 @@ export class OrderRecipient implements OrderRecipientEntityInterface {
   @DeleteDateColumn({ type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 
-  // RESTRICT везде: снапшот — часть истории заказа, он не должен исчезать
-  // из-за удаления профиля, телефона или адреса.
-  @ManyToOne(() => User, (user) => user.orderRecipients, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'buyerId' })
-  buyer: User;
-
-  @OneToOne(() => Phone, (phone) => phone.orderRecipient, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'phoneId' })
-  phone: Phone;
-
-  @OneToOne(() => DeliveryAddress, (address) => address.orderRecipient, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'deliveryAddressId' })
-  deliveryAddress: DeliveryAddress;
-
   @OneToOne('Order', (order: Order) => order.orderRecipient)
   order: Order | null;
 }
 
 export interface OrderRecipientCreateEntityInterface
-  extends Pick<OrderRecipient, 'buyerId' | 'fullName' | 'phoneId' | 'deliveryAddressId'> {}
+  extends Pick<OrderRecipient, 'fullName' | 'phone' | 'address'> {}

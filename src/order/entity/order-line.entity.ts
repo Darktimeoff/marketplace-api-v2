@@ -1,17 +1,15 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 import { Order } from './order.entity.js';
-import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
 import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
-import { type OrderProductEntityInterface } from '@marketplace/contracts-core';
 
 /**
  * M:N между Order и SellerOffer с данными на связи (количество и цены на момент
  * заказа), поэтому это явная join-entity с составным PK, а не @ManyToMany.
  */
-@Entity('OrderProduct')
-@Check('OrderProduct_discount_le', `"discountPrice" IS NULL OR "discountPrice" <= "price"`)
-@Check('OrderProduct_deletedAt_ord', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class OrderProduct implements OrderProductEntityInterface {
+@Entity('OrderLine')
+@Check('OrderLine_discount_le', `"unitDiscountPrice" IS NULL OR "unitDiscountPrice" <= "unitPrice"`)
+@Check('OrderLine_deletedAt_ord', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
+export class OrderLine {
   @PrimaryColumn({ type: 'integer' })
   orderId: number;
 
@@ -22,10 +20,10 @@ export class OrderProduct implements OrderProductEntityInterface {
   quantity: number;
 
   @Column({ type: 'numeric', precision: 12, scale: 2, transformer: moneyTransformer })
-  price: string;
+  unitPrice: string;
 
   @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true, transformer: moneyTransformer })
-  discountPrice: string | null;
+  unitDiscountPrice: string | null;
 
   @CreateDateColumn({ type: 'timestamptz', default: () => 'now()' })
   createdAt: Date;
@@ -37,16 +35,10 @@ export class OrderProduct implements OrderProductEntityInterface {
   deletedAt: Date | null;
 
   // CASCADE от заказа: позиция без заказа не существует.
-  @ManyToOne(() => Order, (order) => order.items, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Order, (order) => order.lines, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'orderId' })
   order: Order;
-
-  // RESTRICT от оффера: удаление оффера не должно вычищать позиции
-  // из уже оформленных исторических заказов.
-  @ManyToOne(() => SellerOffer, (offer) => offer.orderItems, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'offerId' })
-  offer: SellerOffer;
 }
 
-export interface OrderProductCreateEntityInterface
-  extends Pick<OrderProduct, 'orderId' | 'offerId' | 'quantity' | 'price' | 'discountPrice'> {}
+export interface OrderLineCreateEntityInterface
+  extends Pick<OrderLine, 'orderId' | 'offerId' | 'quantity' | 'unitPrice' | 'unitDiscountPrice'> {}

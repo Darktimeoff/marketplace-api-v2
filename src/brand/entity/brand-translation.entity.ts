@@ -1,11 +1,11 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 import { Brand } from './brand.entity.js';
-import { LanguageEnum, type BrandTranslationEntityInterface } from '@marketplace/contracts-core';
+import { LanguageEnum } from '@marketplace/contracts-core';
 
 @Entity('BrandTranslation')
 @Unique('BrandTranslation_brandId_language', ['brandId', 'language'])
 @Check('BrandTranslation_name_notBlank', `btrim("name") <> ''`)
-export class BrandTranslation implements BrandTranslationEntityInterface {
+export class BrandTranslation {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 

@@ -1,11 +1,9 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import type { User } from '../../user/entity/user.entity.js';
-import type { OrderRecipient } from '../../order/entity/order-recipient.entity.js';
-import { type DeliveryAddressEntityInterface } from '@marketplace/contracts-core';
 
-@Entity('DeliveryAddress')
-@Check('DeliveryAddress_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class DeliveryAddress implements DeliveryAddressEntityInterface {
+@Entity('Address')
+@Check('Address_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
+export class Address {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 
@@ -27,13 +25,6 @@ export class DeliveryAddress implements DeliveryAddressEntityInterface {
   @DeleteDateColumn({ type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 
-  @OneToOne('User', (user: User) => user.deliveryAddress)
+  @OneToOne('User', (user: User) => user.address)
   user: User | null;
-
-  @OneToOne('OrderRecipient', (recipient: OrderRecipient) => recipient.deliveryAddress)
-  orderRecipient: OrderRecipient | null;
 }
-
-export interface DeliveryAddressCreateEntityInterface
-  extends Pick<DeliveryAddress, 'addressLine' | 'city'>,
-    Partial<Pick<DeliveryAddress, 'building'>> {}

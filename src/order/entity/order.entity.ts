@@ -1,17 +1,20 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { CurrencyEnum, OrderStatusEnum, type OrderEntityInterface } from '@marketplace/contracts-core';
+import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
 import { OrderRecipient } from './order-recipient.entity.js';
 import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
-import type { OrderProduct } from './order-product.entity.js';
+import type { OrderLine } from './order-line.entity.js';
 
 @Entity('Order')
 @Check('Order_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class Order implements OrderEntityInterface {
+export class Order {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 
   @Column({ type: 'uuid', unique: true, default: () => 'gen_random_uuid()' })
   publicId: string;
+
+  @Column({ type: 'integer' })
+  userId: number;
 
   @Column({ type: 'integer' })
   orderRecipientId: number;
@@ -44,9 +47,9 @@ export class Order implements OrderEntityInterface {
   @JoinColumn({ name: 'orderRecipientId' })
   orderRecipient: OrderRecipient;
 
-  @OneToMany('OrderProduct', (item: OrderProduct) => item.order)
-  items: OrderProduct[];
+  @OneToMany('OrderLine', (line: OrderLine) => line.order)
+  lines: OrderLine[];
 }
 
 export interface OrderCreateEntityInterface
-  extends Pick<Order, 'orderRecipientId' | 'totalAmount' | 'discountAmount' | 'currency'>, Partial<Pick<Order, 'status'>> {}
+  extends Pick<Order, 'userId' | 'orderRecipientId' | 'totalAmount' | 'discountAmount' | 'currency'>, Partial<Pick<Order, 'status'>> {}

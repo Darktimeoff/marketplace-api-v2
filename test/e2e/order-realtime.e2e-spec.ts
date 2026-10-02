@@ -33,10 +33,11 @@ describe('Order realtime (e2e)', () => {
     await app.close();
   });
 
-  async function createOrder(buyerId?: number): Promise<Order> {
-    const recipient = await anOrderRecipient(dataSource.manager, { buyerId });
+  async function createOrder(userId?: number): Promise<Order> {
+    const recipient = await anOrderRecipient(dataSource.manager);
     const orders = dataSource.getRepository(Order);
     return orders.save(orders.create({
+      userId: userId ?? (await aUser(dataSource.manager)).id,
       orderRecipientId: recipient.id,
       totalAmount: '100.00',
       discountAmount: '0.00',

@@ -1,14 +1,13 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { Identity } from '../../identity/entity/identity.entity.js';
-import { DeliveryAddress } from '../../delivery-address/entity/delivery-address.entity.js';
-import type { Seller } from '../../seller/entity/seller.entity.js';
-import type { OrderRecipient } from '../../order/entity/order-recipient.entity.js'
-import { GenderEnum, LanguageEnum, type UserEntityInterface } from '@marketplace/contracts-core';
+import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
+import { Address } from './address.entity.js';
+import { LanguageEnum } from '@marketplace/contracts-core';
+import { GenderEnum } from '../enum/gender.enum.js';
 
 @Entity('User')
+@Unique('User_identityId_key', ['identityId'])
 @Check('User_dateOfBirth_past', `"dateOfBirth" IS NULL OR "dateOfBirth" < current_date`)
 @Check('User_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class User implements UserEntityInterface {
+export class User {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 
@@ -46,7 +45,7 @@ export class User implements UserEntityInterface {
   timezone: string;
 
   @Column({ type: 'integer', nullable: true })
-  deliveryAddressId: number | null;
+  addressId: number | null;
 
   @CreateDateColumn({ type: 'timestamptz', default: () => 'now()' })
   createdAt: Date;
@@ -57,17 +56,7 @@ export class User implements UserEntityInterface {
   @DeleteDateColumn({ type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 
-  @OneToOne(() => Identity, (identity) => identity.user, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'identityId' })
-  identity: Identity;
-
-  @OneToOne(() => DeliveryAddress, (address) => address.user, { onDelete: 'RESTRICT', nullable: true })
-  @JoinColumn({ name: 'deliveryAddressId' })
-  deliveryAddress: DeliveryAddress | null;
-
-  @OneToOne('Seller', (seller: Seller) => seller.user)
-  seller: Seller | null;
-
-  @OneToMany('OrderRecipient', (recipient: OrderRecipient) => recipient.buyer)
-  orderRecipients: OrderRecipient[];
+  @OneToOne(() => Address, (address) => address.user, { onDelete: 'RESTRICT', nullable: true })
+  @JoinColumn({ name: 'addressId' })
+  address: Address | null;
 }

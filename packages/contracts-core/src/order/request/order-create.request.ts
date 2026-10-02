@@ -1,12 +1,23 @@
 import type { CurrencyEnum } from '../../generic/enum/currency.enum.js';
-import type { PhoneCreateRequestInterface } from '../../phone/request/phone-create.request.js';
-import type { DeliveryAddressCreateRequestInterface } from '../../delivery-address/request/delivery-address-create.request.js';
+import type { CountryCodeEnum } from '../../generic/enum/country-code.enum.js';
+
+export interface OrderCreateRecipientPhoneRequestInterface {
+  countryCode: CountryCodeEnum;
+  rawNumber: string;
+  fullNumber: string;
+  nationalNumber: string;
+}
+
+export interface OrderCreateRecipientAddressRequestInterface {
+  addressLine: string;
+  city: string;
+  building?: string | null;
+}
 
 export interface OrderCreateRecipientRequestInterface {
-  buyerId: number;
   fullName: string;
-  phone: PhoneCreateRequestInterface;
-  deliveryAddress: DeliveryAddressCreateRequestInterface;
+  phone: OrderCreateRecipientPhoneRequestInterface;
+  address: OrderCreateRecipientAddressRequestInterface;
 }
 
 export interface OrderCreateItemRequestInterface {
@@ -15,6 +26,7 @@ export interface OrderCreateItemRequestInterface {
 }
 
 export interface OrderCreateRequestInterface {
+  userId: number;
   recipient: OrderCreateRecipientRequestInterface;
   items: OrderCreateItemRequestInterface[];
   currency: CurrencyEnum;

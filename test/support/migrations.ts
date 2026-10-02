@@ -12,14 +12,18 @@ import { AddAccountInbox1790948332938 } from '../../src/migrations/1790948332938
 import { AddAccountBalance1790949258576 } from '../../src/migrations/1790949258576-AddAccountBalance.js';
 import { LinkTransactionToAccount1790949513750 } from '../../src/migrations/1790949513750-LinkTransactionToAccount.js';
 import { DropInboxAndBackgroundJob1790949940010 } from '../../src/migrations/1790949940010-DropInboxAndBackgroundJob.js';
+import { OrderOwnsUserAndContact1791000000000 } from '../../src/migrations/1791000000000-OrderOwnsUserAndContact.js';
+import { IdentityOwnsLoginPhone1791000000010 } from '../../src/migrations/1791000000010-IdentityOwnsLoginPhone.js';
+import { RenameDeliveryAddressToAddress1791000000020 } from '../../src/migrations/1791000000020-RenameDeliveryAddressToAddress.js';
+import { RenameOrderProductToOrderLine1791000000030 } from '../../src/migrations/1791000000030-RenameOrderProductToOrderLine.js';
+import { RenameOnHandQuantity1791000000040 } from '../../src/migrations/1791000000040-RenameOnHandQuantity.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { User } from '../../src/user/entity/user.entity.js';
 import { Brand } from '../../src/brand/entity/brand.entity.js';
 import { BrandTranslation } from '../../src/brand/entity/brand-translation.entity.js';
 import { Category } from '../../src/category/entity/category.entity.js';
 import { CategoryTranslation } from '../../src/category/entity/category-translation.entity.js';
-import { Phone } from '../../src/phone/entity/phone.entity.js';
-import { DeliveryAddress } from '../../src/delivery-address/entity/delivery-address.entity.js';
+import { Address } from '../../src/user/entity/address.entity.js';
 import { Product } from '../../src/product/entity/product.entity.js';
 import { ProductTranslation } from '../../src/product/entity/product-translation.entity.js';
 import { ProductVariant } from '../../src/product-variant/entity/product-variant.entity.js';
@@ -30,7 +34,7 @@ import { Account } from '../../src/account/entity/account.entity.js';
 import { AccountInbox } from '../../src/account/entity/account-inbox.entity.js';
 import { StockReservation } from '../../src/seller-offer/entity/stock-reservation.entity.js';
 import { Order } from '../../src/order/entity/order.entity.js';
-import { OrderProduct } from '../../src/order/entity/order-product.entity.js';
+import { OrderLine } from '../../src/order/entity/order-line.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
 
 export const testMigrations: (new () => MigrationInterface)[] = [
@@ -47,6 +51,11 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   AddAccountBalance1790949258576,
   LinkTransactionToAccount1790949513750,
   DropInboxAndBackgroundJob1790949940010,
+  OrderOwnsUserAndContact1791000000000,
+  IdentityOwnsLoginPhone1791000000010,
+  RenameDeliveryAddressToAddress1791000000020,
+  RenameOrderProductToOrderLine1791000000030,
+  RenameOnHandQuantity1791000000040,
 ];
 
 export const testEntities = [
@@ -56,8 +65,7 @@ export const testEntities = [
   BrandTranslation,
   Category,
   CategoryTranslation,
-  Phone,
-  DeliveryAddress,
+  Address,
   Product,
   ProductTranslation,
   ProductVariant,
@@ -68,6 +76,6 @@ export const testEntities = [
   AccountInbox,
   Transaction,
   Order,
-  OrderProduct,
+  OrderLine,
   OrderRecipient,
 ];

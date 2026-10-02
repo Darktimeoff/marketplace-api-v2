@@ -1,10 +1,9 @@
 import { CreateDateColumn, Entity, Column, OneToMany, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
 import type { Transaction } from './transaction.entity.js';
-import { type AccountEntityInterface } from '@marketplace/contracts-core';
 
 @Entity('Account')
-export class Account implements AccountEntityInterface {
+export class Account {
   @PrimaryColumn({ type: 'integer', primaryKeyConstraintName: 'Account_pkey' })
   customerId: number;
 

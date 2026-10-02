@@ -7,6 +7,7 @@ import { OrderRepository } from "./repository/order.repository.js";
 import { OrderRecipientRepository } from "./repository/order-recipient.repository.js";
 import { OrderProductRepository } from "./repository/order-product.repository.js";
 import { OrderService } from "./service/order.service.js";
+import { OrderPlaceCommandHandler } from "./command-handler/order-place.command-handler.js";
 import { OrderController } from "./controller/order.controller.js";
 import { OrdersController } from './controller/orders.controller.js';
 import { OrderGateway } from './controller/order.gateway.js';
@@ -36,6 +37,7 @@ import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
     OrderRecipientRepository,
     OrderProductRepository,
     OrderService,
+    OrderPlaceCommandHandler,
     OrderAccessService,
     OrderNotifyService,
     OrderGateway,

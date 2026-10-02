@@ -5,14 +5,18 @@ import { randomUUID } from "node:crypto";
 import { isUUID } from "class-validator";
 import { SellerOfferReserveTopologyEnum } from "../enum/seller-offer-reserve-topology.enum.js";
 import { SellerOfferReleaseTopologyEnum } from "../enum/seller-offer-release-topology.enum.js";
-import { SellerOfferService } from "../service/seller-offer.service.js";
+import { SellerOfferStockReserveCommandHandler } from "../command-handler/seller-offer-stock-reserve.command-handler.js";
+import { SellerOfferStockReleaseCommandHandler } from "../command-handler/seller-offer-stock-release.command-handler.js";
 import { StockReservationRejectedException } from "../exception/stock-reservation-rejected.exception.js";
 
 @Injectable()
-export class OrderSellerOfferGateway {
-  private readonly logger = new Logger(OrderSellerOfferGateway.name)
+export class SellerOfferGateway {
+  private readonly logger = new Logger(SellerOfferGateway.name)
 
-  constructor(private readonly offers: SellerOfferService) {}
+  constructor(
+    private readonly reserve: SellerOfferStockReserveCommandHandler,
+    private readonly release: SellerOfferStockReleaseCommandHandler,
+  ) {}
 
   @RabbitRPC({
     exchange: StockReserveRequest.TOPIC,
@@ -37,7 +41,7 @@ export class OrderSellerOfferGateway {
     }
 
     try {
-      await this.offers.reserveOrFail(msg.subject, msg.data.items)
+      await this.reserve.execute(msg.subject, msg.data)
       return this.toResponse(msg, { status: 'reserved' })
     } catch (e) {
       if (e instanceof StockReservationRejectedException) {
@@ -71,7 +75,7 @@ export class OrderSellerOfferGateway {
     }
 
     try {
-      const released = await this.offers.release(msg.data.orderPublicId)
+      const released = await this.release.execute(msg.data)
       this.logger.log(`released order=${msg.data.orderPublicId} offers=${released}`)
     } catch (e) {
       this.logger.error(`failed release order=${msg.data.orderPublicId}`, e instanceof Error ? e.stack : String(e))

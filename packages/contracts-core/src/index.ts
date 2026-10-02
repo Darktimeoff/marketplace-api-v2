@@ -5,3 +5,7 @@ export * from './order/request/order-status-update.request.js';
 export * from './order/response/order.response.js';
 export * from './generic/enum/country-code.enum.js';
 export * from './generic/enum/language.enum.js';
+export * from './identity/request/identity-register.request.js';
+export * from './identity/request/identity-login.request.js';
+export * from './identity/request/identity-refresh-token.request.js';
+export * from './identity/response/identity-token.response.js';

@@ -1,8 +1,9 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 import { RoleEnum } from '../enum/role.enum.js';
 import { LoginPhone } from '../value-object/login-phone.value-object.js';
 
 @Entity('Identity')
+@Unique('Identity_loginPhoneFullNumber_key', ['loginPhone.fullNumber'])
 @Check('Identity_login_present', `"email" IS NOT NULL OR "loginPhoneFullNumber" IS NOT NULL`)
 @Check('Identity_loginPhoneFullNumber_e164', `"loginPhoneFullNumber" ~ '^\\+[1-9][0-9]{7,14}$'`)
 @Check('Identity_loginPhoneNationalNumber_fmt', `"loginPhoneNationalNumber" ~ '^[0-9]{4,15}$'`)
@@ -38,3 +39,6 @@ export class Identity {
   @DeleteDateColumn({ type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 }
+
+export interface IdentityCreateEntityInterface
+  extends Pick<Identity, 'email' | 'loginPhone' | 'passwordHash' | 'role'> {}

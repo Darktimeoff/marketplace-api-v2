@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { DeepPartial, FindOptionsWhere, ObjectLiteral, Repository } from 'typeorm';
+import { argon2id, hash } from 'argon2';
 import { AppDataSource } from './data-source.js';
 import { CountryCodeEnum, CurrencyEnum, OrderStatusEnum, LanguageEnum } from '@marketplace/contracts-core';
 import { Identity } from './identity/entity/identity.entity.js';
@@ -44,6 +45,7 @@ async function ensure<T extends ObjectLiteral>(
 
 const SELLERS = 2;
 const BUYERS = 4;
+const SEED_PASSWORD = 'marketplace-dev';
 const ORDERS = 10;
 
 function phoneFor(index: number) {
@@ -119,6 +121,7 @@ async function seed(): Promise<void> {
 
   // ---------- пользователи: продавцы и покупатели ----------
   const userRows: User[] = [];
+  const seedPasswordHash = await hash(SEED_PASSWORD, { type: argon2id });
 
   for (let i = 0; i < SELLERS + BUYERS; i++) {
     const isSeller = i < SELLERS;
@@ -131,7 +134,7 @@ async function seed(): Promise<void> {
         identities.create({
           email,
           loginPhone: phoneFor(i),
-          passwordHash: `$2b$10$seed.deterministic.hash.${i}`,
+          passwordHash: seedPasswordHash,
           role: isSeller ? RoleEnum.seller : RoleEnum.user,
           // activatedAt проставляется ниже одним UPDATE: CHECK Identity_activatedAt_ord
           // требует activatedAt >= createdAt, а createdAt приходит из DEFAULT now()
@@ -139,6 +142,8 @@ async function seed(): Promise<void> {
           activatedAt: null,
         }),
       );
+    } else if (!identity.passwordHash.startsWith('$argon2id$')) {
+      await identities.update({ id: identity.id }, { passwordHash: seedPasswordHash });
     }
 
     let user = await users.findOne({ where: { identityId: identity.id } });

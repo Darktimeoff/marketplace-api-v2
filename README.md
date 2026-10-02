@@ -140,6 +140,26 @@ Two npm workspaces, transport-agnostic, with folders mirroring `src/<domain>/`:
 
 Packages export TypeScript sources for types (so `npx tsc --noEmit` works without building them) and `dist/` for Node. Mapping `TOPIC`/`TYPE` to an exchange and routing key happens only in the app's infrastructure.
 
+## Auth (identity)
+
+| Endpoint | Body | Result |
+|---|---|---|
+| `POST /auth/register` | `{ email?, phone?, password }`, at least one of email or phone | `201` token pair, `409` if the email or phone is taken |
+| `POST /auth/login` | `{ login, password }`; a `login` starting with `+` is an E.164 phone, anything else an email | `200` token pair, `401` |
+| `POST /auth/refresh` | `{ refreshToken }` | `200` new token pair, `401` |
+| `POST /auth/logout` | `{ refreshToken }` | `204`, also for an unknown or already revoked token |
+
+A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
+
+- **Access token**: a 15-minute JWT signed with ES256. Claims: `sub` (identity id), `role`, `email`, `phone_number` (E.164), `iss: identity-service`, and a `kid` header (the public key's JWK thumbprint). Email and phone are in the token so other contexts don't have to ask identity for them on every request. A JWT is signed, not encrypted: anyone holding it can read these claims.
+- **Asymmetric keys**: only identity reads `JWT_PRIVATE_KEY` and signs. Verifying needs only `JWT_PUBLIC_KEY`, so any service can check a token without being able to mint one. `AccessTokenGuard` (`src/generic/auth/`) accepts only ES256 from `identity-service`, which rules out `alg: none` and HS/RS key confusion, validates the payload with a zod schema, and puts `{ identityId, role, email, phoneNumber }` on the request. Today the public key comes from configuration; the next step towards zero trust is identity publishing it at `/.well-known/jwks.json` and verifiers fetching it from there.
+- **Refresh token**: 32 random bytes, valid for 30 days, stored only as a SHA-256 hash in `IdentitySession`. Every refresh marks the token used and issues a new one in the same session family. The "not used yet" check is an `UPDATE … WHERE "usedAt" IS NULL RETURNING`, so two parallel refreshes can't both win. Presenting a used token again means it was copied, so the whole family is revoked. Logout revokes the family too. Each login starts a new family, so sessions on other devices are unaffected.
+- **Passwords**: argon2id, 8–128 characters, no composition rules (NIST 800-63B). Login answers an unknown login, a wrong password and a deleted identity with the same `401 Invalid login or password`, and hashes a dummy password when the login doesn't exist, so timing doesn't reveal which accounts exist.
+- **Registration** creates only the `Identity` (role `user`; a `role` in the body is ignored). The User profile isn't created, and `activatedAt` stays `NULL` until a verification flow exists.
+- **Keys** live in Infisical (`JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, PEM). Generate a pair with `openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt` and `openssl ec -pubout`. Tests generate a fresh pair per run (`test/support/env.ts`).
+- **Seeded logins**: `seller1@example.com`, `buyer1@example.com`, … with the password `marketplace-dev`.
+- **Not done yet**: rate limiting on `/auth/*`, email/phone verification, the JWKS endpoint, cleanup of expired sessions, and a grace window for a client that refreshes twice in parallel (today the second request revokes the session).
+
 ## Realtime order status (SSE)
 
 `PATCH /orders/:id/status` with `{ "userId": <buyerId>, "status": "preparing" }` changes a status; `GET /orders/:id/events?userId=<buyerId>` streams `order.status` events as SSE and replays events after `Last-Event-ID` (the most recent 100 per order). The buyer id is an ownership hint, not authentication.

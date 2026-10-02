@@ -33,7 +33,7 @@ node dist/main.js
 
 - `--wait` matters: without it `docker compose up -d` returns before Postgres and RabbitMQ accept connections, and `migrate` fails with `Connection terminated unexpectedly`. RabbitMQ's healthcheck is `rabbitmq-diagnostics -q check_running`.
 - Postgres is reached through pgbouncer (`db-bouncer`), which is what `DBPORT` points at.
-- Name the services explicitly: the compose file also contains the Infisical stack and a Pact broker, which need credentials of their own.
+- Name the services explicitly: the compose file also contains the Infisical stack, which needs credentials of its own.
 - `npm run build` is required before `migrate`, `seed` and starting the app: they run the compiled `dist/`. The build compiles the contract packages first, then the app.
 
 ## Architecture
@@ -117,7 +117,7 @@ Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <com
 - **Generated migrations need review**: `migration:generate` also emits unrelated drift (FK renames to hash names, `User.fullName`, the `Order.publicId` default). Keep only the statements the change needs, and write a migration by hand when generation would recreate a table.
 - **`onDelete`**: `CASCADE` for compositions that can't exist without their parent (translations, `OrderProduct → Order`), `RESTRICT` everywhere else, including all money and order history.
 - **Seed**: `npm run seed` is deterministic and idempotent; every row is looked up by a natural key before it is created, so running it twice gives the same database.
-- **Backups**: `npm run dump` writes a `pg_dump -Fc` backup; `npm run restore` restores the latest one into a throwaway container and verifies it (see `RESTORE-DRILL.md`).
+- **Backups**: `npm run dump` writes a `pg_dump -Fc` backup; `npm run restore` restores the latest one into a throwaway container and checks one table's row count and column sum against the baseline recorded at dump time.
 
 ## Testing
 
@@ -125,24 +125,9 @@ Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <com
 npm test                  # unit tests
 npm run test:integration  # repositories against Postgres (testcontainers)
 npm run test:e2e          # the full app over HTTP (testcontainers)
-npm run test:contract     # Pact consumer test, produces pacts/*.json
-npm run verify:provider   # Pact provider verification against the broker
 ```
 
 Integration and e2e tests start their containers once per run and truncate all tables after every test (`test/support/isolation.ts`), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with.
-
-**Contract tests (Pact, consumer-driven).** `test/contract/consumer.pact.test.mjs` describes `GET /product/{id}` as the frontend expects it; `provider.pact.test.ts` verifies it against the real app and a real Postgres, using the pact pulled from the broker. Locally:
-
-```bash
-cp secrets/pact_broker_password.txt.example secrets/pact_broker_password.txt
-docker compose up -d --wait pact-broker
-export PACT_BROKER_URL=http://127.0.0.1:9292 PACT_BROKER_TOKEN=changeme
-npm run test:contract && npm run pact:publish && npm run verify:provider && npm run pact:can-i-deploy
-```
-
-The OSS broker only supports Basic Auth, so `PACT_BROKER_TOKEN` is the Basic Auth password for the fixed user `ci`. CI runs the same pipeline in `.github/workflows/contract.yml`.
-
-**OpenAPI.** `openapi/openapi.yaml` describes the catalog endpoints: `npm run spec:lint`, `npm run spec:bundle`, `npm run spec:docs` (Redoc, writes `docs.html`).
 
 ## Configuration
 

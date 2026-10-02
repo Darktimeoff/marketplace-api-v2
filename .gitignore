@@ -1,12 +1,6 @@
 # dependencies
 node_modules/
 
-# contract artifacts
-pacts/
-logs/
-spec.json
-docs.html
-
 # compiled output
 /dist
 packages/*/dist

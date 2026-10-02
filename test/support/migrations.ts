@@ -19,6 +19,7 @@ import { RenameOrderProductToOrderLine1791000000030 } from '../../src/migrations
 import { RenameOnHandQuantity1791000000040 } from '../../src/migrations/1791000000040-RenameOnHandQuantity.js';
 import { AddIdentitySession1791000000050 } from '../../src/migrations/1791000000050-AddIdentitySession.js';
 import { AddIdentityPublicId1791000000060 } from '../../src/migrations/1791000000060-AddIdentityPublicId.js';
+import { AddPublicIds1791000000070 } from '../../src/migrations/1791000000070-AddPublicIds.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { User } from '../../src/user/entity/user.entity.js';
@@ -61,6 +62,7 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   RenameOnHandQuantity1791000000040,
   AddIdentitySession1791000000050,
   AddIdentityPublicId1791000000060,
+  AddPublicIds1791000000070,
 ];
 
 export const testEntities = [

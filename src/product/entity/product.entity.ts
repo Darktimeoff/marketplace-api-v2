@@ -27,6 +27,9 @@ export class Product {
   })
   id: number;
 
+  @Column({ type: 'uuid', unique: true, default: () => 'gen_random_uuid()' })
+  publicId: string;
+
   @Column({ type: 'integer' })
   categoryId: number;
 

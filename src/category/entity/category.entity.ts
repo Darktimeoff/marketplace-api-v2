@@ -10,6 +10,9 @@ export class Category {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 
+  @Column({ type: 'uuid', unique: true, default: () => 'gen_random_uuid()' })
+  publicId: string;
+
   @Column({ type: 'varchar', length: 120, unique: true })
   slug: string;
 

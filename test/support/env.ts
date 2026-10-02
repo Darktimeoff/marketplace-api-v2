@@ -21,4 +21,10 @@ process.env.INFISICAL_ENVIRONMENT = 'dev';
 process.env.INFISICAL_CLIENT_ID = 'test';
 process.env.INFISICAL_SITE_URL = 'http://localhost:4010';
 process.env.INFISICAL_PROJECT_ID = 'test';
-process.env.WORKER_POOL_SIZE = '4';
+
+if (connection.broker) {
+  process.env.RABBITMQ_HOST = connection.broker.host;
+  process.env.RABBITMQ_PORT = String(connection.broker.port);
+  process.env.RABBITMQ_USER = connection.broker.username;
+  process.env.RABBITMQ_PASSWORD = connection.broker.password;
+}

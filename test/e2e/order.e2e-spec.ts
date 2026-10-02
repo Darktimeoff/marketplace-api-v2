@@ -87,7 +87,7 @@ describe('Order (e2e)', () => {
       .expect(201);
 
     expect(createResponse.body).toMatchObject({
-      status: 'created',
+      status: 'paid',
       totalAmount: '100.00',
       currency: CurrencyEnum.UAH,
     });
@@ -101,7 +101,7 @@ describe('Order (e2e)', () => {
     expect(readResponse.body).toMatchObject({
       id: orderId,
       publicId: createResponse.body.publicId,
-      status: 'created',
+      status: 'paid',
       totalAmount: '100.00',
     });
   });

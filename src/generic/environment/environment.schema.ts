@@ -12,6 +12,7 @@ const environmentSchema = z.object({
   INFISICAL_ENVIRONMENT: z.enum(['dev', 'staging', 'prod']),
   RABBITMQ_HOST: z.string().min(1).default('rabbitmq'),
   RABBITMQ_PORT: z.coerce.number().int().min(1).max(65535).default(5672),
+  KAFKA_BROKERS: z.string().min(1).default('kafka:29092'),
 })
 
 export type EnvironmentType = z.infer<typeof environmentSchema>

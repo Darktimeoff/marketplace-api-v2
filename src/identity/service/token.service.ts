@@ -29,7 +29,7 @@ export class TokenService implements OnModuleInit {
     return createHash('sha256').update(refreshToken).digest('hex');
   }
 
-  async createTokenPair(identity: Pick<Identity, 'id' | 'role' | 'email' | 'loginPhone'>, familyId: string = randomUUID()): Promise<IdentityTokenResponseInterface> {
+  async createTokenPair(identity: Pick<Identity, 'id' | 'publicId' | 'role' | 'email' | 'loginPhone'>, familyId: string = randomUUID()): Promise<IdentityTokenResponseInterface> {
     const refreshToken = randomBytes(32).toString('base64url');
 
     await this.sessions.create({
@@ -45,7 +45,7 @@ export class TokenService implements OnModuleInit {
       ...(identity.loginPhone.fullNumber !== null && { phone_number: identity.loginPhone.fullNumber }),
     })
       .setProtectedHeader({ alg: ACCESS_TOKEN_ALGORITHM, kid: this.keyId, typ: 'JWT' })
-      .setSubject(String(identity.id))
+      .setSubject(identity.publicId)
       .setIssuer(ACCESS_TOKEN_ISSUER)
       .setIssuedAt()
       .setExpirationTime(`${ACCESS_TOKEN_TTL_SECONDS}s`)

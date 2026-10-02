@@ -1,6 +1,6 @@
 # marketplace-api-v2
 
-Marketplace backend in NestJS, built as a modular monolith whose modules behave like separate services: each owns its data and its broker topology, and they talk to each other only through RabbitMQ messages described in shared contract packages.
+Marketplace backend in NestJS, built as a modular monolith whose modules behave like separate services: each owns its data and its broker topology, and they talk to each other only through messages described in shared contract packages: commands and requests over RabbitMQ, domain events over Kafka.
 
 | Service (module) | Owns | Talks over RabbitMQ |
 |---|---|---|
@@ -58,10 +58,11 @@ From a fresh clone, without access to the secret store:
 cp .env.example .env
 cp secrets/db_password.txt.example secrets/db_password.txt
 cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
-docker compose up -d --wait db db-bouncer rabbitmq
+docker compose up -d --wait db db-bouncer rabbitmq kafka
 
 export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
 export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
+export KAFKA_BROKERS=localhost:9092
 export SKIP_VAULT=1
 
 npm ci
@@ -74,7 +75,7 @@ node dist/main.js
 - `--wait` matters: without it `docker compose up -d` returns before Postgres and RabbitMQ accept connections, and `migrate` fails with `Connection terminated unexpectedly`. RabbitMQ's healthcheck is `rabbitmq-diagnostics -q check_running`.
 - Postgres is reached through pgbouncer (`db-bouncer`), which is what `DBPORT` points at.
 - Name the services explicitly: the compose file also contains the Infisical stack, which needs credentials of its own.
-- Kafka is not used by the app yet. `docker compose up -d --wait kafka kafka-ui` starts a single KRaft node (broker and controller in one process) on `localhost:${KAFKA_PORT:-9092}` (containers reach it at `kafka:29092`) and Kafka UI on `localhost:${KAFKA_UI_PORT:-8090}`. Automatic topic creation is off: topics are declared explicitly, like the RabbitMQ exchanges, so a typo in a topic name fails instead of creating a new topic.
+- `kafka` is a single KRaft node (broker and controller in one process) on `localhost:${KAFKA_PORT:-9092}`; containers reach it at `kafka:29092`. Add `kafka-ui` to the command for Kafka UI on `localhost:${KAFKA_UI_PORT:-8090}`. Automatic topic creation is off: the app creates the topics it owns at startup, like the RabbitMQ exchanges, so a typo in a topic name fails instead of creating a new topic.
 - `npm run build` is required before `migrate`, `seed` and starting the app: they run the compiled `dist/`. The build compiles the contract packages first, then the app.
 
 ## Architecture
@@ -131,6 +132,21 @@ Delivery over RabbitMQ is at-least-once, so every consumer makes its effect safe
 - **Consuming**: manual ack after the effect. A message that can never succeed (wrong `specversion`/`type`, invalid ids, invalid payload) is `Nack(false)` → DLQ with reason `rejected`; transient failures are retried.
 - There is a single `RabbitMQModule.forRootAsync` (`src/generic/rabbitmq/rabbitmq.module.ts`); a second registration would silently share one connection with the wrong config.
 
+### Events (Kafka)
+
+RabbitMQ keeps the commands and request/reply of the saga: work for one receiver, acked or dead-lettered per message. Kafka carries domain events, facts that already happened, kept in a log that any number of consumers can read and replay at their own pace.
+
+| Topic | Producer | Events |
+|---|---|---|
+| `identity.events` (3 partitions) | identity | `identity.registered` after a registration commits |
+
+- **Same envelope**: a structured CloudEvent as the JSON value, header `content-type: application/cloudevents+json`. `id`, `subject` and `correlationid` are the identity's `publicId`, so `id` is stable for the fact and works as a consumer's dedup key. `data` is `{ identityPublicId, email, phoneNumber }`, built by hand, never the entity.
+- **Key = `subject`**: all events about one identity land on the same partition and stay in order; different identities spread across partitions.
+- **Topics**: `TopicEnum` lists every topic name regardless of broker. `RabbitMqModule` declares only the command exchanges, and `KafkaProducerService` (`src/generic/kafka/`) creates the topics it owns at startup with the admin API (an existing topic is left as it is; replication factor `-1` takes the broker default).
+- **Producer**: `@confluentinc/kafka-javascript` (librdkafka) with idempotence on and `acks: all`, so a retried send never writes a duplicate and a send succeeds only once every in-sync replica has it.
+- **Publish after commit**: register commits the identity, then publishes. A failed publish is logged and registration still answers `201`, because the commit can't be undone. Until an outbox exists, an event can be lost if the process dies or Kafka is down between the commit and the send.
+- **No consumers yet**; the user profile from `identity.registered` comes later.
+
 ### Contract packages
 
 Two npm workspaces, transport-agnostic, with folders mirroring `src/<domain>/`:
@@ -151,9 +167,9 @@ Packages export TypeScript sources for types (so `npx tsc --noEmit` works withou
 
 A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
 
-- **Access token**: a 15-minute JWT signed with ES256. Claims: `sub` (identity id), `role`, `email`, `phone_number` (E.164), `iss: identity-service`, and a `kid` header (the public key's JWK thumbprint). Email and phone are in the token so other contexts don't have to ask identity for them on every request. A JWT is signed, not encrypted: anyone holding it can read these claims.
-- **Asymmetric keys**: only identity reads `JWT_PRIVATE_KEY` and signs. Verifying needs only `JWT_PUBLIC_KEY`, so any service can check a token without being able to mint one. `AccessTokenGuard` (`src/generic/auth/`) accepts only ES256 from `identity-service`, which rules out `alg: none` and HS/RS key confusion, validates the payload with a zod schema, and puts `{ identityId, role, email, phoneNumber }` on the request. Today the public key comes from configuration; the next step towards zero trust is identity publishing it at `/.well-known/jwks.json` and verifiers fetching it from there.
-- **`@Identity()`** (`src/generic/auth/decorator/`) reads those claims in a handler: `@UseGuards(AccessTokenGuard) @Get() me(@Identity() identity: AccessTokenClaimsInterface)`, or `@Identity('identityId') identityId: number` for one field. Without the guard on the route it fails with 500 instead of silently returning `undefined`.
+- **Access token**: a 15-minute JWT signed with ES256. Claims: `sub` (the identity's `publicId`, a uuid; the integer id never leaves identity), `role`, `email`, `phone_number` (E.164), `iss: identity-service`, and a `kid` header (the public key's JWK thumbprint). Email and phone are in the token so other contexts don't have to ask identity for them on every request. A JWT is signed, not encrypted: anyone holding it can read these claims.
+- **Asymmetric keys**: only identity reads `JWT_PRIVATE_KEY` and signs. Verifying needs only `JWT_PUBLIC_KEY`, so any service can check a token without being able to mint one. `AccessTokenGuard` (`src/generic/auth/`) accepts only ES256 from `identity-service`, which rules out `alg: none` and HS/RS key confusion, validates the payload with a zod schema, and puts `{ identityPublicId, role, email, phoneNumber }` on the request. Today the public key comes from configuration; the next step towards zero trust is identity publishing it at `/.well-known/jwks.json` and verifiers fetching it from there.
+- **`@Identity()`** (`src/generic/auth/decorator/`) reads those claims in a handler: `@UseGuards(AccessTokenGuard) @Get() me(@Identity() identity: AccessTokenClaimsInterface)`, or `@Identity('identityPublicId') identityPublicId: string` for one field. Without the guard on the route it fails with 500 instead of silently returning `undefined`.
 - **Refresh token**: 32 random bytes, valid for 30 days, stored only as a SHA-256 hash in `IdentitySession`. Every refresh marks the token used and issues a new one in the same session family. The "not used yet" check is an `UPDATE … WHERE "usedAt" IS NULL RETURNING`, so two parallel refreshes can't both win. Presenting a used token again means it was copied, so the whole family is revoked. Logout revokes the family too. Each login starts a new family, so sessions on other devices are unaffected.
 - **Passwords**: argon2id, 8–128 characters, no composition rules (NIST 800-63B). Login answers an unknown login, a wrong password and a deleted identity with the same `401 Invalid login or password`, and hashes a dummy password when the login doesn't exist, so timing doesn't reveal which accounts exist.
 - **Registration** creates only the `Identity` (role `user`; a `role` in the body is ignored). The User profile isn't created, and `activatedAt` stays `NULL` until a verification flow exists.
@@ -169,14 +185,14 @@ SSE fits one-way notifications: the browser's `EventSource` reconnects by itself
 
 ## Secrets
 
-Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` (see `SecretsInterface`). Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.
+Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` (see `SecretsInterface`). Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.
 
 `npm run rotate:db-password` rotates the database password: it changes it in Postgres, writes `secrets/db_password.txt`, syncs Infisical and terminates the old sessions. With `SKIP_VAULT=1`, re-export `DBPASSWORD` afterwards.
 
 ## Database
 
 - **Migrations only**: `synchronize: false`. `synchronize: true` would destroy what TypeORM doesn't model: the `uint` and `amount` domains, the `User.fullName` generated column and the `setUpdatedAt` triggers.
-- **Generated migrations need review**: `migration:generate` also emits unrelated drift (FK renames to hash names, `User.fullName`, the `Order.publicId` default). Keep only the statements the change needs, and write a migration by hand when generation would recreate a table.
+- **Generated migrations need review**: `migration:generate` also emits unrelated drift (FK renames to hash names, `User.fullName`, the `Order.publicId` and `Identity.publicId` defaults). Keep only the statements the change needs, and write a migration by hand when generation would recreate a table.
 - **`onDelete`**: `CASCADE` for compositions that can't exist without their parent (translations, `OrderLine → Order`), `RESTRICT` everywhere else, including all money and order history.
 - **Seed**: `npm run seed` is deterministic and idempotent; every row is looked up by a natural key before it is created, so running it twice gives the same database.
 
@@ -185,7 +201,7 @@ Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <com
 ```bash
 npm test                  # unit tests
 npm run test:integration  # repositories against Postgres (testcontainers)
-npm run test:e2e          # the full app over HTTP (testcontainers)
+npm run test:e2e          # the full app over HTTP (testcontainers: Postgres, RabbitMQ, Kafka)
 ```
 
 Integration and e2e tests start their containers once per run and truncate all tables after every test (`test/support/isolation.ts`), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with.
@@ -203,6 +219,7 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `DBNAME` | yes | — | Postgres database |
 | `RABBITMQ_HOST` | no | `rabbitmq` | broker host (`localhost` when the app runs outside Docker) |
 | `RABBITMQ_PORT` | no | `5672` | AMQP port (`15672` is the management UI) |
+| `KAFKA_BROKERS` | no | `kafka:29092` | comma-separated Kafka bootstrap servers (`localhost:9092` when the app runs outside Docker) |
 | `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
 
-Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`) come from Infisical, or from the environment with `SKIP_VAULT=1`.
+Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`) come from Infisical, or from the environment with `SKIP_VAULT=1`.

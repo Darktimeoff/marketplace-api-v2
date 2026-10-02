@@ -1,7 +1,7 @@
 import type { RoleEnum } from '../../../identity/enum/role.enum.js';
 
 export interface AccessTokenClaimsInterface {
-  identityId: number;
+  identityPublicId: string;
   role: RoleEnum;
   email: string | null;
   phoneNumber: string | null;

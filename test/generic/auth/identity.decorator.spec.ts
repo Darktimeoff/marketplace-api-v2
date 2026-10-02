@@ -29,7 +29,7 @@ function contextWith(identity: AccessTokenClaimsInterface | undefined): Executio
 
 describe('@Identity()', () => {
   const claims: AccessTokenClaimsInterface = {
-    identityId: 42,
+    identityPublicId: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d',
     role: RoleEnum.user,
     email: 'jane@example.com',
     phoneNumber: '+380501234567',
@@ -40,7 +40,7 @@ describe('@Identity()', () => {
   });
 
   it('returns a single claim when a field is given', () => {
-    expect(factoryOf(Identity('identityId'))('identityId', contextWith(claims))).toBe(42);
+    expect(factoryOf(Identity('identityPublicId'))('identityPublicId', contextWith(claims))).toBe('5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d');
   });
 
   it('fails loudly when the guard did not run', () => {
@@ -60,8 +60,8 @@ describe('@Identity() on a guarded route', () => {
     class MeController {
       @UseGuards(AccessTokenGuard)
       @Get()
-      me(@Identity() identity: AccessTokenClaimsInterface, @Identity('identityId') identityId: number) {
-        return { identity, identityId };
+      me(@Identity() identity: AccessTokenClaimsInterface, @Identity('identityPublicId') identityPublicId: string) {
+        return { identity, identityPublicId };
       }
     }
 
@@ -78,7 +78,7 @@ describe('@Identity() on a guarded route', () => {
 
     const token = await new SignJWT({ role: 'user', email: 'jane@example.com' })
       .setProtectedHeader({ alg: 'ES256' })
-      .setSubject('42')
+      .setSubject('5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d')
       .setIssuer('identity-service')
       .setIssuedAt()
       .setExpirationTime('15m')
@@ -87,8 +87,8 @@ describe('@Identity() on a guarded route', () => {
     try {
       const response = await request(app.getHttpServer()).get('/me').set('Authorization', `Bearer ${token}`).expect(200);
       expect(response.body).toEqual({
-        identity: { identityId: 42, role: 'user', email: 'jane@example.com', phoneNumber: null },
-        identityId: 42,
+        identity: { identityPublicId: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d', role: 'user', email: 'jane@example.com', phoneNumber: null },
+        identityPublicId: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d',
       });
 
       await request(app.getHttpServer()).get('/me').expect(401);

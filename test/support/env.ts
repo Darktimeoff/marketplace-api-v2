@@ -31,6 +31,10 @@ const signingKeys = generateKeyPairSync('ec', {
 process.env.JWT_PRIVATE_KEY = signingKeys.privateKey;
 process.env.JWT_PUBLIC_KEY = signingKeys.publicKey;
 
+if (connection.kafkaBrokers) {
+  process.env.KAFKA_BROKERS = connection.kafkaBrokers;
+}
+
 if (connection.broker) {
   process.env.RABBITMQ_HOST = connection.broker.host;
   process.env.RABBITMQ_PORT = String(connection.broker.port);

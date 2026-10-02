@@ -12,7 +12,7 @@ import { getRabbitMqConnectionUri } from "./util/get-rabbitmq-connection-uri.uti
       imports: [EnvironmentModule, SecretManagerModule],
       inject: [EnvironmentService, SecretManagerService],
       useFactory: async (environment: EnvironmentService, secrets: SecretManagerService) => ({
-        exchanges: Object.values(TopicEnum).map((name) => ({
+        exchanges: [TopicEnum.SELLER_OFFER_COMMANDS, TopicEnum.ACCOUNT_COMMANDS].map((name) => ({
           name,
           type: 'topic',
           options: { durable: true },

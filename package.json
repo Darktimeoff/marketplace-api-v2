@@ -31,6 +31,7 @@
     "seed": "bash scripts/with-secrets.sh dev node dist/seed.js"
   },
   "dependencies": {
+    "@confluentinc/kafka-javascript": "^1.10.1",
     "@golevelup/nestjs-rabbitmq": "^9.1.0",
     "@infisical/sdk": "^5.0.2",
     "@marketplace/contracts-core": "*",

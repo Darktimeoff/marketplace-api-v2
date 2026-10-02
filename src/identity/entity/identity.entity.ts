@@ -14,6 +14,9 @@ export class Identity {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 
+  @Column({ type: 'uuid', unique: true, default: () => 'gen_random_uuid()' })
+  publicId: string;
+
   // citext, а не varchar: регистронезависимый unique без .toLowerCase() в коде.
   @Column({ type: 'citext', nullable: true, unique: true })
   email: string | null;

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Identity } from './entity/identity.entity.js';
 import { IdentitySession } from './entity/identity-session.entity.js';
 import { SecretManagerModule } from '../generic/secret-manager/secret-manager.module.js';
+import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { AuthController } from './controller/auth.controller.js';
 import { IdentityRepository } from './repository/identity.repository.js';
 import { IdentitySessionRepository } from './repository/identity-session.repository.js';
@@ -14,7 +15,7 @@ import { IdentityRefreshCommandHandler } from './command-handler/identity-refres
 import { IdentityLogoutCommandHandler } from './command-handler/identity-logout.command-handler.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Identity, IdentitySession]), SecretManagerModule],
+  imports: [TypeOrmModule.forFeature([Identity, IdentitySession]), SecretManagerModule, KafkaModule],
   controllers: [AuthController],
   providers: [
     IdentityRepository,

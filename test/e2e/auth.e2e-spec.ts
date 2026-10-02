@@ -64,7 +64,7 @@ describe('Auth (e2e)', () => {
 
       const identity = await dataSource.getRepository(Identity).findOneByOrFail({ email: 'jane@example.com' });
       const claims = await claimsOf(response.body.accessToken);
-      expect(claims).toMatchObject({ sub: String(identity.id), role: 'user', email: 'jane@example.com' });
+      expect(claims).toMatchObject({ sub: identity.publicId, role: 'user', email: 'jane@example.com' });
       expect(claims.phone_number).toBeUndefined();
       expect((claims.exp as number) - (claims.iat as number)).toBe(900);
       expect(identity.passwordHash).toMatch(/^\$argon2id\$/);
@@ -78,7 +78,7 @@ describe('Auth (e2e)', () => {
       expect(identity.email).toBeNull();
       expect(identity.loginPhone).toEqual(phone);
       const claims = await claimsOf(accessToken);
-      expect(claims).toMatchObject({ sub: String(identity.id), phone_number: phone.fullNumber });
+      expect(claims).toMatchObject({ sub: identity.publicId, phone_number: phone.fullNumber });
       expect(claims.email).toBeUndefined();
     });
 

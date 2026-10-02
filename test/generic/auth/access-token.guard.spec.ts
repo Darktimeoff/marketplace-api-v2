@@ -39,7 +39,7 @@ describe('AccessTokenGuard', () => {
   function aToken(overrides: { issuer?: string; expiresAt?: number | string; key?: CryptoKey; claims?: Record<string, unknown> } = {}) {
     return new SignJWT({ role: 'user', email: 'jane@example.com', phone_number: '+380501234567', ...overrides.claims })
       .setProtectedHeader({ alg: 'ES256' })
-      .setSubject('42')
+      .setSubject('5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d')
       .setIssuer(overrides.issuer ?? 'identity-service')
       .setIssuedAt()
       .setExpirationTime(overrides.expiresAt ?? '15m')
@@ -55,7 +55,7 @@ describe('AccessTokenGuard', () => {
   it('accepts a valid token and exposes the claims on the request', async () => {
     const request = await activate(`Bearer ${await aToken()}`);
 
-    expect(request.identity).toEqual({ identityId: 42, role: 'user', email: 'jane@example.com', phoneNumber: '+380501234567' });
+    expect(request.identity).toEqual({ identityPublicId: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d', role: 'user', email: 'jane@example.com', phoneNumber: '+380501234567' });
   });
 
   it('exposes null for missing email and phone claims', async () => {
@@ -90,12 +90,24 @@ describe('AccessTokenGuard', () => {
     await expect(activate(`Bearer ${await aToken({ key: otherKey })}`)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it('rejects a subject that is not a uuid', async () => {
+    const token = await new SignJWT({ role: 'user' })
+      .setProtectedHeader({ alg: 'ES256' })
+      .setSubject('42')
+      .setIssuer('identity-service')
+      .setIssuedAt()
+      .setExpirationTime('15m')
+      .sign(signingKey);
+
+    await expect(activate(`Bearer ${token}`)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
   it('rejects an unknown role', async () => {
     await expect(activate(`Bearer ${await aToken({ claims: { role: 'root' } })}`)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('rejects alg none', async () => {
-    const payload = { sub: '42', role: 'user', iss: 'identity-service', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 900 };
+    const payload = { sub: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d', role: 'user', iss: 'identity-service', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 900 };
     const token = `${base64url({ alg: 'none', typ: 'JWT' })}.${base64url(payload)}.`;
 
     await expect(activate(`Bearer ${token}`)).rejects.toBeInstanceOf(UnauthorizedException);
@@ -104,7 +116,7 @@ describe('AccessTokenGuard', () => {
   it('rejects an HS256 token signed with the public key as the secret', async () => {
     const token = await new SignJWT({ role: 'user' })
       .setProtectedHeader({ alg: 'HS256' })
-      .setSubject('42')
+      .setSubject('5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d')
       .setIssuer('identity-service')
       .setIssuedAt()
       .setExpirationTime('15m')

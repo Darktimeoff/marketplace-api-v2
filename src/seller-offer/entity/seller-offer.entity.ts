@@ -11,6 +11,7 @@ import type { OrderProduct } from '../../order/entity/order-product.entity.js';
 @Check('SellerOffer_sellerSku_notBlank', `btrim("sellerSku") <> ''`)
 @Check('SellerOffer_discount_le', `"discountPrice" IS NULL OR "discountPrice" <= "price"`)
 @Check('SellerOffer_quantity_nonneg', `"quantity" >= 0`)
+@Check('SellerOffer_reserved_range', `"reservedQuantity" >= 0 AND "reservedQuantity" <= "quantity"`)
 @Check('SellerOffer_deletedAt_ord', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
 export class SellerOffer {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
@@ -41,6 +42,9 @@ export class SellerOffer {
   // нормальное состояние, поэтому CHECK >= 0, а не домен "uint" (> 0).
   @Column({ type: 'integer', default: 0 })
   quantity: number;
+
+  @Column({ type: 'integer', default: 0 })
+  reservedQuantity: number;
 
   @CreateDateColumn({ type: 'timestamptz', default: () => 'now()' })
   createdAt: Date;

@@ -1,5 +1,6 @@
 import { Check, Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 import { SellerOffer } from './seller-offer.entity.js';
+import { StockReservationStatusEnum } from '../../generic/enum/enums.js';
 
 @Entity('StockReservation')
 @Check('StockReservation_quantity_positive', `"quantity" > 0`)
@@ -12,6 +13,9 @@ export class StockReservation {
 
   @Column({ type: 'integer' })
   quantity: number;
+
+  @Column({ type: 'enum', enum: StockReservationStatusEnum, enumName: 'StockReservationStatusEnum', default: StockReservationStatusEnum.RESERVED })
+  status: StockReservationStatusEnum;
 
   @CreateDateColumn({ type: 'timestamptz', default: () => 'now()' })
   createdAt: Date;

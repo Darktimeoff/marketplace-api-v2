@@ -44,3 +44,10 @@ export enum BackgroundJobStatusEnum {
   FAILED = 'FAILED',
   INTERRUPTED = 'INTERRUPTED',
 }
+
+export enum StockReservationStatusEnum {
+  RESERVED = 'reserved',
+  CONFIRMED = 'confirmed',
+  FULFILLED = 'fulfilled',
+  RELEASED = 'released',
+}

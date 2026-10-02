@@ -74,6 +74,7 @@ node dist/main.js
 - `--wait` matters: without it `docker compose up -d` returns before Postgres and RabbitMQ accept connections, and `migrate` fails with `Connection terminated unexpectedly`. RabbitMQ's healthcheck is `rabbitmq-diagnostics -q check_running`.
 - Postgres is reached through pgbouncer (`db-bouncer`), which is what `DBPORT` points at.
 - Name the services explicitly: the compose file also contains the Infisical stack, which needs credentials of its own.
+- Kafka is not used by the app yet. `docker compose up -d --wait kafka kafka-ui` starts a single KRaft node (broker and controller in one process) on `localhost:${KAFKA_PORT:-9092}` (containers reach it at `kafka:29092`) and Kafka UI on `localhost:${KAFKA_UI_PORT:-8090}`. Automatic topic creation is off: topics are declared explicitly, like the RabbitMQ exchanges, so a typo in a topic name fails instead of creating a new topic.
 - `npm run build` is required before `migrate`, `seed` and starting the app: they run the compiled `dist/`. The build compiles the contract packages first, then the app.
 
 ## Architecture

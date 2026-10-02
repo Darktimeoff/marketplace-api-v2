@@ -30,7 +30,7 @@ import { OrderNotifyService } from './order-notify.service.js';
 import { OrderAccessService } from './order-access.service.js';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ConfirmChannel, ConsumeMessage } from 'amqplib';
-import { AccountCustomerChargeRequest, CLOUD_EVENT_CONTENT_TYPE, OrderPlacedEvent, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
+import { AccountCustomerChargeRequest, AccountCustomerRefundCommand, CLOUD_EVENT_CONTENT_TYPE, OrderPlacedEvent, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
 import { BalanceException } from '../exception/balance.exception.js';
 
 interface PricedOrderItem {
@@ -95,9 +95,21 @@ export class OrderService implements OnModuleInit {
 
     await this.createItems(pricedItems, order.id);
 
+    let isChargeSent = false;
+
     try {
-      await this.reserveChargeAndPublish(order, input);
+      await this.reserveStockOrFail(order, input);
+      isChargeSent = true;
+      await this.chargeOrFail(order, input);
+      await this.backgroundJobService.create(this.toBackgroundJobInput(order));
+      await this.amqpConnection.publish(OrderPlacedEvent.TOPIC, OrderPlacedEvent.TYPE, this.toOrderPlacedEvent(order), {
+        contentType: CLOUD_EVENT_CONTENT_TYPE,
+      })
     } catch (error) {
+      if (isChargeSent && !(error instanceof BalanceException)) {
+        await this.refundCharge(order, input.recipient.buyerId);
+      }
+
       if (!(error instanceof InsufficientStockException)) {
         await this.releaseStock(order.publicId);
       }
@@ -108,7 +120,7 @@ export class OrderService implements OnModuleInit {
     return order;
   }
 
-  private async reserveChargeAndPublish(order: Order, input: OrderCreateInput): Promise<void> {
+  private async reserveStockOrFail(order: Order, input: OrderCreateInput): Promise<void> {
     const { data: result } = await this.amqpConnection.request<StockReserveRequest.ResponseMessageType>({
       exchange: StockReserveRequest.TOPIC,
       routingKey: StockReserveRequest.TYPE,
@@ -125,7 +137,9 @@ export class OrderService implements OnModuleInit {
         })),
       );
     }
+  }
 
+  private async chargeOrFail(order: Order, input: OrderCreateInput): Promise<void> {
     const chargeResult = await this.amqpConnection.request<AccountCustomerChargeRequest.ResponseMessageType>({
       exchange: AccountCustomerChargeRequest.TOPIC,
       routingKey: AccountCustomerChargeRequest.TYPE,
@@ -136,11 +150,16 @@ export class OrderService implements OnModuleInit {
     if (chargeResult.data.status === 'rejected') { 
       throw new BalanceException(input.recipient.buyerId, Number(chargeResult.data.available), Number(order.totalAmount))
     }
-    
-    await this.backgroundJobService.create(this.toBackgroundJobInput(order));
-    await this.amqpConnection.publish(OrderPlacedEvent.TOPIC, OrderPlacedEvent.TYPE, this.toOrderPlacedEvent(order), {
-      contentType: CLOUD_EVENT_CONTENT_TYPE,
-    })
+  }
+
+  private async refundCharge(order: Order, customerId: OrderCreateRecipientInput['buyerId']): Promise<void> {
+    try {
+      await this.amqpConnection.publish(AccountCustomerRefundCommand.TOPIC, AccountCustomerRefundCommand.TYPE, this.toAccountCustomerRefundCommand(order, customerId), {
+        contentType: CLOUD_EVENT_CONTENT_TYPE,
+      })
+    } catch (error) {
+      this.logger.error(`failed to refund charge for order=${order.publicId}`, error instanceof Error ? error.stack : String(error));
+    }
   }
 
   private async releaseStock(orderPublicId: string): Promise<void> {
@@ -273,6 +292,20 @@ export class OrderService implements OnModuleInit {
         createdAt: order.createdAt.toISOString(),
         updatedAt: order.updatedAt.toISOString()
       },
+    }
+  }
+
+  private toAccountCustomerRefundCommand(order: Order, customerId: OrderCreateRecipientInput['buyerId']): AccountCustomerRefundCommand.MessageType {
+    return {
+      specversion: '1.0',
+      id: order.publicId,
+      source: AccountCustomerRefundCommand.SOURCE,
+      type: AccountCustomerRefundCommand.TYPE,
+      time: new Date().toISOString(),
+      datacontenttype: 'application/json',
+      subject: order.publicId,
+      correlationid: order.publicId,
+      data: { customerId, amount: order.totalAmount, chargeId: order.publicId },
     }
   }
 

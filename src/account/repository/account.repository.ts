@@ -29,12 +29,12 @@ export class AccountRepository {
       .getRepository(Transaction)
       .createQueryBuilder('transaction')
       .select(
-        `COALESCE(SUM(CASE WHEN transaction.type = :deposit THEN transaction.amount ELSE -transaction.amount END), 0)`,
+        `COALESCE(SUM(CASE WHEN transaction.type IN (:...credits) THEN transaction.amount ELSE -transaction.amount END), 0)`,
         'balance',
       )
       .where('transaction.userId = :userId', { userId })
       .andWhere('transaction.status = :status', { status: TransactionStatusEnum.SUCCESS })
-      .setParameters({ deposit: TransactionTypeEnum.DEPOSIT })
+      .setParameters({ credits: [TransactionTypeEnum.DEPOSIT, TransactionTypeEnum.REFUND] })
       .getRawOne<{ balance: string }>();
 
     return Number(row?.balance ?? 0);

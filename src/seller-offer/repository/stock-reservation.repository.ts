@@ -6,7 +6,7 @@ import type { StockReservationCreateEntityInterface } from '../entity/stock-rese
 export interface StockReservationOutcomeInterface {
   offerId: StockReservationCreateEntityInterface['offerId'];
   inserted: number;
-  decremented: number;
+  held: number;
 }
 
 @Injectable()
@@ -17,23 +17,23 @@ export class StockReservationRepository {
     const outcomes: StockReservationOutcomeInterface[] = [];
 
     for (const { orderPublicId, offerId, quantity } of [...reservations].sort((left, right) => left.offerId - right.offerId)) {
-      const [row]: { inserted: number; decremented: number }[] = await this.txHost.tx.query(
+      const [row]: { inserted: number; held: number }[] = await this.txHost.tx.query(
         `WITH inserted AS (
            INSERT INTO "StockReservation" ("orderPublicId", "offerId", "quantity")
            VALUES ($1, $2, $3)
            ON CONFLICT ("orderPublicId", "offerId") DO NOTHING
            RETURNING "offerId", "quantity"
-         ), decremented AS (
+         ), held AS (
            UPDATE "SellerOffer" AS offer
-              SET "quantity" = offer."quantity" - inserted."quantity"
+              SET "reservedQuantity" = offer."reservedQuantity" + inserted."quantity"
              FROM inserted
             WHERE offer."id" = inserted."offerId"
               AND offer."deletedAt" IS NULL
-              AND offer."quantity" >= inserted."quantity"
+              AND offer."quantity" - offer."reservedQuantity" >= inserted."quantity"
            RETURNING offer."id"
          )
          SELECT (SELECT count(*) FROM inserted)::int AS "inserted",
-                (SELECT count(*) FROM decremented)::int AS "decremented"`,
+                (SELECT count(*) FROM held)::int AS "held"`,
         [orderPublicId, offerId, quantity],
       );
 

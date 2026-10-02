@@ -37,14 +37,14 @@ export class SellerOfferService {
       items.map((item) => ({ orderPublicId, offerId: item.offerId, quantity: item.quantity })),
     );
     const failedIds = new Set(
-      outcomes.filter((outcome) => outcome.inserted > 0 && outcome.decremented === 0).map((outcome) => outcome.offerId),
+      outcomes.filter((outcome) => outcome.inserted > 0 && outcome.held === 0).map((outcome) => outcome.offerId),
     );
 
     if (failedIds.size === 0) {
       return;
     }
 
-    const stockById = new Map(offers.map((offer) => [offer.id, offer.quantity]));
+    const stockById = new Map(offers.map((offer) => [offer.id, offer.quantity - offer.reservedQuantity]));
 
     throw new StockReservationRejectedException(
       'insufficient_stock',

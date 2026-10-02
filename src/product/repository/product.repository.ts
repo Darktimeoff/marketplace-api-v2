@@ -55,7 +55,7 @@ export class ProductRepository {
               o.price,
               o."discountPrice" AS "discountPrice",
               o.currency,
-              o.quantity
+              o.quantity - o."reservedQuantity" AS quantity
          FROM "SellerOffer" o
         WHERE o."variantId" = ANY($1) AND o."deletedAt" IS NULL
      ORDER BY o.id ASC`,

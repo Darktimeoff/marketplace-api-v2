@@ -30,7 +30,7 @@ import { OrderNotifyService } from './order-notify.service.js';
 import { OrderAccessService } from './order-access.service.js';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ConfirmChannel, ConsumeMessage } from 'amqplib';
-import { CLOUD_EVENT_CONTENT_TYPE, OrderPlacedEvent } from '@marketplace/messaging-contracts';
+import { CLOUD_EVENT_CONTENT_TYPE, OrderPlacedEvent, OrderItemReserveCommand } from '@marketplace/messaging-contracts';
 
 interface PricedOrderItem {
   item: Omit<OrderProductCreateEntityInterface, 'orderId'>;
@@ -87,13 +87,28 @@ export class OrderService implements OnModuleInit {
       this.toPriceItemOrFail(item, offersById),
     );
 
-    await this.reserveStockOrFail(input.items);
-
     const order = await this.createOrder(
       recipient.id,
       pricedItems,
       input.currency,
     );
+
+    const { data: result } = await this.amqpConnection.request<OrderItemReserveCommand.ResponseMessageType>({
+      exchange: OrderItemReserveCommand.TOPIC,
+      routingKey: OrderItemReserveCommand.TYPE,
+      payload: this.toOrderItemReserve(order.publicId, input.items),
+      timeout: 5000
+    })
+
+    if (result.status === 'rejected') {
+      throw new InsufficientStockException(
+        result.items.map<InsufficientStockProductInterface>((item) => ({
+          offerId: item.offerId,
+          requestedQuantity: item.quantity,
+          stockQuantity: item.available,
+        })),
+      );
+    }
 
     await this.accounts.charge(recipient.buyerId, Number(order.totalAmount));
 
@@ -230,35 +245,17 @@ export class OrderService implements OnModuleInit {
     }
   }
 
-  private async reserveStockOrFail(
-    items: OrderCreateInput['items'],
-  ): Promise<void> {
-    const reservations = items.map((item) => ({
-      id: item.offerId,
-      quantity: item.quantity,
-    }));
-    const reserved = await this.offers.reserveQuantityByIds(reservations);
-
-    if (reserved.length === reservations.length) {
-      return;
+  private toOrderItemReserve(id: string, items: OrderCreateInput['items']): OrderItemReserveCommand.MessageType {
+    return {
+      specversion: '1.0',
+      id,
+      source: OrderItemReserveCommand.SOURCE,
+      type: OrderItemReserveCommand.TYPE,
+      time: new Date().toISOString(),
+      datacontenttype: 'application/json',
+      subject: id,
+      correlationid: id,
+      data: items
     }
-
-    const reservedIds = new Set(reserved.map((row) => row.id));
-    const failed = items.filter(
-      (item) => !reservedIds.has(item.offerId),
-    );
-    const stockById = new Map(
-      (
-        await this.offers.findByIds(failed.map((item) => item.offerId))
-      ).map((offer) => [offer.id, offer.quantity]),
-    );
-
-    throw new InsufficientStockException(
-      failed.map<InsufficientStockProductInterface>((item) => ({
-        offerId: item.offerId,
-        requestedQuantity: item.quantity,
-        stockQuantity: stockById.get(item.offerId) ?? null,
-      })),
-    );
   }
 }

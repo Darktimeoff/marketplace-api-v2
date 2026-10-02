@@ -1,4 +1,4 @@
 export enum TopicEnum {
   ORDER_EVENTS = 'order.events',
-  ORDER_COMMANDS_TOPIC = 'order.commands.topic'
+  SELLER_OFFER_COMMANDS = 'seller-offer.commands',
 }

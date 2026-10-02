@@ -1,7 +1,7 @@
 
 
 export enum SellerOfferReserveTopologyEnum {
-  QUEUE = 'seller.offer.reserve-item',
-  DLX = 'seller.dlx',
-  DLQ = 'seller.offer.reserve-item.dlq',
+  QUEUE = 'seller-offer.stock-reserve',
+  DLX = 'seller-offer.dlx',
+  DLQ = 'seller-offer.stock-reserve.dlq',
 }

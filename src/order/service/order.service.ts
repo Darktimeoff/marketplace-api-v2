@@ -30,7 +30,7 @@ import { OrderNotifyService } from './order-notify.service.js';
 import { OrderAccessService } from './order-access.service.js';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ConfirmChannel, ConsumeMessage } from 'amqplib';
-import { CLOUD_EVENT_CONTENT_TYPE, OrderPlacedEvent, OrderItemReserveCommand } from '@marketplace/messaging-contracts';
+import { CLOUD_EVENT_CONTENT_TYPE, OrderPlacedEvent, StockReserveRequest } from '@marketplace/messaging-contracts';
 
 interface PricedOrderItem {
   item: Omit<OrderProductCreateEntityInterface, 'orderId'>;
@@ -93,10 +93,10 @@ export class OrderService implements OnModuleInit {
       input.currency,
     );
 
-    const { data: result } = await this.amqpConnection.request<OrderItemReserveCommand.ResponseMessageType>({
-      exchange: OrderItemReserveCommand.TOPIC,
-      routingKey: OrderItemReserveCommand.TYPE,
-      payload: this.toOrderItemReserve(order.publicId, input.items),
+    const { data: result } = await this.amqpConnection.request<StockReserveRequest.ResponseMessageType>({
+      exchange: StockReserveRequest.TOPIC,
+      routingKey: StockReserveRequest.TYPE,
+      payload: this.toStockReserveRequest(order.publicId, input.items),
       timeout: 5000
     })
 
@@ -245,17 +245,17 @@ export class OrderService implements OnModuleInit {
     }
   }
 
-  private toOrderItemReserve(id: string, items: OrderCreateInput['items']): OrderItemReserveCommand.MessageType {
+  private toStockReserveRequest(id: string, items: OrderCreateInput['items']): StockReserveRequest.MessageType {
     return {
       specversion: '1.0',
       id,
-      source: OrderItemReserveCommand.SOURCE,
-      type: OrderItemReserveCommand.TYPE,
+      source: StockReserveRequest.SOURCE,
+      type: StockReserveRequest.TYPE,
       time: new Date().toISOString(),
       datacontenttype: 'application/json',
       subject: id,
       correlationid: id,
-      data: items
+      data: { items: items.map(({ offerId, quantity }) => ({ offerId, quantity })) },
     }
   }
 }

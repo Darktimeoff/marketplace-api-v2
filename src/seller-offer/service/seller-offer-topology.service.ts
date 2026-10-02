@@ -11,7 +11,7 @@ export class SellerOfferTopologyService implements OnModuleInit {
 
   async onModuleInit() {
     await this.amqpConnection.managedChannel.addSetup(async (channel: ConfirmChannel) => {
-      await channel.assertExchange(TopicEnum.ORDER_COMMANDS_TOPIC, 'topic', { durable: true })
+      await channel.assertExchange(TopicEnum.SELLER_OFFER_COMMANDS, 'topic', { durable: true })
       await channel.assertExchange(SellerOfferReserveTopologyEnum.DLX, 'topic', { durable: true })
       await channel.assertQueue(SellerOfferReserveTopologyEnum.DLQ, { durable: true, arguments: { 'x-queue-type': 'quorum' } })
       await channel.bindQueue(SellerOfferReserveTopologyEnum.DLQ, SellerOfferReserveTopologyEnum.DLX, SellerOfferReserveTopologyEnum.QUEUE)

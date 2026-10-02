@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
-import type { OrderItemReserveCommand } from '@marketplace/messaging-contracts';
+import type { StockReserveRequest } from '@marketplace/messaging-contracts';
 import { SellerOfferRepository } from '../repository/seller-offer.repository.js';
 import { StockReservationRepository } from '../repository/stock-reservation.repository.js';
 import { SellerOffer } from '../entity/seller-offer.entity.js';
@@ -20,7 +20,7 @@ export class SellerOfferService {
   @Transactional()
   async reserveOrFail(
     orderPublicId: string,
-    items: OrderItemReserveCommand.DataInterface,
+    items: StockReserveRequest.ItemInterface[],
   ): Promise<void> {
     const offers = await this.findByIds(items.map((item) => item.offerId));
     const offerIds = new Set(offers.map((offer) => offer.id));

@@ -1,5 +1,5 @@
 import { Nack, RabbitRPC } from "@golevelup/nestjs-rabbitmq";
-import { OrderItemReserveCommand } from "@marketplace/messaging-contracts";
+import { StockReserveRequest } from "@marketplace/messaging-contracts";
 import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { isUUID } from "class-validator";
@@ -14,8 +14,8 @@ export class OrderSellerOfferGateway {
   constructor(private readonly offers: SellerOfferService) {}
 
   @RabbitRPC({
-    exchange: OrderItemReserveCommand.TOPIC,
-    routingKey: OrderItemReserveCommand.TYPE,
+    exchange: StockReserveRequest.TOPIC,
+    routingKey: StockReserveRequest.TYPE,
     queue: SellerOfferReserveTopologyEnum.QUEUE,
     queueOptions: {
       durable: true,
@@ -29,14 +29,14 @@ export class OrderSellerOfferGateway {
       }
     }
   })
-  async handleOrderItemReserve(msg: OrderItemReserveCommand.MessageType): Promise<OrderItemReserveCommand.ResponseMessageType | Nack> {
-    if (msg?.specversion !== '1.0' || msg.type !== OrderItemReserveCommand.TYPE || typeof msg.subject !== 'string' || !isUUID(msg.subject) || !Array.isArray(msg.data) || msg.data.length === 0) {
+  async handleStockReserve(msg: StockReserveRequest.MessageType): Promise<StockReserveRequest.ResponseMessageType | Nack> {
+    if (msg?.specversion !== '1.0' || msg.type !== StockReserveRequest.TYPE || typeof msg.subject !== 'string' || !isUUID(msg.subject) || !Array.isArray(msg.data?.items) || msg.data.items.length === 0) {
       this.logger.warn(`rejected id=${msg?.id}`)
       return new Nack(false)
     }
 
     try {
-      await this.offers.reserveOrFail(msg.subject, msg.data)
+      await this.offers.reserveOrFail(msg.subject, msg.data.items)
       return this.toResponse(msg, { status: 'reserved' })
     } catch (e) {
       if (e instanceof StockReservationRejectedException) {
@@ -48,14 +48,14 @@ export class OrderSellerOfferGateway {
   }
 
   private toResponse(
-    request: OrderItemReserveCommand.MessageType,
-    data: OrderItemReserveCommand.ResponseDataInterface,
-  ): OrderItemReserveCommand.ResponseMessageType {
+    request: StockReserveRequest.MessageType,
+    data: StockReserveRequest.ResponseDataType,
+  ): StockReserveRequest.ResponseMessageType {
     return {
       specversion: '1.0',
       id: randomUUID(),
-      source: OrderItemReserveCommand.RESPONSE_SOURCE,
-      type: OrderItemReserveCommand.RESPONSE_TYPE,
+      source: StockReserveRequest.RESPONSE_SOURCE,
+      type: StockReserveRequest.RESPONSE_TYPE,
       time: new Date().toISOString(),
       datacontenttype: 'application/json',
       subject: request.subject,

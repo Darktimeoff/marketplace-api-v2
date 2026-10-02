@@ -1,14 +1,14 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { GenderEnum, LanguageEnum } from '../../generic/enum/enums.js';
 import { Identity } from '../../identity/entity/identity.entity.js';
 import { DeliveryAddress } from '../../delivery-address/entity/delivery-address.entity.js';
 import type { Seller } from '../../seller/entity/seller.entity.js';
 import type { OrderRecipient } from '../../order/entity/order-recipient.entity.js'
+import { GenderEnum, LanguageEnum, type UserEntityInterface } from '@marketplace/contracts-core';
 
 @Entity('User')
 @Check('User_dateOfBirth_past', `"dateOfBirth" IS NULL OR "dateOfBirth" < current_date`)
 @Check('User_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class User {
+export class User implements UserEntityInterface {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 

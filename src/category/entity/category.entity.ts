@@ -1,12 +1,13 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import type { CategoryTranslation } from './category-translation.entity.js';
 import type { Product } from '../../product/entity/product.entity.js';
+import { type CategoryEntityInterface } from '@marketplace/contracts-core';
 
 @Entity('Category')
 @Check('Category_slug_format', `"slug" ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`)
 @Check('Category_no_self_parent', `"parentCategoryId" IS DISTINCT FROM "id"`)
 @Check('Category_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class Category {
+export class Category implements CategoryEntityInterface {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 

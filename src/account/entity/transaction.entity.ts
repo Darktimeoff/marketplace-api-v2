@@ -1,7 +1,7 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { TransactionStatusEnum, TransactionTypeEnum } from '../../generic/enum/enums.js';
 import { Account } from './account.entity.js';
 import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
+import { TransactionStatusEnum, TransactionTypeEnum, type TransactionEntityInterface } from '@marketplace/contracts-core';
 
 /**
  * Денежная проводка пользователя: пополнение, оплата, вывод средств.
@@ -11,7 +11,7 @@ import { moneyTransformer } from '../../generic/transformer/money.transformer.js
 @Entity('Transaction')
 @Check('Transaction_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
 @Index('Transaction_customerId_idx', ['customerId'])
-export class Transaction {
+export class Transaction implements TransactionEntityInterface {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 

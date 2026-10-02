@@ -5,14 +5,7 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module.js';
 import { Transaction } from '../../src/account/entity/transaction.entity.js';
-import {
-  TransactionStatusEnum,
-  TransactionTypeEnum,
-} from '../../src/generic/enum/enums.js';
-import {
-  CountryCodeEnum,
-  CurrencyEnum,
-} from '@marketplace/contracts-core';
+import { CountryCodeEnum, CurrencyEnum, TransactionStatusEnum, TransactionTypeEnum } from '@marketplace/contracts-core';
 import { aSellerOffer, aUser } from '../support/builders.js';
 import { truncateAllTables } from '../support/isolation.js';
 

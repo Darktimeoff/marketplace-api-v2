@@ -1,5 +1,5 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { CountryCodeEnum } from '@marketplace/contracts-core';
+import { CountryCodeEnum, type PhoneEntityInterface } from '@marketplace/contracts-core';
 import type { Identity } from '../../identity/entity/identity.entity.js';
 import type { OrderRecipient } from '../../order/entity/order-recipient.entity.js';
 
@@ -9,7 +9,7 @@ import type { OrderRecipient } from '../../order/entity/order-recipient.entity.j
 @Check('Phone_fullNumber_e164', `"fullNumber" ~ '^\\+[1-9][0-9]{7,14}$'`)
 @Check('Phone_nationalNumber_fmt', `"nationalNumber" ~ '^[0-9]{4,15}$'`)
 @Check('Phone_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class Phone {
+export class Phone implements PhoneEntityInterface {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 

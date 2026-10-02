@@ -3,6 +3,7 @@ import { User } from '../../user/entity/user.entity.js';
 import { Phone } from '../../phone/entity/phone.entity.js';
 import { DeliveryAddress } from '../../delivery-address/entity/delivery-address.entity.js';
 import type { Order } from './order.entity.js';
+import { type OrderRecipientEntityInterface } from '@marketplace/contracts-core';
 
 /**
  * Снапшот получателя на момент оформления заказа. phoneId и deliveryAddressId —
@@ -12,7 +13,7 @@ import type { Order } from './order.entity.js';
 @Entity('OrderRecipient')
 @Check('OrderRecipient_fullName_notBlank', `btrim("fullName") <> ''`)
 @Check('OrderRecipient_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class OrderRecipient {
+export class OrderRecipient implements OrderRecipientEntityInterface {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 

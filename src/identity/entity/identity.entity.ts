@@ -1,14 +1,14 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { RoleEnum } from '../../generic/enum/enums.js';
 import { Phone } from '../../phone/entity/phone.entity.js';
 import type { User } from '../../user/entity/user.entity.js';
+import { RoleEnum, type IdentityEntityInterface } from '@marketplace/contracts-core';
 
 @Entity('Identity')
 @Check('Identity_login_present', `"email" IS NOT NULL OR "phoneId" IS NOT NULL`)
 @Check('Identity_email_format', `"email" IS NULL OR "email" ~ '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$'`)
 @Check('Identity_activatedAt_ord', `"activatedAt" IS NULL OR "activatedAt" >= "createdAt"`)
 @Check('Identity_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class Identity {
+export class Identity implements IdentityEntityInterface {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 

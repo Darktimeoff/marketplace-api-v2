@@ -13,14 +13,7 @@ import { ProductVariant } from '../../src/product-variant/entity/product-variant
 import { Seller } from '../../src/seller/entity/seller.entity.js';
 import { SellerOffer } from '../../src/seller-offer/entity/seller-offer.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
-import {
-  LanguageEnum,
-  RoleEnum,
-} from '../../src/generic/enum/enums.js';
-import {
-  CountryCodeEnum,
-  CurrencyEnum,
-} from '@marketplace/contracts-core';
+import { CountryCodeEnum, CurrencyEnum, LanguageEnum, RoleEnum } from '@marketplace/contracts-core';
 
 let counter = 0;
 function nextSeq(): number {

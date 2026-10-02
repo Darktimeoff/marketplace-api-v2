@@ -5,7 +5,7 @@ import { AccountRepository } from "../repository/account.repository.js";
 import { AccountInboxService } from "../service/account-inbox.service.js";
 import { AccountInboxConsumerEnum } from "../enum/account-inbox-consumer.enum.js";
 import { AccountCustomerRefundWithoutChargeException } from "../exception/account-customer-refund-without-charge.exception.js";
-import { TransactionStatusEnum, TransactionTypeEnum } from "../../generic/enum/enums.js";
+import { TransactionStatusEnum, TransactionTypeEnum } from '@marketplace/contracts-core';
 
 @Injectable()
 export class AccountCustomerRefundCommandHandler {

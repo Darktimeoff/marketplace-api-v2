@@ -14,13 +14,14 @@ import { Category } from '../../category/entity/category.entity.js';
 import { Brand } from '../../brand/entity/brand.entity.js';
 import type { ProductTranslation } from './product-translation.entity.js';
 import type { ProductVariant } from '../../product-variant/entity/product-variant.entity.js';
+import { type ProductEntityInterface } from '@marketplace/contracts-core';
 
 @Entity('Product')
 @Check(
   'Product_deletedAt_order',
   `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`,
 )
-export class Product {
+export class Product implements ProductEntityInterface {
   @PrimaryGeneratedColumn('identity', {
     type: 'integer',
     generatedIdentity: 'ALWAYS',

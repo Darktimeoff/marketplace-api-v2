@@ -1,5 +1,5 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
-import { CurrencyEnum } from '@marketplace/contracts-core';
+import { CurrencyEnum, type SellerOfferEntityInterface } from '@marketplace/contracts-core';
 import { Seller } from '../../seller/entity/seller.entity.js';
 import { ProductVariant } from '../../product-variant/entity/product-variant.entity.js';
 import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
@@ -13,7 +13,7 @@ import type { OrderProduct } from '../../order/entity/order-product.entity.js';
 @Check('SellerOffer_quantity_nonneg', `"quantity" >= 0`)
 @Check('SellerOffer_reserved_range', `"reservedQuantity" >= 0 AND "reservedQuantity" <= "quantity"`)
 @Check('SellerOffer_deletedAt_ord', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class SellerOffer {
+export class SellerOffer implements SellerOfferEntityInterface {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 

@@ -2,6 +2,7 @@ import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, 
 import { Order } from './order.entity.js';
 import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
 import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
+import { type OrderProductEntityInterface } from '@marketplace/contracts-core';
 
 /**
  * M:N между Order и SellerOffer с данными на связи (количество и цены на момент
@@ -10,7 +11,7 @@ import { moneyTransformer } from '../../generic/transformer/money.transformer.js
 @Entity('OrderProduct')
 @Check('OrderProduct_discount_le', `"discountPrice" IS NULL OR "discountPrice" <= "price"`)
 @Check('OrderProduct_deletedAt_ord', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class OrderProduct {
+export class OrderProduct implements OrderProductEntityInterface {
   @PrimaryColumn({ type: 'integer' })
   orderId: number;
 

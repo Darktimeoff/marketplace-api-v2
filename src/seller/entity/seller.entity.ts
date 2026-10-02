@@ -1,10 +1,11 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { User } from '../../user/entity/user.entity.js';
 import type { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
+import { type SellerEntityInterface } from '@marketplace/contracts-core';
 
 @Entity('Seller')
 @Check('Seller_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-export class Seller {
+export class Seller implements SellerEntityInterface {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 

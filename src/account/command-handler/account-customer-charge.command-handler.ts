@@ -3,7 +3,7 @@ import { Injectable } from "@nestjs/common";
 import { AccountRepository } from "../repository/account.repository.js";
 import { Transactional } from "@nestjs-cls/transactional";
 import { AccountCustomerChargeRejectedException } from "../exception/insufficient-stock.exception.js";
-import { TransactionStatusEnum, TransactionTypeEnum } from "../../generic/enum/enums.js";
+import { TransactionStatusEnum, TransactionTypeEnum } from '@marketplace/contracts-core';
 
 @Injectable()
 export class AccountCustomerChargeCommandHandler {

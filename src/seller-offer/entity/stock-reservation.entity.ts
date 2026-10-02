@@ -1,10 +1,10 @@
 import { Check, Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 import { SellerOffer } from './seller-offer.entity.js';
-import { StockReservationStatusEnum } from '../../generic/enum/enums.js';
+import { StockReservationStatusEnum, type StockReservationEntityInterface } from '@marketplace/contracts-core';
 
 @Entity('StockReservation')
 @Check('StockReservation_quantity_positive', `"quantity" > 0`)
-export class StockReservation {
+export class StockReservation implements StockReservationEntityInterface {
   @PrimaryColumn({ type: 'uuid', primaryKeyConstraintName: 'StockReservation_pkey' })
   orderPublicId: string;
 

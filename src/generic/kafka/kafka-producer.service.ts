@@ -3,7 +3,9 @@ import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { CLOUD_EVENT_CONTENT_TYPE, TopicEnum, type CloudEventInterface } from '@marketplace/messaging-contracts';
 import { EnvironmentService } from '../environment/environment.module.js';
 
-const OWNED_TOPICS = [{ topic: TopicEnum.IDENTITY_EVENTS, numPartitions: 3 }];
+const OWNED_TOPICS = [
+  { topic: TopicEnum.IDENTITY_EVENTS, numPartitions: 3, configEntries: [{ name: 'retention.ms', value: '-1' }] },
+];
 
 @Injectable()
 export class KafkaProducerService implements OnModuleInit, OnModuleDestroy {
@@ -34,7 +36,7 @@ export class KafkaProducerService implements OnModuleInit, OnModuleDestroy {
   async publish(topic: TopicEnum, message: CloudEventInterface<string, unknown>): Promise<void> {
     await this.producer.send({
       topic,
-      messages: [{ key: message.subject, value: JSON.stringify(message), headers: { 'content-type': CLOUD_EVENT_CONTENT_TYPE } }],
+      messages: [{ key: message.subject, value: JSON.stringify(message), headers: { 'content-type': CLOUD_EVENT_CONTENT_TYPE, ce_type: message.type } }],
     });
   }
 

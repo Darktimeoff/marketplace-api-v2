@@ -139,13 +139,16 @@ RabbitMQ keeps the commands and request/reply of the saga: work for one receiver
 
 | Topic | Producer | Events |
 |---|---|---|
-| `identity.events` (3 partitions) | identity | `identity.registered` after a registration commits |
+| `identity.events` (3 partitions, kept forever) | identity | `identity.registered` after a registration commits |
 
-- **Same envelope**: a structured CloudEvent as the JSON value, header `content-type: application/cloudevents+json`. `id`, `subject` and `correlationid` are the identity's `publicId`, so `id` is stable for the fact and works as a consumer's dedup key. `data` is `{ identityPublicId, email, phoneNumber }`, built by hand, never the entity.
+- **Same envelope**: a structured CloudEvent as the JSON value, headers `content-type: application/cloudevents+json` and `ce_type` (the event type, from the CloudEvents Kafka binding, so a consumer can skip types it doesn't handle without parsing the body). `id`, `subject` and `correlationid` are the identity's `publicId`, so `id` is stable for the fact and works as a consumer's dedup key. `data` is `{ identityPublicId, email, phoneNumber }`, built by hand, never the entity.
 - **Key = `subject`**: all events about one identity land on the same partition and stay in order; different identities spread across partitions.
 - **Topics**: `TopicEnum` lists every topic name regardless of broker. `RabbitMqModule` declares only the command exchanges, and `KafkaProducerService` (`src/generic/kafka/`) creates the topics it owns at startup with the admin API (an existing topic is left as it is; replication factor `-1` takes the broker default).
 - **Producer**: `@confluentinc/kafka-javascript` (librdkafka) with idempotence on and `acks: all`, so a retried send never writes a duplicate and a send succeeds only once every in-sync replica has it.
 - **Publish after commit**: register commits the identity, then publishes. A failed publish is logged and registration still answers `201`, because the commit can't be undone. Until an outbox exists, an event can be lost if the process dies or Kafka is down between the commit and the send.
+- **One topic per aggregate, not per event type**: Kafka orders messages only within a partition of one topic, so `identity.registered`, a later `identity.email-changed` and `identity.deleted` for the same identity must share a topic to reach consumers in that order. A stream gets its own topic only when its volume or retention differs (e.g. a per-login event).
+- **Replay instead of losing skipped events**: a consumer commits its offset past events it skips, so a handler added later never sees them in that group. Instead each use case is its own consumer group (`user.profile`, later `user.email-sync`): a new group starts from the earliest offset and replays the whole topic. An existing group can also be rewound (`kafka-consumer-groups.sh --group <group> --reset-offsets --to-earliest --execute --topic identity.events` while it is stopped) and relies on its idempotency for the events it already handled. Either works only while the events still exist, which is why `identity.events` has `retention.ms=-1`.
+- **Topic config is set at creation only**: the client can't read or alter configs, so a change to an existing topic (as for `retention.ms` on a Kafka created before it was added) is a one-off `kafka-configs.sh --entity-type topics --entity-name <topic> --alter --add-config <name>=<value>`.
 - **No consumers yet**; the user profile from `identity.registered` comes later.
 
 ### Contract packages

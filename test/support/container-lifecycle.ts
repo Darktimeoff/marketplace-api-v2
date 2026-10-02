@@ -25,6 +25,7 @@ export interface TestDbConnection {
   database: string;
   broker?: TestBrokerConnection;
   kafkaBrokers?: string;
+  kafkaContainerId?: string;
 }
 
 export function stateFilePath(suite: string): string {
@@ -70,9 +71,10 @@ export function createDbLifecycle(suite: string, { withBroker = false, withKafka
           KAFKA_NODE_ID: '1',
           KAFKA_PROCESS_ROLES: 'broker,controller',
           KAFKA_CONTROLLER_QUORUM_VOTERS: '1@localhost:9093',
-          KAFKA_LISTENERS: 'PLAINTEXT://:9092,CONTROLLER://:9093',
-          KAFKA_ADVERTISED_LISTENERS: `PLAINTEXT://localhost:${port}`,
-          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT',
+          KAFKA_LISTENERS: 'PLAINTEXT://:9092,INTERNAL://:29092,CONTROLLER://:9093',
+          KAFKA_ADVERTISED_LISTENERS: `PLAINTEXT://localhost:${port},INTERNAL://localhost:29092`,
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT',
+          KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL',
           KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER',
           KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false',
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: '1',
@@ -83,6 +85,7 @@ export function createDbLifecycle(suite: string, { withBroker = false, withKafka
         .withWaitStrategy(Wait.forLogMessage(/Kafka Server started/))
         .start();
       connection.kafkaBrokers = `localhost:${port}`;
+      connection.kafkaContainerId = kafka.getId();
     }
 
     await writeFile(stateFilePath(suite), JSON.stringify(connection), 'utf-8');

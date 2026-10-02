@@ -5,6 +5,7 @@ import { Logger, type INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
+import { getContainerRuntimeClient } from 'testcontainers';
 import { CLOUD_EVENT_CONTENT_TYPE, IdentityRegisteredEvent, TopicEnum } from '@marketplace/messaging-contracts';
 import { CountryCodeEnum } from '@marketplace/contracts-core';
 import { AppModule } from '../../src/app.module.js';
@@ -15,6 +16,7 @@ import { truncateAllTables } from '../support/isolation.js';
 interface ReceivedInterface {
   key: string | undefined;
   contentType: string | undefined;
+  ceType: string | undefined;
   event: IdentityRegisteredEvent.MessageType;
 }
 
@@ -40,6 +42,7 @@ describe('Identity events (e2e)', () => {
         received.push({
           key: message.key?.toString(),
           contentType: message.headers?.['content-type']?.toString(),
+          ceType: message.headers?.ce_type?.toString(),
           event: JSON.parse(message.value?.toString() ?? 'null'),
         });
       },
@@ -73,11 +76,12 @@ describe('Identity events (e2e)', () => {
     await register({ email, password: 'correct-horse' }).expect(201);
     const identity = await dataSource.getRepository(Identity).findOneByOrFail({ email });
 
-    const { key, contentType, event } = await eventFor(identity.publicId);
+    const { key, contentType, ceType, event } = await eventFor(identity.publicId);
 
     expect(identity.publicId).toMatch(/^[0-9a-f-]{36}$/);
     expect(key).toBe(identity.publicId);
     expect(contentType).toBe(CLOUD_EVENT_CONTENT_TYPE);
+    expect(ceType).toBe(IdentityRegisteredEvent.TYPE);
     expect(event).toEqual({
       specversion: '1.0',
       id: identity.publicId,
@@ -125,6 +129,18 @@ describe('Identity events (e2e)', () => {
     expect(response.body.accessToken).toEqual(expect.any(String));
     expect(await dataSource.getRepository(Identity).countBy({ email })).toBe(1);
     expect(logged).toHaveBeenCalledWith(expect.stringContaining('failed to publish identity.registered'), expect.stringContaining('broker down'));
+  });
+
+  it('keeps identity.events forever so a new consumer group can replay the whole history', async () => {
+    const client = await getContainerRuntimeClient();
+    const container = client.container.getById(process.env.TEST_KAFKA_CONTAINER_ID as string);
+
+    const { output, exitCode } = await client.container.exec(container, [
+      '/opt/kafka/bin/kafka-configs.sh', '--bootstrap-server', 'localhost:29092', '--entity-type', 'topics', '--entity-name', TopicEnum.IDENTITY_EVENTS, '--describe',
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(output).toContain('retention.ms=-1');
   });
 
   it('creates the identity.events topic with 3 partitions', async () => {

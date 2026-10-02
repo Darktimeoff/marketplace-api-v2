@@ -11,9 +11,12 @@ import { AccountGateway } from './gateway/account.gateway.js';
 import { AccountTopology } from './service/account-topology.service.js';
 import { AccountCustomerChargeCommandHandler } from './command-handler/account-customer-charge.command-handler.js';
 import { RabbitMqModule } from '../generic/rabbitmq/rabbitmq.module.js';
+import { KafkaModule } from '../generic/kafka/kafka.module.js';
+import { AccountCreateCommandHandler } from './command-handler/account-create.command-handler.js';
+import { AccountUserEventsGateway } from './gateway/account-user-events.gateway.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Transaction, AccountInbox, Account]), RabbitMqModule],
-  providers: [AccountRepository, AccountInboxRepository, AccountInboxService, AccountCustomerChargeCommandHandler, AccountCustomerRefundCommandHandler, AccountTopology, AccountGateway],
+  imports: [TypeOrmModule.forFeature([Transaction, AccountInbox, Account]), RabbitMqModule, KafkaModule],
+  providers: [AccountRepository, AccountInboxRepository, AccountInboxService, AccountCustomerChargeCommandHandler, AccountCustomerRefundCommandHandler, AccountTopology, AccountGateway, AccountCreateCommandHandler, AccountUserEventsGateway],
 })
 export class AccountModule {}

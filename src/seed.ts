@@ -160,6 +160,8 @@ async function seed(): Promise<void> {
       user = await users.save(
         users.create({
           identityId: identity.id,
+          email: identity.email,
+          phoneNumber: identity.loginPhone.fullNumber,
           firstName: isSeller ? `Seller${i + 1}` : `Buyer${i - SELLERS + 1}`,
           lastName: 'Seeded',
           dateOfBirth: '1990-01-01',

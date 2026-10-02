@@ -6,6 +6,8 @@ import { GenderEnum } from '../enum/gender.enum.js';
 @Entity('User')
 @Unique('User_identityId_key', ['identityId'])
 @Check('User_dateOfBirth_past', `"dateOfBirth" IS NULL OR "dateOfBirth" < current_date`)
+@Check('User_email_format', `"email" IS NULL OR "email" ~ '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$'`)
+@Check('User_phoneNumber_e164', `"phoneNumber" IS NULL OR "phoneNumber" ~ '^\\+[1-9][0-9]{7,14}$'`)
 @Check('User_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
 export class User {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
@@ -16,6 +18,12 @@ export class User {
 
   @Column({ type: 'integer' })
   identityId: number;
+
+  @Column({ type: 'citext', nullable: true })
+  email: string | null;
+
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  phoneNumber: string | null;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   firstName: string | null;
@@ -63,3 +71,5 @@ export class User {
   @JoinColumn({ name: 'addressId' })
   address: Address | null;
 }
+
+export interface UserCreateEntityInterface extends Pick<User, 'identityId' | 'email' | 'phoneNumber'> {}

@@ -79,9 +79,12 @@ export class IdentityRegisterCommandHandler {
       subject: identity.publicId,
       correlationid: identity.publicId,
       data: {
+        identityId: identity.id,
         identityPublicId: identity.publicId,
         email: identity.email,
         phoneNumber: identity.loginPhone.fullNumber,
+        role: identity.role,
+        createdAt: identity.createdAt.toISOString(),
       },
     };
   }

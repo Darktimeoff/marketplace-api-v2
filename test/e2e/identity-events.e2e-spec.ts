@@ -39,11 +39,19 @@ describe('Identity events (e2e)', () => {
     await consumer.subscribe({ topic: TopicEnum.IDENTITY_EVENTS });
     await consumer.run({
       eachMessage: async ({ message }) => {
+        let event: IdentityRegisteredEvent.MessageType;
+
+        try {
+          event = JSON.parse(message.value?.toString() ?? '');
+        } catch {
+          return;
+        }
+
         received.push({
           key: message.key?.toString(),
           contentType: message.headers?.['content-type']?.toString(),
           ceType: message.headers?.ce_type?.toString(),
-          event: JSON.parse(message.value?.toString() ?? 'null'),
+          event,
         });
       },
     });
@@ -65,7 +73,7 @@ describe('Identity events (e2e)', () => {
 
   async function eventFor(identityPublicId: string): Promise<ReceivedInterface> {
     return vi.waitFor(() => {
-      const match = received.find(({ event }) => event.data.identityPublicId === identityPublicId);
+      const match = received.find(({ event }) => event?.data?.identityPublicId === identityPublicId);
       if (!match) throw new Error(`no ${IdentityRegisteredEvent.TYPE} for identity ${identityPublicId} yet`);
       return match;
     }, { timeout: 15000, interval: 100 });
@@ -91,7 +99,14 @@ describe('Identity events (e2e)', () => {
       datacontenttype: 'application/json',
       subject: identity.publicId,
       correlationid: identity.publicId,
-      data: { identityPublicId: identity.publicId, email, phoneNumber: null },
+      data: {
+        identityId: identity.id,
+        identityPublicId: identity.publicId,
+        email,
+        phoneNumber: null,
+        role: 'user',
+        createdAt: identity.createdAt.toISOString(),
+      },
     });
   });
 
@@ -105,7 +120,7 @@ describe('Identity events (e2e)', () => {
 
     const { event } = await eventFor(identity.publicId);
 
-    expect(event.data).toEqual({ identityPublicId: identity.publicId, email: null, phoneNumber: fullNumber });
+    expect(event.data).toMatchObject({ identityId: identity.id, identityPublicId: identity.publicId, email: null, phoneNumber: fullNumber });
   });
 
   it('publishes nothing for a rejected registration', async () => {

@@ -13,6 +13,7 @@ const environmentSchema = z.object({
   RABBITMQ_HOST: z.string().min(1).default('rabbitmq'),
   RABBITMQ_PORT: z.coerce.number().int().min(1).max(65535).default(5672),
   KAFKA_BROKERS: z.string().min(1).default('kafka:29092'),
+  KAFKA_CONSUMERS_ENABLED: z.stringbool().default(true),
 })
 
 export type EnvironmentType = z.infer<typeof environmentSchema>

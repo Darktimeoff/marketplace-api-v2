@@ -30,6 +30,19 @@ export class AccountRepository {
     );
   }
 
+  async createIfAbsent(customerId: Account['customerId']): Promise<boolean> {
+    const result = await this.txHost.tx
+      .getRepository(Account)
+      .createQueryBuilder()
+      .insert()
+      .values({ customerId })
+      .orIgnore()
+      .returning(['customerId'])
+      .execute();
+
+    return result.raw.length > 0;
+  }
+
   async findBalance(customerId: Account['customerId']): Promise<number | null> {
     const account = await this.txHost.tx.getRepository(Account).findOne({ where: { customerId } });
     return account ? Number(account.balance) : null;

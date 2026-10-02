@@ -33,6 +33,7 @@ process.env.JWT_PUBLIC_KEY = signingKeys.publicKey;
 
 if (connection.kafkaBrokers) {
   process.env.KAFKA_BROKERS = connection.kafkaBrokers;
+  process.env.KAFKA_CONSUMERS_ENABLED ??= 'false';
   process.env.TEST_KAFKA_CONTAINER_ID = connection.kafkaContainerId;
 }
 

@@ -137,11 +137,21 @@ Delivery over RabbitMQ is at-least-once, so every consumer makes its effect safe
 
 RabbitMQ keeps the commands and request/reply of the saga: work for one receiver, acked or dead-lettered per message. Kafka carries domain events, facts that already happened, kept in a log that any number of consumers can read and replay at their own pace.
 
-| Topic | Producer | Events |
-|---|---|---|
-| `identity.events` (3 partitions, kept forever) | identity | `identity.registered` after a registration commits |
+| Topic | Producer | Events | Consumer groups |
+|---|---|---|---|
+| `identity.events` (3 partitions, kept forever) | identity | `identity.registered` after a registration commits | `user.profile` |
+| `user.events` (3 partitions, kept forever) | user | `user.created` after the user row commits | `account.provisioning` |
 
-- **Same envelope**: a structured CloudEvent as the JSON value, headers `content-type: application/cloudevents+json` and `ce_type` (the event type, from the CloudEvents Kafka binding, so a consumer can skip types it doesn't handle without parsing the body). `id`, `subject` and `correlationid` are the identity's `publicId`, so `id` is stable for the fact and works as a consumer's dedup key. `data` is `{ identityPublicId, email, phoneNumber }`, built by hand, never the entity.
+Registration provisions the rest of the person asynchronously:
+
+```
+POST /auth/register ─► Identity ─► identity.registered ─► user.profile ─► User ─► user.created ─► account.provisioning ─► Account(balance 0)
+```
+
+Each step is owned by its context: identity never writes users, user never writes accounts. An account belongs to the user (`Account.customerId` = `User.id`, the id order charges), so account follows `user.created`, not `identity.registered`.
+
+- **Same envelope**: a structured CloudEvent as the JSON value, headers `content-type: application/cloudevents+json` and `ce_type` (the event type, from the CloudEvents Kafka binding, so a consumer can skip types it doesn't handle without parsing the body). `id`, `subject` and `correlationid` are the aggregate's `publicId`, so `id` is stable for the fact and works as a consumer's dedup key.
+- **Events carry the main data**, so a consumer never has to call back: `identity.registered` has `identityId`, `identityPublicId`, `email`, `phoneNumber`, `role`, `createdAt`; `user.created` has `userId`, `userPublicId`, `identityId`, `email`, `phoneNumber`, `firstName`, `lastName`, `language`, `createdAt`. Integer ids are included for now because the cross-context columns (`User.identityId`, `Account.customerId`) are still integers. `data` is built by hand, never the entity.
 - **Key = `subject`**: all events about one identity land on the same partition and stay in order; different identities spread across partitions.
 - **Topics**: `TopicEnum` lists every topic name regardless of broker. `RabbitMqModule` declares only the command exchanges, and `KafkaProducerService` (`src/generic/kafka/`) creates the topics it owns at startup with the admin API (an existing topic is left as it is; replication factor `-1` takes the broker default).
 - **Producer**: `@confluentinc/kafka-javascript` (librdkafka) with idempotence on and `acks: all`, so a retried send never writes a duplicate and a send succeeds only once every in-sync replica has it.
@@ -149,7 +159,11 @@ RabbitMQ keeps the commands and request/reply of the saga: work for one receiver
 - **One topic per aggregate, not per event type**: Kafka orders messages only within a partition of one topic, so `identity.registered`, a later `identity.email-changed` and `identity.deleted` for the same identity must share a topic to reach consumers in that order. A stream gets its own topic only when its volume or retention differs (e.g. a per-login event).
 - **Replay instead of losing skipped events**: a consumer commits its offset past events it skips, so a handler added later never sees them in that group. Instead each use case is its own consumer group (`user.profile`, later `user.email-sync`): a new group starts from the earliest offset and replays the whole topic. An existing group can also be rewound (`kafka-consumer-groups.sh --group <group> --reset-offsets --to-earliest --execute --topic identity.events` while it is stopped) and relies on its idempotency for the events it already handled. Either works only while the events still exist, which is why `identity.events` has `retention.ms=-1`.
 - **Topic config is set at creation only**: the client can't read or alter configs, so a change to an existing topic (as for `retention.ms` on a Kafka created before it was added) is a one-off `kafka-configs.sh --entity-type topics --entity-name <topic> --alter --add-config <name>=<value>`.
-- **No consumers yet**; the user profile from `identity.registered` comes later.
+- **Consumers** (`KafkaConsumerService`, `src/generic/kafka/`): a context's gateway registers `{ groupId, topic, handle }` (`src/user/gateway/user-identity-events.gateway.ts`, `src/account/gateway/account-user-events.gateway.ts`), and all consumers start once the app has bootstrapped. The gateway skips types it doesn't handle and validates the rest with a zod schema of the fields it needs.
+- **Commit after the effect**: the offset is committed only after `handle` resolves. A thrown error redelivers the same message, so a transient failure (database restarting, Kafka down while user publishes `user.created`) retries until it succeeds. That makes the user → account step reliable without an outbox: if user commits the row but fails to publish, the event is redelivered, the insert is a no-op and the publish is repeated.
+- **Idempotent by natural key**: `User.identityId` is unique and `Account.customerId` is the primary key; both inserts are `ON CONFLICT DO NOTHING`, so a redelivered or replayed event changes nothing.
+- **Dead letters**: a message that can never succeed (not JSON, or failing the schema) is copied to `<group>.dlt` (`user.profile.dlt`, kept forever) with headers `dlt_reason` and `dlt_source` (`topic/partition@offset`), and the offset moves on, so one bad message doesn't block its partition.
+- **`KAFKA_CONSUMERS_ENABLED=false`** runs the app without consumers (an API-only instance). The tests use it everywhere except `registration-provisioning.e2e-spec.ts`, so background inserts can't land after a test truncates its tables.
 
 ### Contract packages
 
@@ -176,7 +190,7 @@ A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
 - **`@Identity()`** (`src/generic/auth/decorator/`) reads those claims in a handler: `@UseGuards(AccessTokenGuard) @Get() me(@Identity() identity: AccessTokenClaimsInterface)`, or `@Identity('identityPublicId') identityPublicId: string` for one field. Without the guard on the route it fails with 500 instead of silently returning `undefined`.
 - **Refresh token**: 32 random bytes, valid for 30 days, stored only as a SHA-256 hash in `IdentitySession`. Every refresh marks the token used and issues a new one in the same session family. The "not used yet" check is an `UPDATE … WHERE "usedAt" IS NULL RETURNING`, so two parallel refreshes can't both win. Presenting a used token again means it was copied, so the whole family is revoked. Logout revokes the family too. Each login starts a new family, so sessions on other devices are unaffected.
 - **Passwords**: argon2id, 8–128 characters, no composition rules (NIST 800-63B). Login answers an unknown login, a wrong password and a deleted identity with the same `401 Invalid login or password`, and hashes a dummy password when the login doesn't exist, so timing doesn't reveal which accounts exist.
-- **Registration** creates only the `Identity` (role `user`; a `role` in the body is ignored). The User profile isn't created, and `activatedAt` stays `NULL` until a verification flow exists.
+- **Registration** creates the `Identity` (role `user`; a `role` in the body is ignored), and the User and its account follow asynchronously through Kafka (see Events). The user starts with the identity's `email` and `phoneNumber` as contact details. `activatedAt` stays `NULL` until a verification flow exists.
 - **Keys** live in Infisical (`JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, PEM). Generate a pair with `openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt` and `openssl ec -pubout`. Tests generate a fresh pair per run (`test/support/env.ts`).
 - **Seeded logins**: `seller1@example.com`, `buyer1@example.com`, … with the password `marketplace-dev`.
 - **Not done yet**: rate limiting on `/auth/*`, email/phone verification, the JWKS endpoint, cleanup of expired sessions, and a grace window for a client that refreshes twice in parallel (today the second request revokes the session).
@@ -224,6 +238,7 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `RABBITMQ_HOST` | no | `rabbitmq` | broker host (`localhost` when the app runs outside Docker) |
 | `RABBITMQ_PORT` | no | `5672` | AMQP port (`15672` is the management UI) |
 | `KAFKA_BROKERS` | no | `kafka:29092` | comma-separated Kafka bootstrap servers (`localhost:9092` when the app runs outside Docker) |
+| `KAFKA_CONSUMERS_ENABLED` | no | `true` | `false` starts the app without Kafka consumers |
 | `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
 
 Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`) come from Infisical, or from the environment with `SKIP_VAULT=1`.

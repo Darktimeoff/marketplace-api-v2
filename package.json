@@ -1,7 +1,7 @@
 {
   "name": "marketplace-api-v2",
   "version": "0.0.1",
-  "description": "Marketplace API: NestJS implementation + OpenAPI contract + Pact consumer test",
+  "description": "Marketplace API: NestJS modular monolith with RabbitMQ messaging",
   "author": "",
   "private": true,
   "license": "UNLICENSED",

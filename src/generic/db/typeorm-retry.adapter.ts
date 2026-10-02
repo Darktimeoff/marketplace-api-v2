@@ -23,26 +23,6 @@ export interface TypeOrmRetryAdapterOptions extends RetryTransactionOptions {
   dataSourceToken: unknown;
 }
 
-export interface TransactionRetryInfo {
-  attempt: number;
-  maxAttempts: number;
-  code: string;
-  delayMs: number;
-  message: string;
-}
-
-export type TransactionRetryListener = (info: TransactionRetryInfo) => void;
-
-const retryListeners = new Set<TransactionRetryListener>();
-
-export function onTransactionRetry(listener: TransactionRetryListener): () => void {
-  retryListeners.add(listener);
-
-  return () => {
-    retryListeners.delete(listener);
-  };
-}
-
 export class TransactionalAdapterTypeOrmWithRetry
   implements TransactionalAdapter<DataSource, EntityManager, TypeOrmTransactionOptions>
 {
@@ -112,22 +92,9 @@ async function retryTransactionOnDeadlock<T>(
       const delayMs = Math.round(baseDelayMs * 2 ** (attempt - 1) + Math.random() * baseDelayMs);
 
       logger.warn(`Deadlock detected, retrying (attempt ${attempt}/${maxAttempts}) after ${delayMs}ms`);
-      notifyRetry({
-        attempt,
-        maxAttempts,
-        code,
-        delayMs,
-        message: error instanceof Error ? error.message : String(error),
-      });
 
       await sleep(delayMs);
     }
-  }
-}
-
-function notifyRetry(info: TransactionRetryInfo): void {
-  for (const listener of retryListeners) {
-    listener(info);
   }
 }
 

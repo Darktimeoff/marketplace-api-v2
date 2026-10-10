@@ -145,7 +145,7 @@ RabbitMQ keeps the commands and request/reply of the saga: work for one receiver
 |---|---|---|---|
 | `identity.events` (3 partitions, kept forever) | identity | `identity.registered` after a registration commits | `user.profile` |
 | `user.events` (3 partitions, kept forever) | user | `user.created` after the user row commits | `account.provisioning` |
-| `order.events` (3 partitions, kept forever) | order | `order.paid` when an order is paid | none yet |
+| `order.events` (3 partitions, kept forever) | order | `order.created` (committed as `pending_payment`), `order.paid`, `order.failed` (`canceled` / `failed_payment` with a `reason`) | `order.notify` (broadcast) |
 
 Registration provisions the rest of the person asynchronously:
 
@@ -169,7 +169,9 @@ Each step is owned by its context: identity never writes users, user never write
 - **Commit after the effect**: the offset is committed only after `handle` resolves. A thrown error redelivers the same message, so a transient failure (database restarting) retries until it succeeds. User's follow-up event goes through `UserOutbox` in the same transaction as the user, so once the user is committed `user.created` will be sent, and a redelivery neither inserts a second user nor writes a second event.
 - **Idempotent by natural key**: `User.identityId` is unique and `Account.customerId` is the primary key; both inserts are `ON CONFLICT DO NOTHING`, so a redelivered or replayed event changes nothing.
 - **Dead letters**: a message that can never succeed (not JSON, or failing the schema) is copied to `<group>.dlt` (`user.profile.dlt`, kept forever) with headers `dlt_reason` and `dlt_source` (`topic/partition@offset`), and the offset moves on, so one bad message doesn't block its partition.
-- **`KAFKA_CONSUMERS_ENABLED=false`** runs the app without consumers (an API-only instance). The tests use it everywhere except `registration-provisioning.e2e-spec.ts`, so background inserts can't land after a test truncates its tables.
+- **`KAFKA_CONSUMERS_ENABLED=false`** runs the app without the consumers that write state (an API-only instance); broadcast consumers like `order.notify` still run, because they only feed in-memory SSE listeners and an API instance needs them. The tests turn it off everywhere except `registration-provisioning.e2e-spec.ts`, so background inserts can't land after a test truncates its tables.
+- **Broadcast consumers** (`broadcast: true`): every app instance needs every event, so each instance joins its own group (`<group>.<random uuid>`), starts at the latest offset, commits nothing and has no dead-letter topic (a bad message is logged and skipped). A shared group would split the events between instances. Startup waits until the consumer has its partitions, so nothing published right after startup is missed.
+- **Topics are ready before anyone subscribes**: `createTopics` waits until every partition of the new topics has a leader. Otherwise a consumer subscribing right after creation can miss the topic until the client's next metadata refresh (5 minutes by default).
 
 ### Contract packages
 
@@ -203,9 +205,9 @@ A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
 
 ## Realtime order status (SSE)
 
-`PATCH /orders/:id/status` with `{ "userId": <buyerId>, "status": "preparing" }` changes a status; `GET /orders/:id/events?userId=<buyerId>` streams `order.status` events as SSE and replays events after `Last-Event-ID` (the most recent 100 per order). The buyer id is an ownership hint, not authentication.
+`GET /orders/:id/events?userId=<buyerId>` streams the order's status as SSE `order.status` events: `pending_payment`, then `paid`, or `canceled` / `failed_payment`. The buyer id is an ownership hint, not authentication.
 
-SSE fits one-way notifications: the browser's `EventSource` reconnects by itself and sends `Last-Event-ID`. The history is process-local, so several app instances would need a shared pub/sub or event store behind the stream.
+The stream is fed from Kafka, not from the code that changes the status. Order writes `order.created`, `order.paid` and `order.failed` through `OrderOutbox` in the same transaction as each status change; `OrderNotifyEventsGateway` consumes `order.events` as a broadcast consumer on every instance and records each event in `OrderNotifyService`, which pushes it to that order's SSE listeners and keeps the last 100 per order. The SSE `id` is the Kafka offset + 1: all events of one order are on one partition (key = `publicId`), so ids only grow per order and are the same on every instance, and a reconnect with `Last-Event-ID` resumes correctly on any instance. Offset + 1 because the first message of a partition has offset 0, which `Last-Event-ID` would treat as "nothing seen yet". The history is in memory: it is rebuilt from new events after a restart, not from the past. A status reaches the stream about a second after the change (the outbox relay's poll interval). SSE fits one-way notifications: the browser's `EventSource` reconnects by itself and sends `Last-Event-ID`.
 
 ## Secrets
 

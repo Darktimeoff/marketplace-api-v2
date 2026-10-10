@@ -3,7 +3,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
-import { AccountCustomerChargeRequest, AccountCustomerRefundCommand, OrderPaidEvent, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
+import { AccountCustomerChargeRequest, AccountCustomerRefundCommand, OrderCreatedEvent, OrderFailedEvent, OrderPaidEvent, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
 import { OrderLineRepository } from '../repository/order-line.repository.js';
@@ -23,7 +23,7 @@ import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
 import { InsufficientStockProductInterface } from '../interface/insufficient-stock-product.interface.js';
 import { InsufficientStockException } from '../exception/insufficient-stock.exception.js';
 import { BalanceException } from '../exception/balance.exception.js';
-import { OrderNotifyService } from '../service/order-notify.service.js';
+import type { OrderFailureInterface } from '../interface/order-failure.interface.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
 import type { OrderOutboxCreateEntityInterface } from '../entity/order-outbox.entity.js';
 import { OrderOutboxAggregateTypeEnum } from '../enum/order-outbox-aggregate-type.enum.js';
@@ -44,7 +44,6 @@ export class OrderPlaceCommandHandler {
     private readonly orderRecipientRepository: OrderRecipientRepository,
     private readonly orderLineRepository: OrderLineRepository,
     private readonly offers: SellerOfferService,
-    private readonly orderNotify: OrderNotifyService,
     private readonly amqpConnection: AmqpConnection,
     private readonly outbox: OrderOutboxRepository,
   ) {}
@@ -64,7 +63,7 @@ export class OrderPlaceCommandHandler {
         ...(!(error instanceof InsufficientStockException) ? [this.toStockReleaseOutbox(order.publicId)] : []),
       ];
 
-      await this.markFailed(order, error instanceof BalanceException ? OrderStatusEnum.failed_payment : OrderStatusEnum.canceled, compensations);
+      await this.markFailed(order, this.toFailure(error), compensations);
       throw error;
     }
   }
@@ -92,39 +91,47 @@ export class OrderPlaceCommandHandler {
     );
 
     await this.createItems(pricedItems, order.id);
+    await this.outbox.create(this.toOrderCreatedOutbox(order));
 
     return order;
   }
 
-  private async markPaid(order: Order): Promise<Order> {
-    const paid = await this.payAndAnnounce(order);
-    this.orderNotify.notifyStatusChanged(paid.id, paid.status);
-    return paid;
-  }
-
   @Transactional()
-  private async payAndAnnounce(order: Order): Promise<Order> {
+  private async markPaid(order: Order): Promise<Order> {
     const paid = await this.orderRepository.updateStatusById(order.id, OrderStatusEnum.paid);
     await this.outbox.create(this.toOrderPaidOutbox(paid));
     return paid;
   }
 
-  private async markFailed(order: Order, status: OrderStatusEnum, compensations: OrderOutboxCreateEntityInterface[]): Promise<void> {
+  private async markFailed(order: Order, failure: OrderFailureInterface, compensations: OrderOutboxCreateEntityInterface[]): Promise<void> {
     try {
-      await this.failAndCompensate(order, status, compensations);
-      this.orderNotify.notifyStatusChanged(order.id, status);
+      await this.failAndCompensate(order, failure, compensations);
     } catch (error) {
-      this.logger.error(`failed to mark order=${order.publicId} ${status}`, error instanceof Error ? error.stack : String(error));
+      this.logger.error(`failed to mark order=${order.publicId} ${failure.status}`, error instanceof Error ? error.stack : String(error));
     }
   }
 
   @Transactional()
-  private async failAndCompensate(order: Order, status: OrderStatusEnum, compensations: OrderOutboxCreateEntityInterface[]): Promise<void> {
-    await this.orderRepository.updateStatusById(order.id, status);
+  private async failAndCompensate(order: Order, failure: OrderFailureInterface, compensations: OrderOutboxCreateEntityInterface[]): Promise<void> {
+    const failed = await this.orderRepository.updateStatusById(order.id, failure.status);
 
     for (const compensation of compensations) {
       await this.outbox.create(compensation);
     }
+
+    await this.outbox.create(this.toOrderFailedOutbox(failed, failure));
+  }
+
+  private toFailure(error: unknown): OrderFailureInterface {
+    if (error instanceof InsufficientStockException) {
+      return { status: OrderStatusEnum.canceled, reason: 'insufficient_stock' };
+    }
+
+    if (error instanceof BalanceException) {
+      return { status: OrderStatusEnum.failed_payment, reason: 'payment_rejected' };
+    }
+
+    return { status: OrderStatusEnum.canceled, reason: 'error' };
   }
 
   private createRecipient(recipient: OrderCreateRecipientInput): Promise<OrderRecipient> {
@@ -195,6 +202,49 @@ export class OrderPlaceCommandHandler {
       amount: discountPrice * item.quantity,
       discount: (price - discountPrice) * item.quantity,
     };
+  }
+
+  private toOrderCreatedOutbox(order: Order): OrderOutboxCreateEntityInterface {
+    const data: OrderCreatedEvent.DataInterface = {
+      orderId: order.id,
+      orderPublicId: order.publicId,
+      userId: order.userId,
+      totalAmount: order.totalAmount,
+      discountAmount: order.discountAmount,
+      currency: order.currency,
+      createdAt: order.createdAt.toISOString(),
+    };
+
+    return {
+      id: randomUUID(),
+      broker: OrderOutboxBrokerEnum.KAFKA,
+      topic: OrderCreatedEvent.TOPIC,
+      aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
+      aggregateId: order.publicId,
+      type: OrderCreatedEvent.TYPE,
+      payload: data,
+    }
+  }
+
+  private toOrderFailedOutbox(order: Order, failure: OrderFailureInterface): OrderOutboxCreateEntityInterface {
+    const data: OrderFailedEvent.DataInterface = {
+      orderId: order.id,
+      orderPublicId: order.publicId,
+      userId: order.userId,
+      status: failure.status,
+      reason: failure.reason,
+      failedAt: order.updatedAt.toISOString(),
+    };
+
+    return {
+      id: randomUUID(),
+      broker: OrderOutboxBrokerEnum.KAFKA,
+      topic: OrderFailedEvent.TOPIC,
+      aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
+      aggregateId: order.publicId,
+      type: OrderFailedEvent.TYPE,
+      payload: data,
+    }
   }
 
   private toOrderPaidOutbox(order: Order): OrderOutboxCreateEntityInterface {

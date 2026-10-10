@@ -156,7 +156,18 @@ describe('Order create (e2e)', () => {
 
     expect(await balanceOf(buyer.id)).toBe('840.00');
 
-    const [paidRow] = await publishedOutboxRows(1);
+    const rows = await publishedOutboxRows(2);
+    expect(rows.map(({ type }) => type)).toEqual(['order.created', 'order.paid']);
+    expect(rows[0].payload).toEqual({
+      orderId: order.id,
+      orderPublicId: order.publicId,
+      userId: buyer.id,
+      totalAmount: '160.00',
+      discountAmount: '40.00',
+      currency: CurrencyEnum.UAH,
+      createdAt: order.createdAt.toISOString(),
+    });
+    const paidRow = rows[1];
     expect(paidRow).toMatchObject({ broker: 'kafka', topic: 'order.events', type: 'order.paid', aggregateId: order.publicId, attempts: 0 });
     const event = await kafkaEvent('order.events', paidRow.id);
     expect(event).toEqual({
@@ -213,7 +224,11 @@ describe('Order create (e2e)', () => {
     expect(await dataSource.getRepository(StockReservation).count()).toBe(0);
     expect(await balanceOf(buyer.id)).toBe('1000.00');
     expect(await dataSource.getRepository(Transaction).count()).toBe(0);
-    expect(await outboxRows()).toEqual([]);
+    const order = await onlyOrder();
+    expect(await publishedOutboxRows(2)).toEqual([
+      expect.objectContaining({ type: 'order.created' }),
+      expect.objectContaining({ type: 'order.failed', payload: expect.objectContaining({ orderId: order.id, status: 'canceled', reason: 'insufficient_stock' }) }),
+    ]);
   });
 
   it('marks the order failed_payment and releases the stock when the balance is too low', async () => {
@@ -233,7 +248,9 @@ describe('Order create (e2e)', () => {
     ]);
     expect(await balanceOf(buyer.id)).toBe('50.00');
     expect(await dataSource.getRepository(Transaction).count()).toBe(0);
-    expect(await publishedOutboxRows(1)).toEqual([
+    expect(await publishedOutboxRows(3)).toEqual([
+      expect.objectContaining({ type: 'order.created' }),
+      expect.objectContaining({ type: 'order.failed', payload: expect.objectContaining({ status: 'failed_payment', reason: 'payment_rejected' }) }),
       expect.objectContaining({ type: 'seller-offer.stock.release', aggregateType: 'Order', aggregateId: order.publicId, payload: { orderPublicId: order.publicId } }),
     ]);
   });
@@ -259,7 +276,8 @@ describe('Order create (e2e)', () => {
     await vi.waitFor(async () => {
       expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
     }, { timeout: 15000, interval: 100 });
-    expect(await publishedOutboxRows(1)).toEqual([expect.objectContaining({ attempts: 1, lastError: 'broker down' })]);
+    const release = (await publishedOutboxRows(3)).find(({ type }) => type === 'seller-offer.stock.release');
+    expect(release).toMatchObject({ attempts: 1, lastError: 'broker down' });
   });
 
   it('marks the order failed_payment when the user has no account', async () => {
@@ -302,8 +320,10 @@ describe('Order create (e2e)', () => {
       { type: TransactionTypeEnum.REFUND, amount: '100.00', status: TransactionStatusEnum.SUCCESS },
     ]);
     const order = await onlyOrder();
-    expect(await publishedOutboxRows(2)).toEqual([
+    expect(await publishedOutboxRows(4)).toEqual([
       expect.objectContaining({ id: order.publicId, type: 'account.customer.refund', payload: { customerId: buyer.id, amount: '100.00', chargeId: order.publicId } }),
+      expect.objectContaining({ type: 'order.created' }),
+      expect.objectContaining({ type: 'order.failed', payload: expect.objectContaining({ status: 'canceled', reason: 'error' }) }),
       expect.objectContaining({ type: 'seller-offer.stock.release', payload: { orderPublicId: order.publicId } }),
     ]);
   });

@@ -9,4 +9,6 @@ export * from './seller-offer/command/stock-release.command.js';
 export * from './account/command/account-customer-refund.command.js';
 export * from './identity/event/identity-registered.event.js';
 export * from './user/event/user-created.event.js';
+export * from './order/event/order-created.event.js';
 export * from './order/event/order-paid.event.js';
+export * from './order/event/order-failed.event.js';

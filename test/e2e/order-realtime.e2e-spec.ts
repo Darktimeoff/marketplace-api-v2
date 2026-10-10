@@ -1,20 +1,30 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { get as httpGet, type IncomingMessage, type ClientRequest } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module.js';
-import { Order } from '../../src/order/entity/order.entity.js';
-import { OrderNotifyService } from '../../src/order/service/order-notify.service.js';
-import { OrderStatusEnum, CurrencyEnum } from '@marketplace/contracts-core';
-import { anOrderRecipient, aUser } from '../support/builders.js';
+import { CountryCodeEnum, CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
+import { aSellerOffer, aUser } from '../support/builders.js';
 import { truncateAllTables } from '../support/isolation.js';
 
-describe('Order realtime (e2e)', () => {
+interface StreamedEventInterface {
+  id: number;
+  orderId: number;
+  status: OrderStatusEnum;
+}
+
+interface StreamInterface {
+  response: IncomingMessage;
+  events(): StreamedEventInterface[];
+  close(): void;
+}
+
+describe('Order realtime over Kafka (e2e)', () => {
   let app: INestApplication;
   let dataSource: DataSource;
-  let realtime: OrderNotifyService;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -22,151 +32,126 @@ describe('Order realtime (e2e)', () => {
     await app.init();
     await app.listen(0);
     dataSource = app.get(DataSource);
-    realtime = app.get(OrderNotifyService);
-  });
-
-  afterEach(async () => {
-    await truncateAllTables(dataSource);
   });
 
   afterAll(async () => {
+    await truncateAllTables(dataSource);
     await app.close();
   });
 
-  async function createOrder(userId?: number): Promise<Order> {
-    const recipient = await anOrderRecipient(dataSource.manager);
-    const orders = dataSource.getRepository(Order);
-    return orders.save(orders.create({
-      userId: userId ?? (await aUser(dataSource.manager)).id,
-      orderRecipientId: recipient.id,
-      totalAmount: '100.00',
-      discountAmount: '0.00',
-      currency: CurrencyEnum.UAH,
-    }));
-  }
-
-  it('updates status for the owner and publishes one event', async () => {
+  async function placeOrder(balance: string): Promise<{ orderId: number; userId: number }> {
     const buyer = await aUser(dataSource.manager);
-    const order = await createOrder(buyer.id);
-    const events = vi.fn();
-    const unsubscribe = realtime.subscribe(order.id, events);
+    await dataSource.query(`INSERT INTO "Account" ("customerId", "balance") VALUES ($1, $2)`, [buyer.id, balance]);
+    const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
     const response = await request(app.getHttpServer())
-      .patch(`/orders/${order.id}/status`)
-      .send({ userId: buyer.id, status: OrderStatusEnum.preparing })
-      .expect(200);
-
-    unsubscribe();
-    expect(response.body).toMatchObject({ id: order.id, status: OrderStatusEnum.preparing });
-    expect(events).toHaveBeenCalledTimes(1);
-    expect(events.mock.calls[0][0]).toMatchObject({ orderId: order.id, status: OrderStatusEnum.preparing });
-  });
-
-  it('rejects a status update from a different buyer without publishing', async () => {
-    const owner = await aUser(dataSource.manager);
-    const other = await aUser(dataSource.manager);
-    const order = await createOrder(owner.id);
-    const events = vi.fn();
-    const unsubscribe = realtime.subscribe(order.id, events);
-
-    await request(app.getHttpServer())
-      .patch(`/orders/${order.id}/status`)
-      .send({ userId: other.id, status: OrderStatusEnum.preparing })
-      .expect(403);
-
-    unsubscribe();
-    expect(events).not.toHaveBeenCalled();
-  });
-
-  it('streams status updates as SSE events and disconnects cleanly', async () => {
-    const buyer = await aUser(dataSource.manager);
-    const order = await createOrder(buyer.id);
-    const address = app.getHttpServer().address();
-    const chunks: string[] = [];
-
-    const response = await new Promise<{ response: IncomingMessage; request: ClientRequest }>((resolve, reject) => {
-      const req = httpGet(`http://127.0.0.1:${address.port}/orders/${order.id}/events?userId=${buyer.id}`, (res) => {
-        res.setEncoding('utf8');
-        res.on('data', (chunk: string) => chunks.push(chunk));
-        resolve({ response: res, request: req });
+      .post('/order')
+      .send({
+        userId: buyer.id,
+        recipient: {
+          fullName: 'Jane Doe',
+          phone: { countryCode: CountryCodeEnum.UA, rawNumber: '+380501234567', fullNumber: '+380501234567', nationalNumber: '0501234567' },
+          address: { addressLine: 'Khreshchatyk St, 1', city: 'Kyiv' },
+        },
+        items: [{ offerId: offer.id, quantity: 1 }],
+        currency: CurrencyEnum.UAH,
       });
-      req.on('error', reject);
-    });
 
-    expect(response.response.headers['content-type']).toContain('text/event-stream');
-    await request(app.getHttpServer())
-      .patch(`/orders/${order.id}/status`)
-      .send({ userId: buyer.id, status: OrderStatusEnum.preparing })
-      .expect(200);
-    await vi.waitFor(() => expect(chunks.join('')).toContain('event: order.status'));
-    expect(chunks.join('')).toContain('data: {"orderId":' + order.id);
-    expect(chunks.join('')).toContain('"status":"preparing"');
-    response.request.destroy();
-  });
+    return { orderId: response.body.id ?? (await dataSource.query(`SELECT max("id") AS id FROM "Order"`))[0].id, userId: buyer.id };
+  }
 
-  it('sends the event-stream content type before the first status event', async () => {
-    const order = await createOrder();
-    const address = app.getHttpServer().address();
-    const response = await new Promise<IncomingMessage>((resolve, reject) => {
-      const req = httpGet(`http://127.0.0.1:${address.port}/orders/${order.id}/events`, resolve);
-      req.setTimeout(1000, () => req.destroy(new Error('SSE header timeout')));
-      req.on('error', reject);
-    });
-
-    expect(response.headers['content-type']).toContain('text/event-stream');
-    response.destroy();
-  });
-
-  it('replays events after Last-Event-ID without sending earlier IDs', async () => {
-    const buyer = await aUser(dataSource.manager);
-    const order = await createOrder(buyer.id);
-    const events = [OrderStatusEnum.paid, OrderStatusEnum.confirmed, OrderStatusEnum.preparing, OrderStatusEnum.shipped]
-      .map((status) => realtime.notifyStatusChanged(order.id, status));
-
-    const address = app.getHttpServer().address();
+  function openStream(orderId: number, userId?: number, lastEventId?: number): Promise<StreamInterface> {
+    const { port } = app.getHttpServer().address() as AddressInfo;
     const chunks: string[] = [];
-    const response = await new Promise<{ response: IncomingMessage; request: ClientRequest }>((resolve, reject) => {
-      const req = httpGet({
+
+    return new Promise((resolve, reject) => {
+      const req: ClientRequest = httpGet({
         hostname: '127.0.0.1',
-        port: address.port,
-        path: `/orders/${order.id}/events?userId=${buyer.id}`,
-        headers: { 'Last-Event-ID': String(events[2].id) },
+        port,
+        path: `/orders/${orderId}/events${userId === undefined ? '' : `?userId=${userId}`}`,
+        headers: lastEventId === undefined ? {} : { 'Last-Event-ID': String(lastEventId) },
       }, (res) => {
         res.setEncoding('utf8');
         res.on('data', (chunk: string) => chunks.push(chunk));
-        resolve({ response: res, request: req });
+        resolve({
+          response: res,
+          events: () => chunks.join('').split('\n\n').flatMap((block) => {
+            const id = /^id: (\d+)$/m.exec(block);
+            const data = /^data: (.+)$/m.exec(block);
+            return id && data && block.includes('event: order.status') ? [{ id: Number(id[1]), ...JSON.parse(data[1]) }] : [];
+          }),
+          close: () => req.destroy(),
+        });
       });
       req.on('error', reject);
     });
+  }
 
-    expect(response.response.headers['content-type']).toContain('text/event-stream');
-    await vi.waitFor(() => expect(chunks.join('')).toContain(`id: ${events[3].id}\n`));
-    expect(chunks.join('')).not.toContain(`id: ${events[2].id}\n`);
-    response.request.destroy();
+  async function eventsOf(stream: StreamInterface, count: number): Promise<StreamedEventInterface[]> {
+    return vi.waitFor(() => {
+      const events = stream.events();
+      if (events.length < count) throw new Error(`got ${events.length} of ${count} events`);
+      return events;
+    }, { timeout: 15000, interval: 100 });
+  }
+
+  it('streams pending_payment then paid for a paid order, from order.events', async () => {
+    const { orderId, userId } = await placeOrder('1000.00');
+    const stream = await openStream(orderId, userId);
+
+    try {
+      expect(stream.response.headers['content-type']).toContain('text/event-stream');
+      const events = await eventsOf(stream, 2);
+      expect(events.map(({ orderId: id, status }) => ({ orderId: id, status }))).toEqual([
+        { orderId, status: OrderStatusEnum.pending_payment },
+        { orderId, status: OrderStatusEnum.paid },
+      ]);
+      expect(events[1].id).toBeGreaterThan(events[0].id);
+    } finally {
+      stream.close();
+    }
+  });
+
+  it('streams failed_payment when the payment is refused', async () => {
+    const { orderId, userId } = await placeOrder('10.00');
+    const stream = await openStream(orderId, userId);
+
+    try {
+      const events = await eventsOf(stream, 2);
+      expect(events.map(({ status }) => status)).toEqual([OrderStatusEnum.pending_payment, OrderStatusEnum.failed_payment]);
+    } finally {
+      stream.close();
+    }
+  });
+
+  it('replays only the events after Last-Event-ID', async () => {
+    const { orderId, userId } = await placeOrder('1000.00');
+    const first = await openStream(orderId, userId);
+    const [created, paid] = await eventsOf(first, 2).finally(() => first.close());
+
+    const resumed = await openStream(orderId, userId, created.id);
+
+    try {
+      const events = await eventsOf(resumed, 1);
+      expect(events).toEqual([paid]);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(resumed.events()).toEqual([paid]);
+    } finally {
+      resumed.close();
+    }
   });
 
   it('rejects SSE connections from a different buyer before opening the stream', async () => {
-    const owner = await aUser(dataSource.manager);
+    const { orderId } = await placeOrder('1000.00');
     const other = await aUser(dataSource.manager);
-    const order = await createOrder(owner.id);
 
-    await request(app.getHttpServer())
-      .get(`/orders/${order.id}/events?userId=${other.id}`)
-      .expect(403);
+    await request(app.getHttpServer()).get(`/orders/${orderId}/events?userId=${other.id}`).expect(403);
   });
 
-  it('rejects missing buyer identity and unknown orders', async () => {
-    const buyer = await aUser(dataSource.manager);
-    const order = await createOrder(buyer.id);
+  it('rejects an invalid buyer id and an unknown order', async () => {
+    const { orderId } = await placeOrder('1000.00');
 
-    await request(app.getHttpServer())
-      .patch(`/orders/${order.id}/status`)
-      .send({ status: OrderStatusEnum.preparing })
-      .expect(400);
-
-    await request(app.getHttpServer())
-      .patch('/orders/999999/status')
-      .send({ userId: buyer.id, status: OrderStatusEnum.preparing })
-      .expect(404);
+    await request(app.getHttpServer()).get(`/orders/${orderId}/events?userId=abc`).expect(400);
+    await request(app.getHttpServer()).get('/orders/999999/events').expect(404);
   });
 });

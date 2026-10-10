@@ -7,6 +7,7 @@ import { OrderOutboxAggregateTypeEnum } from '../enum/order-outbox-aggregate-typ
 import { OrderOutboxBrokerEnum } from '../enum/order-outbox-broker.enum.js';
 import type { OrderFailureInterface } from '../interface/order-failure.interface.js';
 import { OrderCreateInput } from '../input/order-create.input.js';
+import type { OrderPlaceWorkflowInputInterface } from '../workflow/order-place-workflow.interface.js';
 
 @Injectable()
 export class OrderPlaceMessageService {
@@ -67,6 +68,16 @@ export class OrderPlaceMessageService {
         lines: order.lines.map(({ offerId, quantity, unitPrice, unitDiscountPrice }) => ({ offerId, quantity, unitPrice, unitDiscountPrice })),
         paidAt: order.updatedAt.toISOString(),
       } satisfies OrderPaidEvent.DataInterface,
+    }
+  }
+
+  toOrderPlaceWorkflowInput(order: Order, items: OrderCreateInput['items']): OrderPlaceWorkflowInputInterface {
+    return {
+      orderId: order.id,
+      orderPublicId: order.publicId,
+      userId: order.userId,
+      totalAmount: order.totalAmount,
+      items: items.map(({ offerId, quantity }) => ({ offerId, quantity })),
     }
   }
 

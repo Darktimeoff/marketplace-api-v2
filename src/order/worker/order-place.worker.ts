@@ -3,12 +3,13 @@ import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@ne
 import { NativeConnection, Worker } from '@temporalio/worker';
 import { EnvironmentService } from '../../generic/environment/environment.module.js';
 import { OrderPlaceActivity } from '../activity/order-place.activity.js';
+import { OrderTaskQueueEnum } from '../enum/order-task-queue.enum.js';
 import type { OrderPlaceActivitiesInterface } from '../workflow/order-place-workflow.interface.js';
 
 @Injectable()
 export class OrderPlaceWorker implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(OrderPlaceWorker.name);
-  private readonly taskQueue = 'order-place';
+  private readonly taskQueue = OrderTaskQueueEnum.ORDER_PLACE;
   private readonly workflowsPath = fileURLToPath(new URL('../workflow/order-place.workflow.js', import.meta.url));
   private connection?: NativeConnection;
   private worker?: Worker;

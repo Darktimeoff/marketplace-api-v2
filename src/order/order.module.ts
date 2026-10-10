@@ -22,6 +22,7 @@ import { AccountModule } from "../account/account.module.js";
 import { OrderAccessGuard } from "./guard/order-access.guard.js";
 import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
 import { KafkaModule } from "../generic/kafka/kafka.module.js";
+import { TemporalModule } from "../generic/temporal/temporal.module.js";
 import { OrderPlaceActivity } from "./activity/order-place.activity.js";
 import { OrderPlaceWorker } from "./worker/order-place.worker.js";
 
@@ -29,6 +30,7 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
   imports: [
     RabbitMqModule,
     KafkaModule,
+    TemporalModule,
     TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient, OrderOutbox]),
     SellerOfferModule,
     AccountModule,

@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Post,
@@ -20,6 +22,7 @@ export class OrderController {
   ) {}
 
   @ResponseDto(OrderDto)
+  @HttpCode(HttpStatus.ACCEPTED)
   @Post()
   create(@Body() input: OrderCreateInput): Promise<OrderDto> {
     return this.orderPlace.execute(input);

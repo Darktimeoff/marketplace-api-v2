@@ -1,8 +1,6 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
-import { AccountCustomerChargeRequest, StockReserveRequest } from '@marketplace/messaging-contracts';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
 import { OrderLineRepository } from '../repository/order-line.repository.js';
@@ -19,13 +17,11 @@ import {
 } from '../entity/order-line.entity.js';
 import { SellerOfferService } from '../../seller-offer/service/seller-offer.service.js';
 import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
-import { InsufficientStockProductInterface } from '../interface/insufficient-stock-product.interface.js';
-import { InsufficientStockException } from '../exception/insufficient-stock.exception.js';
-import { BalanceException } from '../exception/balance.exception.js';
-import type { OrderFailureInterface } from '../interface/order-failure.interface.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
 import { OrderPlaceMessageService } from '../service/order-place-message.service.js';
-import type { OrderOutboxCreateEntityInterface } from '../entity/order-outbox.entity.js';
+import { TemporalClientService } from '../../generic/temporal/temporal-client.service.js';
+import { OrderTaskQueueEnum } from '../enum/order-task-queue.enum.js';
+import type { orderPlaceWorkflow } from '../workflow/order-place.workflow.js';
 
 interface PricedOrderLine {
   item: Omit<OrderLineCreateEntityInterface, 'orderId'>;
@@ -35,36 +31,28 @@ interface PricedOrderLine {
 
 @Injectable()
 export class OrderPlaceCommandHandler {
-  private readonly logger = new Logger(OrderPlaceCommandHandler.name)
+  private readonly workflowIdPrefix = 'order-place-';
 
   constructor(
     private readonly orderRepository: OrderRepository,
     private readonly orderRecipientRepository: OrderRecipientRepository,
     private readonly orderLineRepository: OrderLineRepository,
     private readonly offers: SellerOfferService,
-    private readonly amqpConnection: AmqpConnection,
+    private readonly temporal: TemporalClientService,
     private readonly outbox: OrderOutboxRepository,
     private readonly messages: OrderPlaceMessageService,
   ) {}
 
   async execute(input: OrderCreateInput): Promise<Order> {
     const order = await this.createPending(input);
-    let isChargeSent = false;
 
-    try {
-      await this.reserveStockOrFail(order, input);
-      isChargeSent = true;
-      await this.chargeOrFail(order);
-      return await this.markPaid(order);
-    } catch (error) {
-      const compensations = [
-        ...(isChargeSent && !(error instanceof BalanceException) ? [this.messages.toAccountCustomerRefundOutbox(order)] : []),
-        ...(!(error instanceof InsufficientStockException) ? [this.messages.toStockReleaseOutbox(order.publicId)] : []),
-      ];
+    await this.temporal.client.workflow.start<typeof orderPlaceWorkflow>('orderPlaceWorkflow', {
+      taskQueue: OrderTaskQueueEnum.ORDER_PLACE,
+      workflowId: `${this.workflowIdPrefix}${order.publicId}`,
+      args: [this.messages.toOrderPlaceWorkflowInput(order, input.items)],
+    });
 
-      await this.markFailed(order, this.toFailure(error), compensations);
-      throw error;
-    }
+    return order;
   }
 
   @Transactional()
@@ -93,44 +81,6 @@ export class OrderPlaceCommandHandler {
     await this.outbox.create(this.messages.toOrderCreatedOutbox(order));
 
     return order;
-  }
-
-  @Transactional()
-  private async markPaid(order: Order): Promise<Order> {
-    const paid = await this.orderRepository.updateStatusById(order.id, OrderStatusEnum.paid);
-    await this.outbox.create(this.messages.toOrderPaidOutbox(paid));
-    return paid;
-  }
-
-  private async markFailed(order: Order, failure: OrderFailureInterface, compensations: OrderOutboxCreateEntityInterface[]): Promise<void> {
-    try {
-      await this.failAndCompensate(order, failure, compensations);
-    } catch (error) {
-      this.logger.error(`failed to mark order=${order.publicId} ${failure.status}`, error instanceof Error ? error.stack : String(error));
-    }
-  }
-
-  @Transactional()
-  private async failAndCompensate(order: Order, failure: OrderFailureInterface, compensations: OrderOutboxCreateEntityInterface[]): Promise<void> {
-    const failed = await this.orderRepository.updateStatusById(order.id, failure.status);
-
-    for (const compensation of compensations) {
-      await this.outbox.create(compensation);
-    }
-
-    await this.outbox.create(this.messages.toOrderFailedOutbox(failed, failure));
-  }
-
-  private toFailure(error: unknown): OrderFailureInterface {
-    if (error instanceof InsufficientStockException) {
-      return { status: OrderStatusEnum.canceled, reason: 'insufficient_stock' };
-    }
-
-    if (error instanceof BalanceException) {
-      return { status: OrderStatusEnum.failed_payment, reason: 'payment_rejected' };
-    }
-
-    return { status: OrderStatusEnum.canceled, reason: 'error' };
   }
 
   private createRecipient(recipient: OrderCreateRecipientInput): Promise<OrderRecipient> {
@@ -201,37 +151,5 @@ export class OrderPlaceCommandHandler {
       amount: discountPrice * item.quantity,
       discount: (price - discountPrice) * item.quantity,
     };
-  }
-
-  private async reserveStockOrFail(order: Order, input: OrderCreateInput): Promise<void> {
-    const { data: result } = await this.amqpConnection.request<StockReserveRequest.ResponseMessageType>({
-      exchange: StockReserveRequest.TOPIC,
-      routingKey: StockReserveRequest.TYPE,
-      payload: this.messages.toStockReserveRequest(order.publicId, input.items),
-      timeout: 5000
-    })
-
-    if (result.status === 'rejected') {
-      throw new InsufficientStockException(
-        result.items.map<InsufficientStockProductInterface>((item) => ({
-          offerId: item.offerId,
-          requestedQuantity: item.quantity,
-          stockQuantity: item.available,
-        })),
-      );
-    }
-  }
-
-  private async chargeOrFail(order: Order): Promise<void> {
-    const chargeResult = await this.amqpConnection.request<AccountCustomerChargeRequest.ResponseMessageType>({
-      exchange: AccountCustomerChargeRequest.TOPIC,
-      routingKey: AccountCustomerChargeRequest.TYPE,
-      payload: this.messages.toAccountCustomerChargeRequest(order.publicId, order.userId, order.totalAmount),
-      timeout: 5000
-    })
-
-    if (chargeResult.data.status === 'rejected') { 
-      throw new BalanceException(order.userId, Number(chargeResult.data.available), Number(order.totalAmount))
-    }
   }
 }

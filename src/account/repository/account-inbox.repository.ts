@@ -20,8 +20,4 @@ export class AccountInboxRepository {
 
     return result.raw.length > 0;
   }
-
-  exists(input: AccountInboxCreateEntityInterface): Promise<boolean> {
-    return this.txHost.tx.getRepository(AccountInbox).exists({ where: input });
-  }
 }

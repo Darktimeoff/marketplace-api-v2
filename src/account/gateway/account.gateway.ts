@@ -9,7 +9,6 @@ import { AccountCustomerRefundCommandHandler } from "../command-handler/account-
 import { AccountCustomerRefundTopologyEnum } from "../enum/account-customer-refund-topology.enum.js";
 import { AccountInboxConsumerEnum } from "../enum/account-inbox-consumer.enum.js";
 import { AccountInboxService } from "../service/account-inbox.service.js";
-import { AccountCustomerRefundWithoutChargeException } from "../exception/account-customer-refund-without-charge.exception.js";
 import { AccountCustomerChargeRejectedException } from "../exception/insufficient-stock.exception.js";
 
 
@@ -80,18 +79,12 @@ export class AccountGateway {
       return new Nack(false)
     }
 
-    try {
-      const applied = await this.inbox.processOnce(AccountInboxConsumerEnum.CUSTOMER_REFUND, msg.id, () => this.refund.execute(msg.data))
-      this.logger.log(`${applied ? 'refunded' : 'skipped refund'} id=${msg.id}`)
-      return this.toRefundResponse(msg, { status: 'refunded' })
-    } catch (e) {
-      if (e instanceof AccountCustomerRefundWithoutChargeException) {
-        this.logger.warn(`skipped refund id=${msg.id}: no charge ${e.chargeId}`)
-        return this.toRefundResponse(msg, { status: 'not_charged' })
-      }
-
-      throw e
-    }
+    let refunded = true
+    const applied = await this.inbox.processOnce(AccountInboxConsumerEnum.CUSTOMER_REFUND, msg.id, async () => {
+      refunded = await this.refund.execute(msg.data)
+    })
+    this.logger.log(`${applied ? (refunded ? 'refunded' : 'fenced uncharged') : 'skipped refund'} id=${msg.id}`)
+    return this.toRefundResponse(msg, { status: refunded ? 'refunded' : 'not_charged' })
   }
 
   private isValidMovement(data: Partial<AccountCustomerChargeRequest.DataInterface> | undefined): boolean {

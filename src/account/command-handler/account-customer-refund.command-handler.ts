@@ -4,7 +4,6 @@ import { Transactional } from "@nestjs-cls/transactional";
 import { AccountRepository } from "../repository/account.repository.js";
 import { AccountInboxService } from "../service/account-inbox.service.js";
 import { AccountInboxConsumerEnum } from "../enum/account-inbox-consumer.enum.js";
-import { AccountCustomerRefundWithoutChargeException } from "../exception/account-customer-refund-without-charge.exception.js";
 import { TransactionStatusEnum } from '../enum/transaction-status.enum.js';
 import { TransactionTypeEnum } from '../enum/transaction-type.enum.js';
 
@@ -16,9 +15,9 @@ export class AccountCustomerRefundCommandHandler {
   ) {}
 
   @Transactional()
-  async execute({ customerId, amount, chargeId }: AccountCustomerRefundRequest.DataInterface) {
-    if (!await this.inbox.isProcessed(AccountInboxConsumerEnum.CUSTOMER_CHARGE, chargeId)) {
-      throw new AccountCustomerRefundWithoutChargeException(chargeId)
+  async execute({ customerId, amount, chargeId }: AccountCustomerRefundRequest.DataInterface): Promise<boolean> {
+    if (await this.inbox.markProcessed(AccountInboxConsumerEnum.CUSTOMER_CHARGE, chargeId)) {
+      return false;
     }
 
     await this.repository.credit(customerId, Number(amount).toFixed(2));
@@ -28,5 +27,7 @@ export class AccountCustomerRefundCommandHandler {
       type: TransactionTypeEnum.REFUND,
       status: TransactionStatusEnum.SUCCESS,
     });
+
+    return true;
   }
 }

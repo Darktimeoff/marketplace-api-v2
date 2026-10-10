@@ -145,7 +145,7 @@ Money is `numeric(12,2)` and stays a string in TypeScript (`moneyTransformer`): 
 Delivery over RabbitMQ is at-least-once, so every consumer makes its effect safe to repeat:
 
 - **Natural key where the effect has one**: stock reservations (`(orderPublicId, offerId)`).
-- **Per-service inbox where it doesn't**: account's `AccountInbox(consumer, messageId)`. `processOnce` inserts the row and runs the effect in the same transaction only if the row was new. A rejected charge rolls its row back, so a skipped duplicate is always a past success. A refund is applied only if the charge's inbox row exists. Inboxes are never shared between services.
+- **Per-service inbox where it doesn't**: account's `AccountInbox(consumer, messageId)`. `processOnce` inserts the row and runs the effect in the same transaction only if the row was new. A rejected charge rolls its row back, so a skipped duplicate is always a past success. A refund is applied only if the charge's inbox row exists. A refund that finds none inserts that row itself and answers `not_charged`: a charge that timed out on the order side can still be sitting in the queue, and without the row it would be applied after the order was already compensated. The insert also serializes the two: whichever commits first wins, and the other sees the row. Inboxes are never shared between services.
 
 ### Messaging
 

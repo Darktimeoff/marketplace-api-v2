@@ -32,6 +32,7 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
       routingKey: StockReserveRequest.TYPE,
       payload: this.messages.toStockReserveRequest(orderPublicId, items),
       timeout: this.rpcTimeoutMs,
+      expiration: this.rpcTimeoutMs,
     });
 
     if (data.status === 'rejected') {
@@ -45,6 +46,7 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
       routingKey: StockReleaseRequest.TYPE,
       payload: this.messages.toStockReleaseRequest(orderPublicId),
       timeout: this.rpcTimeoutMs,
+      expiration: this.rpcTimeoutMs,
     });
   }
 
@@ -54,6 +56,7 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
       routingKey: AccountCustomerChargeRequest.TYPE,
       payload: this.messages.toAccountCustomerChargeRequest(orderPublicId, userId, totalAmount),
       timeout: this.rpcTimeoutMs,
+      expiration: this.rpcTimeoutMs,
     });
 
     if (data.status === 'rejected') {
@@ -67,6 +70,7 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
       routingKey: AccountCustomerRefundRequest.TYPE,
       payload: this.messages.toAccountCustomerRefundRequest(orderPublicId, userId, totalAmount),
       timeout: this.rpcTimeoutMs,
+      expiration: this.rpcTimeoutMs,
     });
   }
 

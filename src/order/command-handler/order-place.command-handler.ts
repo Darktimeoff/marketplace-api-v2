@@ -19,9 +19,7 @@ import { SellerOfferService } from '../../seller-offer/service/seller-offer.serv
 import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
 import { OrderPlaceMessageService } from '../service/order-place-message.service.js';
-import { TemporalClientService } from '../../generic/temporal/temporal-client.service.js';
-import { OrderTaskQueueEnum } from '../enum/order-task-queue.enum.js';
-import type { orderPlaceWorkflow } from '../workflow/order-place.workflow.js';
+import { OrderWorkflowOutboxRepository } from '../repository/order-workflow-outbox.repository.js';
 
 interface PricedOrderLine {
   item: Omit<OrderLineCreateEntityInterface, 'orderId'>;
@@ -31,28 +29,18 @@ interface PricedOrderLine {
 
 @Injectable()
 export class OrderPlaceCommandHandler {
-  private readonly workflowIdPrefix = 'order-place-';
-
   constructor(
     private readonly orderRepository: OrderRepository,
     private readonly orderRecipientRepository: OrderRecipientRepository,
     private readonly orderLineRepository: OrderLineRepository,
     private readonly offers: SellerOfferService,
-    private readonly temporal: TemporalClientService,
     private readonly outbox: OrderOutboxRepository,
+    private readonly workflowOutbox: OrderWorkflowOutboxRepository,
     private readonly messages: OrderPlaceMessageService,
   ) {}
 
-  async execute(input: OrderCreateInput): Promise<Order> {
-    const order = await this.createPending(input);
-
-    await this.temporal.client.workflow.start<typeof orderPlaceWorkflow>('orderPlaceWorkflow', {
-      taskQueue: OrderTaskQueueEnum.ORDER_PLACE,
-      workflowId: `${this.workflowIdPrefix}${order.publicId}`,
-      args: [this.messages.toOrderPlaceWorkflowInput(order, input.items)],
-    });
-
-    return order;
+  execute(input: OrderCreateInput): Promise<Order> {
+    return this.createPending(input);
   }
 
   @Transactional()
@@ -79,6 +67,7 @@ export class OrderPlaceCommandHandler {
 
     await this.createItems(pricedItems, order.id);
     await this.outbox.create(this.messages.toOrderCreatedOutbox(order));
+    await this.workflowOutbox.create(this.messages.toOrderPlaceWorkflowOutbox(order, input.items));
 
     return order;
   }

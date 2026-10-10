@@ -63,6 +63,21 @@ describe('OrderPlaceMessageService', () => {
     });
   });
 
+  it('builds the workflow start as an outbox row keyed by the order publicId', () => {
+    expect(messages.toOrderPlaceWorkflowOutbox(order, [{ offerId: 3, quantity: 2 }])).toEqual({
+      workflowId: `order-place-${order.publicId}`,
+      workflowType: 'orderPlaceWorkflow',
+      taskQueue: 'order-place',
+      input: {
+        orderId: 7,
+        orderPublicId: order.publicId,
+        userId: 4,
+        totalAmount: '160.00',
+        items: [{ offerId: 3, quantity: 2 }],
+      },
+    });
+  });
+
   it('builds the reserve and charge requests as CloudEvents', () => {
     expect(messages.toStockReserveRequest(order.publicId, [{ offerId: 3, quantity: 2 }])).toMatchObject({
       specversion: '1.0',

@@ -8,6 +8,8 @@ import { OrderOutboxBrokerEnum } from '../enum/order-outbox-broker.enum.js';
 import type { OrderFailureInterface } from '../interface/order-failure.interface.js';
 import { OrderCreateInput } from '../input/order-create.input.js';
 import type { OrderPlaceWorkflowInputInterface } from '../workflow/order-place-workflow.interface.js';
+import type { OrderWorkflowOutboxCreateEntityInterface } from '../entity/order-workflow-outbox.entity.js';
+import { OrderTaskQueueEnum } from '../enum/order-task-queue.enum.js';
 
 @Injectable()
 export class OrderPlaceMessageService {
@@ -71,13 +73,18 @@ export class OrderPlaceMessageService {
     }
   }
 
-  toOrderPlaceWorkflowInput(order: Order, items: OrderCreateInput['items']): OrderPlaceWorkflowInputInterface {
+  toOrderPlaceWorkflowOutbox(order: Order, items: OrderCreateInput['items']): OrderWorkflowOutboxCreateEntityInterface {
     return {
-      orderId: order.id,
-      orderPublicId: order.publicId,
-      userId: order.userId,
-      totalAmount: order.totalAmount,
-      items: items.map(({ offerId, quantity }) => ({ offerId, quantity })),
+      workflowId: `order-place-${order.publicId}`,
+      workflowType: 'orderPlaceWorkflow',
+      taskQueue: OrderTaskQueueEnum.ORDER_PLACE,
+      input: {
+        orderId: order.id,
+        orderPublicId: order.publicId,
+        userId: order.userId,
+        totalAmount: order.totalAmount,
+        items: items.map(({ offerId, quantity }) => ({ offerId, quantity })),
+      } satisfies OrderPlaceWorkflowInputInterface,
     }
   }
 

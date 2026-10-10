@@ -22,9 +22,11 @@ import { AddIdentityPublicId1791000000060 } from '../../src/migrations/179100000
 import { AddPublicIds1791000000070 } from '../../src/migrations/1791000000070-AddPublicIds.js';
 import { AddUserContact1791000000080 } from '../../src/migrations/1791000000080-AddUserContact.js';
 import { AddIdentityOutbox1791000000090 } from '../../src/migrations/1791000000090-AddIdentityOutbox.js';
+import { AddUserOutbox1791000000100 } from '../../src/migrations/1791000000100-AddUserOutbox.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
+import { UserOutbox } from '../../src/user/entity/user-outbox.entity.js';
 import { User } from '../../src/user/entity/user.entity.js';
 import { Brand } from '../../src/brand/entity/brand.entity.js';
 import { BrandTranslation } from '../../src/brand/entity/brand-translation.entity.js';
@@ -68,12 +70,14 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   AddPublicIds1791000000070,
   AddUserContact1791000000080,
   AddIdentityOutbox1791000000090,
+  AddUserOutbox1791000000100,
 ];
 
 export const testEntities = [
   Identity,
   IdentitySession,
   IdentityOutbox,
+  UserOutbox,
   User,
   Brand,
   BrandTranslation,

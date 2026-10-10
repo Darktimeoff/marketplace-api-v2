@@ -1,5 +1,5 @@
-import { Nack, RabbitRPC, RabbitSubscribe } from "@golevelup/nestjs-rabbitmq";
-import { StockReleaseCommand, StockReserveRequest } from "@marketplace/messaging-contracts";
+import { Nack, RabbitRPC } from "@golevelup/nestjs-rabbitmq";
+import { StockReleaseRequest, StockReserveRequest } from "@marketplace/messaging-contracts";
 import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { isUUID } from "class-validator";
@@ -52,9 +52,9 @@ export class SellerOfferGateway {
     }
   }
 
-  @RabbitSubscribe({
-    exchange: StockReleaseCommand.TOPIC,
-    routingKey: StockReleaseCommand.TYPE,
+  @RabbitRPC({
+    exchange: StockReleaseRequest.TOPIC,
+    routingKey: StockReleaseRequest.TYPE,
     queue: SellerOfferReleaseTopologyEnum.QUEUE,
     queueOptions: {
       durable: true,
@@ -68,19 +68,15 @@ export class SellerOfferGateway {
       }
     }
   })
-  async handleStockRelease(msg: StockReleaseCommand.MessageType): Promise<Nack | void> {
-    if (msg?.specversion !== '1.0' || msg.type !== StockReleaseCommand.TYPE || typeof msg.data?.orderPublicId !== 'string' || !isUUID(msg.data.orderPublicId)) {
+  async handleStockRelease(msg: StockReleaseRequest.MessageType): Promise<StockReleaseRequest.ResponseMessageType | Nack> {
+    if (msg?.specversion !== '1.0' || msg.type !== StockReleaseRequest.TYPE || typeof msg.data?.orderPublicId !== 'string' || !isUUID(msg.data.orderPublicId)) {
       this.logger.warn(`rejected id=${msg?.id}`)
       return new Nack(false)
     }
 
-    try {
-      const released = await this.release.execute(msg.data)
-      this.logger.log(`released order=${msg.data.orderPublicId} offers=${released}`)
-    } catch (e) {
-      this.logger.error(`failed release order=${msg.data.orderPublicId}`, e instanceof Error ? e.stack : String(e))
-      return new Nack(true)
-    }
+    const released = await this.release.execute(msg.data)
+    this.logger.log(`released order=${msg.data.orderPublicId} offers=${released}`)
+    return this.toReleaseResponse(msg, { status: 'released', offers: released })
   }
 
   private isValidItems(items: StockReserveRequest.ItemInterface[] | undefined): items is StockReserveRequest.ItemInterface[] {
@@ -98,6 +94,23 @@ export class SellerOfferGateway {
       id: randomUUID(),
       source: StockReserveRequest.RESPONSE_SOURCE,
       type: StockReserveRequest.RESPONSE_TYPE,
+      time: new Date().toISOString(),
+      datacontenttype: 'application/json',
+      subject: request.subject,
+      correlationid: request.id,
+      data,
+    }
+  }
+
+  private toReleaseResponse(
+    request: StockReleaseRequest.MessageType,
+    data: StockReleaseRequest.ResponseDataType,
+  ): StockReleaseRequest.ResponseMessageType {
+    return {
+      specversion: '1.0',
+      id: randomUUID(),
+      source: StockReleaseRequest.RESPONSE_SOURCE,
+      type: StockReleaseRequest.RESPONSE_TYPE,
       time: new Date().toISOString(),
       datacontenttype: 'application/json',
       subject: request.subject,

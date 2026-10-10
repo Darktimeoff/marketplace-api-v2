@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { AccountCustomerChargeRequest, AccountCustomerRefundCommand, OrderCreatedEvent, OrderFailedEvent, OrderPaidEvent, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
+import { AccountCustomerChargeRequest, AccountCustomerRefundRequest, OrderCreatedEvent, OrderFailedEvent, OrderPaidEvent, StockReleaseRequest, StockReserveRequest } from '@marketplace/messaging-contracts';
 import { Order } from '../entity/order.entity.js';
 import type { OrderOutboxCreateEntityInterface } from '../entity/order-outbox.entity.js';
 import { OrderOutboxAggregateTypeEnum } from '../enum/order-outbox-aggregate-type.enum.js';
-import { OrderOutboxBrokerEnum } from '../enum/order-outbox-broker.enum.js';
 import type { OrderFailureInterface } from '../interface/order-failure.interface.js';
 import { OrderCreateInput } from '../input/order-create.input.js';
 import type { OrderPlaceWorkflowInputInterface } from '../workflow/order-place-workflow.interface.js';
@@ -16,7 +15,6 @@ export class OrderPlaceMessageService {
   toOrderCreatedOutbox(order: Order): OrderOutboxCreateEntityInterface {
     return {
       id: randomUUID(),
-      broker: OrderOutboxBrokerEnum.KAFKA,
       topic: OrderCreatedEvent.TOPIC,
       aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
       aggregateId: order.publicId,
@@ -36,7 +34,6 @@ export class OrderPlaceMessageService {
   toOrderFailedOutbox(order: Order, failure: OrderFailureInterface): OrderOutboxCreateEntityInterface {
     return {
       id: randomUUID(),
-      broker: OrderOutboxBrokerEnum.KAFKA,
       topic: OrderFailedEvent.TOPIC,
       aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
       aggregateId: order.publicId,
@@ -55,7 +52,6 @@ export class OrderPlaceMessageService {
   toOrderPaidOutbox(order: Order): OrderOutboxCreateEntityInterface {
     return {
       id: randomUUID(),
-      broker: OrderOutboxBrokerEnum.KAFKA,
       topic: OrderPaidEvent.TOPIC,
       aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
       aggregateId: order.publicId,
@@ -88,42 +84,12 @@ export class OrderPlaceMessageService {
     }
   }
 
-  toAccountCustomerRefundOutbox(order: Order): OrderOutboxCreateEntityInterface {
-    return {
-      id: order.publicId,
-      broker: OrderOutboxBrokerEnum.RABBITMQ,
-      topic: AccountCustomerRefundCommand.TOPIC,
-      aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
-      aggregateId: order.publicId,
-      type: AccountCustomerRefundCommand.TYPE,
-      payload: {
-        customerId: order.userId,
-        amount: order.totalAmount,
-        chargeId: order.publicId,
-      } satisfies AccountCustomerRefundCommand.DataInterface,
-    }
-  }
-
-  toStockReleaseOutbox(orderPublicId: string): OrderOutboxCreateEntityInterface {
-    return {
-      id: randomUUID(),
-      broker: OrderOutboxBrokerEnum.RABBITMQ,
-      topic: StockReleaseCommand.TOPIC,
-      aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
-      aggregateId: orderPublicId,
-      type: StockReleaseCommand.TYPE,
-      payload: {
-        orderPublicId,
-      } satisfies StockReleaseCommand.DataInterface,
-    }
-  }
-
-  toAccountCustomerRefundCommand(orderPublicId: string, customerId: number, amount: string): AccountCustomerRefundCommand.MessageType {
+  toAccountCustomerRefundRequest(orderPublicId: string, customerId: number, amount: string): AccountCustomerRefundRequest.MessageType {
     return {
       specversion: '1.0',
       id: orderPublicId,
-      source: AccountCustomerRefundCommand.SOURCE,
-      type: AccountCustomerRefundCommand.TYPE,
+      source: AccountCustomerRefundRequest.SOURCE,
+      type: AccountCustomerRefundRequest.TYPE,
       time: new Date().toISOString(),
       datacontenttype: 'application/json',
       subject: orderPublicId,
@@ -136,12 +102,12 @@ export class OrderPlaceMessageService {
     }
   }
 
-  toStockReleaseCommand(orderPublicId: string): StockReleaseCommand.MessageType {
+  toStockReleaseRequest(orderPublicId: string): StockReleaseRequest.MessageType {
     return {
       specversion: '1.0',
-      id: randomUUID(),
-      source: StockReleaseCommand.SOURCE,
-      type: StockReleaseCommand.TYPE,
+      id: orderPublicId,
+      source: StockReleaseRequest.SOURCE,
+      type: StockReleaseRequest.TYPE,
       time: new Date().toISOString(),
       datacontenttype: 'application/json',
       subject: orderPublicId,

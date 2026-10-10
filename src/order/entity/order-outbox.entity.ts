@@ -1,19 +1,14 @@
 import { Check, Column, CreateDateColumn, Entity, Index, PrimaryColumn } from 'typeorm';
 import { TopicEnum } from '@marketplace/messaging-contracts';
 import { OrderOutboxAggregateTypeEnum } from '../enum/order-outbox-aggregate-type.enum.js';
-import { OrderOutboxBrokerEnum } from '../enum/order-outbox-broker.enum.js';
 
 @Entity('OrderOutbox')
 @Index('OrderOutbox_unpublished_idx', ['createdAt'], { where: '"publishedAt" IS NULL' })
-@Check('OrderOutbox_broker_known', `"broker" IN ('rabbitmq', 'kafka')`)
 @Check('OrderOutbox_attempts_nonneg', `"attempts" >= 0`)
 @Check('OrderOutbox_publishedAt_order', `"publishedAt" IS NULL OR "publishedAt" >= "createdAt"`)
 export class OrderOutbox {
   @PrimaryColumn({ type: 'uuid', primaryKeyConstraintName: 'OrderOutbox_pkey' })
   id: string;
-
-  @Column({ type: 'varchar', length: 16 })
-  broker: OrderOutboxBrokerEnum;
 
   @Column({ type: 'varchar', length: 249 })
   topic: TopicEnum;
@@ -44,4 +39,4 @@ export class OrderOutbox {
 }
 
 export interface OrderOutboxCreateEntityInterface
-  extends Pick<OrderOutbox, 'id' | 'broker' | 'topic' | 'aggregateType' | 'aggregateId' | 'type' | 'payload'> {}
+  extends Pick<OrderOutbox, 'id' | 'topic' | 'aggregateType' | 'aggregateId' | 'type' | 'payload'> {}

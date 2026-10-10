@@ -1,3 +1,4 @@
+import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { NativeConnection, Worker } from '@temporalio/worker';
@@ -10,7 +11,7 @@ import type { OrderPlaceActivitiesInterface } from '../workflow/order-place-work
 export class OrderPlaceWorker implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(OrderPlaceWorker.name);
   private readonly taskQueue = OrderTaskQueueEnum.ORDER_PLACE;
-  private readonly workflowsPath = fileURLToPath(new URL('../workflow/order-place.workflow.js', import.meta.url));
+  private readonly workflowsPath = fileURLToPath(new URL(`../workflow/order-place.workflow${extname(import.meta.url)}`, import.meta.url));
   private connection?: NativeConnection;
   private worker?: Worker;
   private running?: Promise<void>;

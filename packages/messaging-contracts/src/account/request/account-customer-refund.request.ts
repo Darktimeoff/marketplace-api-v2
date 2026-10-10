@@ -1,12 +1,13 @@
 import { TopicEnum } from "../../generic/enum/topic.enum.js";
 import { SourceEnum } from "../../generic/enum/source.enum.js";
 import { CloudEventInterface } from "../../generic/interface/cloud-event.interface.js";
-import type { MessageContractInterface } from "../../generic/interface/message-contract.interface.js";
 
-export namespace AccountCustomerRefundCommand {
+export namespace AccountCustomerRefundRequest {
   export const TOPIC = TopicEnum.ACCOUNT_COMMANDS;
   export const TYPE = 'account.customer.refund';
+  export const RESPONSE_TYPE = 'account.customer.refund.response';
   export const SOURCE = SourceEnum.ORDER;
+  export const RESPONSE_SOURCE = SourceEnum.ACCOUNT;
 
   export interface DataInterface {
     customerId: number;
@@ -15,6 +16,10 @@ export namespace AccountCustomerRefundCommand {
   }
 
   export type MessageType = CloudEventInterface<typeof TYPE, DataInterface>;
-}
 
-AccountCustomerRefundCommand satisfies MessageContractInterface;
+  export type ResponseDataType =
+    | { status: 'refunded' }
+    | { status: 'not_charged' };
+
+  export type ResponseMessageType = CloudEventInterface<typeof RESPONSE_TYPE, ResponseDataType>;
+}

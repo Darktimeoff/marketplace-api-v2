@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -79,19 +79,21 @@ describe('Order (e2e)', () => {
         items: [{ offerId: offer.id, quantity: 2 }],
         currency: CurrencyEnum.UAH,
       })
-      .expect(201);
+      .expect(202);
 
     expect(createResponse.body).toMatchObject({
-      status: 'paid',
+      status: 'pending_payment',
       totalAmount: '100.00',
       currency: CurrencyEnum.UAH,
     });
 
     const orderId = createResponse.body.id;
 
-    const readResponse = await request(app.getHttpServer())
-      .get(`/order/${orderId}`)
-      .expect(200);
+    const readResponse = await vi.waitFor(async () => {
+      const response = await request(app.getHttpServer()).get(`/order/${orderId}`).expect(200);
+      if (response.body.status === 'pending_payment') throw new Error('order not settled yet');
+      return response;
+    }, { timeout: 15000, interval: 100 });
 
     expect(readResponse.body).toMatchObject({
       id: orderId,

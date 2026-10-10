@@ -21,7 +21,6 @@ describe('OrderPlaceMessageService', () => {
   it('builds order events as kafka outbox rows keyed by the order', () => {
     expect(messages.toOrderPaidOutbox(order)).toEqual({
       id: expect.stringMatching(/^[0-9a-f-]{36}$/),
-      broker: 'kafka',
       topic: 'order.events',
       aggregateType: 'Order',
       aggregateId: order.publicId,
@@ -38,29 +37,10 @@ describe('OrderPlaceMessageService', () => {
       },
     });
     expect(messages.toOrderFailedOutbox(order, { status: OrderStatusEnum.failed_payment, reason: 'payment_rejected' })).toMatchObject({
-      broker: 'kafka',
       type: 'order.failed',
       payload: { orderId: 7, status: 'failed_payment', reason: 'payment_rejected', failedAt: '2026-10-10T10:00:05.000Z' },
     });
     expect(messages.toOrderCreatedOutbox(order).payload).toEqual(expect.objectContaining({ createdAt: '2026-10-10T10:00:00.000Z' }));
-  });
-
-  it('builds compensations as rabbitmq outbox rows, the refund keeping the order publicId as its id', () => {
-    expect(messages.toAccountCustomerRefundOutbox(order)).toEqual({
-      id: order.publicId,
-      broker: 'rabbitmq',
-      topic: 'account.commands',
-      aggregateType: 'Order',
-      aggregateId: order.publicId,
-      type: 'account.customer.refund',
-      payload: { customerId: 4, amount: '160.00', chargeId: order.publicId },
-    });
-    expect(messages.toStockReleaseOutbox(order.publicId)).toMatchObject({
-      broker: 'rabbitmq',
-      topic: 'seller-offer.commands',
-      type: 'seller-offer.stock.release',
-      payload: { orderPublicId: order.publicId },
-    });
   });
 
   it('builds the workflow start as an outbox row keyed by the order publicId', () => {
@@ -89,6 +69,21 @@ describe('OrderPlaceMessageService', () => {
     expect(messages.toAccountCustomerChargeRequest(order.publicId, 4, '160.00')).toMatchObject({
       type: 'account.customer.charge',
       data: { customerId: 4, amount: '160.00' },
+    });
+  });
+
+  it('builds the compensations as requests keyed by the order publicId, the refund pointing at the charge', () => {
+    expect(messages.toAccountCustomerRefundRequest(order.publicId, 4, '160.00')).toMatchObject({
+      specversion: '1.0',
+      id: order.publicId,
+      type: 'account.customer.refund',
+      subject: order.publicId,
+      data: { customerId: 4, amount: '160.00', chargeId: order.publicId },
+    });
+    expect(messages.toStockReleaseRequest(order.publicId)).toMatchObject({
+      id: order.publicId,
+      type: 'seller-offer.stock.release',
+      data: { orderPublicId: order.publicId },
     });
   });
 });

@@ -1,11 +1,12 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
-import { Logger, type INestApplication } from '@nestjs/common';
+import { type INestApplication } from '@nestjs/common';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
+import { ApplicationFailure } from '@temporalio/activity';
 import { AppModule } from '../../src/app.module.js';
 import { Order } from '../../src/order/entity/order.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
@@ -119,22 +120,35 @@ describe('Order create (e2e)', () => {
     return dataSource.getRepository(Order).findOneOrFail({ where: {}, relations: { orderRecipient: true, lines: true } });
   }
 
+  async function settledOrders(count: number): Promise<Order[]> {
+    return vi.waitFor(async () => {
+      const orders = await dataSource.getRepository(Order).find({ relations: { orderRecipient: true, lines: true }, order: { id: 'ASC' } });
+      if (orders.length !== count || orders.some((order) => order.status === OrderStatusEnum.pending_payment)) throw new Error('orders not settled yet');
+      return orders;
+    }, { timeout: 15000, interval: 100 });
+  }
+
+  async function settledOrder(): Promise<Order> {
+    const [order] = await settledOrders(1);
+    return order;
+  }
+
   it('pays the order, snapshots the recipient, reserves stock and charges the user', async () => {
     const buyer = await aUser(dataSource.manager);
     await fund(buyer.id, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', discountPrice: '80.00', onHandQuantity: 5 });
 
-    const response = await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 2 }])).expect(201);
+    const response = await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 2 }])).expect(202);
 
     expect(response.body).toMatchObject({
-      status: OrderStatusEnum.paid,
+      status: OrderStatusEnum.pending_payment,
       totalAmount: '160.00',
       discountAmount: '40.00',
       currency: CurrencyEnum.UAH,
     });
 
-    const order = await onlyOrder();
-    expect(order).toMatchObject({ id: response.body.id, publicId: response.body.publicId, userId: buyer.id });
+    const order = await settledOrder();
+    expect(order).toMatchObject({ id: response.body.id, publicId: response.body.publicId, userId: buyer.id, status: OrderStatusEnum.paid });
     expect(order.orderRecipient).toMatchObject({
       fullName: 'Jane Doe',
       phone: {
@@ -168,7 +182,7 @@ describe('Order create (e2e)', () => {
       createdAt: order.createdAt.toISOString(),
     });
     const paidRow = rows[1];
-    expect(paidRow).toMatchObject({ broker: 'kafka', topic: 'order.events', type: 'order.paid', aggregateId: order.publicId, attempts: 0 });
+    expect(paidRow).toMatchObject({ topic: 'order.events', type: 'order.paid', aggregateId: order.publicId, attempts: 0 });
     const event = await kafkaEvent('order.events', paidRow.id);
     expect(event).toEqual({
       specversion: '1.0',
@@ -203,10 +217,11 @@ describe('Order create (e2e)', () => {
     const body = aBody(buyer.id, [{ offerId: second.id, quantity: 3 }, { offerId: first.id, quantity: 1 }]);
     delete (body.recipient.address as { building?: string }).building;
 
-    const response = await placeOrder(body).expect(201);
+    const response = await placeOrder(body).expect(202);
 
-    expect(response.body).toMatchObject({ status: OrderStatusEnum.paid, totalAmount: '110.00', discountAmount: '30.00' });
-    const order = await onlyOrder();
+    expect(response.body).toMatchObject({ status: OrderStatusEnum.pending_payment, totalAmount: '110.00', discountAmount: '30.00' });
+    const order = await settledOrder();
+    expect(order.status).toBe(OrderStatusEnum.paid);
     expect(order.orderRecipient.address.building).toBeNull();
     expect(order.lines).toHaveLength(2);
     expect(await balanceOf(buyer.id)).toBe('890.00');
@@ -217,9 +232,9 @@ describe('Order create (e2e)', () => {
     await fund(buyer.id, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 1 });
 
-    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 2 }])).expect(422);
+    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 2 }])).expect(202);
 
-    expect((await onlyOrder()).status).toBe(OrderStatusEnum.canceled);
+    expect((await settledOrder()).status).toBe(OrderStatusEnum.canceled);
     expect(await offerById(offer.id)).toMatchObject({ onHandQuantity: 1, reservedQuantity: 0 });
     expect(await dataSource.getRepository(StockReservation).count()).toBe(0);
     expect(await balanceOf(buyer.id)).toBe('1000.00');
@@ -236,95 +251,82 @@ describe('Order create (e2e)', () => {
     await fund(buyer.id, '50.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(422);
+    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(202);
 
-    const order = await onlyOrder();
+    const order = await settledOrder();
     expect(order.status).toBe(OrderStatusEnum.failed_payment);
-    await vi.waitFor(async () => {
-      expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
-    });
+    expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
     expect(await dataSource.getRepository(StockReservation).findBy({ orderPublicId: order.publicId })).toEqual([
       expect.objectContaining({ status: StockReservationStatusEnum.RELEASED }),
     ]);
     expect(await balanceOf(buyer.id)).toBe('50.00');
     expect(await dataSource.getRepository(Transaction).count()).toBe(0);
-    expect(await publishedOutboxRows(3)).toEqual([
+    expect(await publishedOutboxRows(2)).toEqual([
       expect.objectContaining({ type: 'order.created' }),
       expect.objectContaining({ type: 'order.failed', payload: expect.objectContaining({ status: 'failed_payment', reason: 'payment_rejected' }) }),
-      expect.objectContaining({ type: 'seller-offer.stock.release', aggregateType: 'Order', aggregateId: order.publicId, payload: { orderPublicId: order.publicId } }),
     ]);
   });
 
-  it('still releases the stock when the broker refuses the first send of the compensation', async () => {
+  it('retries the stock release when its first request fails', async () => {
     const amqpConnection = app.get(AmqpConnection);
-    const publish = amqpConnection.publish.bind(amqpConnection);
-    let refused = false;
-    vi.spyOn(amqpConnection, 'publish').mockImplementation(async (exchange, routingKey, message, options) => {
-      if (routingKey === 'seller-offer.stock.release' && !refused) {
-        refused = true;
+    const send = amqpConnection.request.bind(amqpConnection);
+    let refused = 0;
+    vi.spyOn(amqpConnection, 'request').mockImplementation(async (options) => {
+      if (options.routingKey === 'seller-offer.stock.release' && refused === 0) {
+        refused += 1;
         throw new Error('broker down');
       }
-      return publish(exchange, routingKey, message, options);
+      return send(options);
     });
-    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const buyer = await aUser(dataSource.manager);
     await fund(buyer.id, '50.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(422);
+    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(202);
 
-    await vi.waitFor(async () => {
-      expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
-    }, { timeout: 15000, interval: 100 });
-    const release = (await publishedOutboxRows(3)).find(({ type }) => type === 'seller-offer.stock.release');
-    expect(release).toMatchObject({ attempts: 1, lastError: 'broker down' });
+    expect((await settledOrder()).status).toBe(OrderStatusEnum.failed_payment);
+    expect(refused).toBe(1);
+    expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
   });
 
   it('marks the order failed_payment when the user has no account', async () => {
     const buyer = await aUser(dataSource.manager);
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(422);
+    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(202);
 
-    expect((await onlyOrder()).status).toBe(OrderStatusEnum.failed_payment);
-    await vi.waitFor(async () => {
-      expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
-    });
+    expect((await settledOrder()).status).toBe(OrderStatusEnum.failed_payment);
+    expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
   });
 
-  it('refunds the charge and releases the stock when the order fails after payment', async () => {
+  it('refunds the charge and releases the stock when the charge fails after it was applied', async () => {
+    const amqpConnection = app.get(AmqpConnection);
+    const send = amqpConnection.request.bind(amqpConnection);
+    vi.spyOn(amqpConnection, 'request').mockImplementation(async (options) => {
+      const reply = await send(options);
+      if (options.routingKey === 'account.customer.charge') {
+        throw ApplicationFailure.nonRetryable('reply lost');
+      }
+      return reply;
+    });
     const buyer = await aUser(dataSource.manager);
     await fund(buyer.id, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
-    await dataSource.query(`
-      CREATE FUNCTION "testBlockPaid"() RETURNS trigger LANGUAGE plpgsql AS $$
-      BEGIN IF NEW."status" = 'paid' THEN RAISE EXCEPTION 'paid is blocked'; END IF; RETURN NEW; END $$
-    `);
-    await dataSource.query(`CREATE TRIGGER "testBlockPaid" BEFORE UPDATE ON "Order" FOR EACH ROW EXECUTE FUNCTION "testBlockPaid"()`);
 
-    try {
-      await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(500);
-    } finally {
-      await dataSource.query(`DROP TRIGGER "testBlockPaid" ON "Order"`);
-      await dataSource.query(`DROP FUNCTION "testBlockPaid"()`);
-    }
+    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(202);
 
-    expect((await onlyOrder()).status).toBe(OrderStatusEnum.canceled);
-    await vi.waitFor(async () => {
-      expect(await balanceOf(buyer.id)).toBe('1000.00');
-      expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
-    });
+    const order = await settledOrder();
+    expect(order.status).toBe(OrderStatusEnum.canceled);
+    expect(await balanceOf(buyer.id)).toBe('1000.00');
+    expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
     const transactions = await dataSource.getRepository(Transaction).find({ where: { customerId: buyer.id }, order: { id: 'ASC' } });
     expect(transactions.map(({ type, amount, status }) => ({ type, amount, status }))).toEqual([
       { type: TransactionTypeEnum.PAYMENT, amount: '100.00', status: TransactionStatusEnum.SUCCESS },
       { type: TransactionTypeEnum.REFUND, amount: '100.00', status: TransactionStatusEnum.SUCCESS },
     ]);
-    const order = await onlyOrder();
-    expect(await publishedOutboxRows(4)).toEqual([
-      expect.objectContaining({ id: order.publicId, type: 'account.customer.refund', payload: { customerId: buyer.id, amount: '100.00', chargeId: order.publicId } }),
+    expect(await publishedOutboxRows(2)).toEqual([
       expect.objectContaining({ type: 'order.created' }),
-      expect.objectContaining({ type: 'order.failed', payload: expect.objectContaining({ status: 'canceled', reason: 'error' }) }),
-      expect.objectContaining({ type: 'seller-offer.stock.release', payload: { orderPublicId: order.publicId } }),
+      expect.objectContaining({ type: 'order.failed', payload: expect.objectContaining({ orderId: order.id, status: 'canceled', reason: 'error' }) }),
     ]);
   });
 
@@ -351,8 +353,8 @@ describe('Order create (e2e)', () => {
       placeOrder(aBody(second.id, [{ offerId: offer.id, quantity: 1 }])),
     ]);
 
-    expect(responses.map((response) => response.status).toSorted()).toEqual([201, 422]);
-    const statuses = (await dataSource.getRepository(Order).find()).map((order) => order.status).toSorted();
+    expect(responses.map((response) => response.status)).toEqual([202, 202]);
+    const statuses = (await settledOrders(2)).map((order) => order.status).toSorted();
     expect(statuses).toEqual([OrderStatusEnum.canceled, OrderStatusEnum.paid].toSorted());
     expect(await offerById(offer.id)).toMatchObject({ onHandQuantity: 1, reservedQuantity: 1 });
   });

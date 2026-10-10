@@ -3,7 +3,7 @@ import { Transactional } from '@nestjs-cls/transactional';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ApplicationFailure } from '@temporalio/activity';
 import { OrderStatusEnum } from '@marketplace/contracts-core';
-import { AccountCustomerChargeRequest, AccountCustomerRefundCommand, CLOUD_EVENT_CONTENT_TYPE, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
+import { AccountCustomerChargeRequest, AccountCustomerRefundRequest, StockReleaseRequest, StockReserveRequest } from '@marketplace/messaging-contracts';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
 import { OrderPlaceMessageService } from '../service/order-place-message.service.js';
@@ -18,7 +18,6 @@ import type {
 @Injectable()
 export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
   private readonly rpcTimeoutMs = 5000;
-  private readonly publishOptions = { contentType: CLOUD_EVENT_CONTENT_TYPE, timeout: 10000 };
 
   constructor(
     private readonly amqpConnection: AmqpConnection,
@@ -41,7 +40,12 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
   }
 
   async releaseStock(orderPublicId: string): Promise<void> {
-    await this.amqpConnection.publish(StockReleaseCommand.TOPIC, StockReleaseCommand.TYPE, this.messages.toStockReleaseCommand(orderPublicId), this.publishOptions);
+    await this.amqpConnection.request<StockReleaseRequest.ResponseMessageType>({
+      exchange: StockReleaseRequest.TOPIC,
+      routingKey: StockReleaseRequest.TYPE,
+      payload: this.messages.toStockReleaseRequest(orderPublicId),
+      timeout: this.rpcTimeoutMs,
+    });
   }
 
   async chargeCustomer({ orderPublicId, userId, totalAmount }: OrderPlaceChargeInterface): Promise<void> {
@@ -58,7 +62,12 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
   }
 
   async refundCustomer({ orderPublicId, userId, totalAmount }: OrderPlaceChargeInterface): Promise<void> {
-    await this.amqpConnection.publish(AccountCustomerRefundCommand.TOPIC, AccountCustomerRefundCommand.TYPE, this.messages.toAccountCustomerRefundCommand(orderPublicId, userId, totalAmount), this.publishOptions);
+    await this.amqpConnection.request<AccountCustomerRefundRequest.ResponseMessageType>({
+      exchange: AccountCustomerRefundRequest.TOPIC,
+      routingKey: AccountCustomerRefundRequest.TYPE,
+      payload: this.messages.toAccountCustomerRefundRequest(orderPublicId, userId, totalAmount),
+      timeout: this.rpcTimeoutMs,
+    });
   }
 
   @Transactional()

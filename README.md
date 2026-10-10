@@ -4,9 +4,9 @@ Marketplace backend in NestJS, built as a modular monolith whose modules behave 
 
 | Service (module) | Owns | Talks over RabbitMQ |
 |---|---|---|
-| `order` | `Order`, `OrderRecipient`, `OrderLine` | sends `seller-offer.stock.reserve`, `account.customer.charge`, and the compensations `seller-offer.stock.release`, `account.customer.refund` |
-| `seller-offer` | `SellerOffer`, `StockReservation` | answers `seller-offer.stock.reserve`, handles `seller-offer.stock.release` |
-| `account` | `Account`, `Transaction`, `AccountInbox` | answers `account.customer.charge`, handles `account.customer.refund` |
+| `order` | `Order`, `OrderRecipient`, `OrderLine` | runs the placement workflow on Temporal, which sends `seller-offer.stock.reserve`, `account.customer.charge`, and the compensations `seller-offer.stock.release`, `account.customer.refund` |
+| `seller-offer` | `SellerOffer`, `StockReservation` | answers `seller-offer.stock.reserve` and `seller-offer.stock.release` |
+| `account` | `Account`, `Transaction`, `AccountInbox` | answers `account.customer.charge` and `account.customer.refund` |
 
 The other modules (`product`, `product-variant`, `category`, `brand`, `seller`, `user`, `identity`) only own entities. Order reads offers from `seller-offer` for pricing.
 
@@ -59,11 +59,12 @@ From a fresh clone, without access to the secret store:
 cp .env.example .env
 cp secrets/db_password.txt.example secrets/db_password.txt
 cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
-docker compose up -d --wait db db-bouncer rabbitmq kafka
+docker compose up -d --wait db db-bouncer rabbitmq kafka temporal
 
 export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
 export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
 export KAFKA_BROKERS=localhost:9092
+export TEMPORAL_ADDRESS=localhost:7233
 export SKIP_VAULT=1
 
 npm ci
@@ -77,6 +78,7 @@ node dist/main.js
 - Postgres is reached through pgbouncer (`db-bouncer`), which is what `DBPORT` points at.
 - Name the services explicitly: the compose file also contains the Infisical stack, which needs credentials of its own.
 - `kafka` is a single KRaft node (broker and controller in one process) on `localhost:${KAFKA_PORT:-9092}`; containers reach it at `kafka:29092`. Add `kafka-ui` to the command for Kafka UI on `localhost:${KAFKA_UI_PORT:-8090}`. Automatic topic creation is off: the app creates the topics it owns at startup, like the RabbitMQ exchanges, so a typo in a topic name fails instead of creating a new topic.
+- `temporal` is the Temporal dev server (`temporal server start-dev`, SQLite in the `temporal_data` volume) on `localhost:${TEMPORAL_PORT:-7233}`, with its Web UI on `localhost:${TEMPORAL_UI_PORT:-8233}`: every placement workflow, its history, inputs, results and retries are visible there. The app doesn't start without it, like without Postgres, RabbitMQ or Kafka.
 - `npm run build` is required before `migrate`, `seed` and starting the app: they run the compiled `dist/`. The build compiles the contract packages first, then the app.
 
 ## Architecture
@@ -88,24 +90,41 @@ src/<domain>/
   controller/      HTTP controllers (input → service/handler, @ResponseDto)
   gateway/         RabbitMQ adapters: @RabbitRPC / @RabbitSubscribe, envelope + payload validation, ack/nack
   command-handler/ one operation each, execute(), uses repositories directly
+  workflow/        Temporal workflows (deterministic, no I/O) and their activity interface
+  activity/        the workflow's activities, Nest providers that do the I/O
+  worker/          the Temporal worker of the context's task queue
   service/         reusable domain logic and the <Domain>Topology service
   repository/      the only layer that touches TypeORM (TransactionHost per method)
   entity/          TypeORM entities; they implement contract interfaces
   enum/            names the module owns: queues, DLX, DLQ, inbox consumers
 ```
 
-### Placing an order (saga)
+### Placing an order (Temporal workflow)
 
-`OrderPlaceCommandHandler.execute` runs placement as a saga instead of one database transaction, because stock and money live in other services:
+Placement is a saga, because stock and money live in other contexts. It runs as a Temporal workflow, so its progress survives a crash or a deploy: every finished step is recorded in Temporal's event history, and after a restart the worker replays the history and carries on from the next step instead of leaving the order stuck in `pending_payment`.
 
-1. **Commit the order as `pending_payment`** in its own short transaction (recipient, phone, address, order, items).
-2. **Reserve stock**: RPC `seller-offer.stock.reserve`. Rejected → `422`, order `canceled`.
-3. **Charge**: RPC `account.customer.charge`. Rejected → release the stock, `422`, order `failed_payment`.
-4. **Mark `paid` and announce it**: the status change and an `order.paid` outbox row are written in one transaction, so every paid order is announced exactly once and no event exists for an order that isn't paid.
+`POST /order` only creates the order. `OrderPlaceCommandHandler.execute` writes, in one transaction, the order as `pending_payment` (recipient, phone, address, lines), its `order.created` row in `OrderOutbox` and a row in `OrderWorkflowOutbox` asking to start `orderPlaceWorkflow` with the workflow id `order-place-<publicId>`. It answers `202` with the pending order; the client follows the outcome on the SSE stream or with `GET /order/:id`. An unknown offer or an invalid body is still a synchronous `404`/`400`, and nothing is written.
 
-Any other failure after step 1 compensates whatever was already done: `account.customer.refund` if a charge was sent, `seller-offer.stock.release` if stock was reserved. The order is then marked `canceled` (or `failed_payment`) and the error is rethrown. No database connection is held while waiting for an RPC.
+The workflow is started through an outbox rather than by calling Temporal from the request, because the order and the start are writes to two systems: a call after the commit can fail (Temporal down, the pod killed by a deploy), leaving an order that nothing will ever pay or cancel. With the start in the same transaction as the order, there is never an order without its promise to be placed, and the API keeps accepting orders while Temporal is down. `OrderWorkflowOutboxRelayService` works like the other relays (every second, `FOR UPDATE SKIP LOCKED`, `attempts`/`lastError`, daily cleanup) and starts each row with a 10 s deadline. The workflow id is the idempotency key: the start uses `workflowIdConflictPolicy: USE_EXISTING` and `workflowIdReusePolicy: REJECT_DUPLICATE`, and an already-started error counts as started, so a start retried after a lost reply never runs a second workflow for the same order. Starting the workflow from the request with Update-With-Start (the workflow creating the order as its first step) was considered; it keeps order creation in the workflow's history, but makes `POST /order` fail whenever Temporal or the workers are down.
 
-The compensations go through `OrderOutbox`, never straight to RabbitMQ: the status change and the compensation commands are written in one transaction, so an order is never marked failed without its refund and release queued, and a broker outage can't lose a refund. `OrderOutboxRelayService` is the same relay as identity's and user's (every second, `FOR UPDATE SKIP LOCKED`, in order, `attempts`/`lastError`, daily cleanup) and sends each row to the broker in its `broker` column: `rabbitmq` rows to the exchange in `topic` with the routing key `type` (10 s publish timeout), `kafka` rows (`order.paid`) to the Kafka topic in `topic`, keyed by the order's `publicId`. The refund keeps `id` = the order's `publicId`, which account's inbox deduplicates; the reserve and charge requests stay direct RPC calls, because the saga waits for their answer.
+`orderPlaceWorkflow` (`src/order/workflow/`) runs on the task queue `order-place`:
+
+1. **Reserve stock**: activity `reserveStock`, RPC `seller-offer.stock.reserve`. Rejected → order `canceled` (`insufficient_stock`).
+2. **Charge**: activity `chargeCustomer`, RPC `account.customer.charge`. Rejected → release the stock, order `failed_payment` (`payment_rejected`).
+3. **Mark `paid`**: activity `markPaid` writes the status and the `order.paid` outbox row in one transaction.
+
+Any other failure after the stock was reserved compensates what may already have happened: `refundCustomer` (RPC `account.customer.refund`) if the charge was sent, then `releaseStock` (RPC `seller-offer.stock.release`), then `markFailed` (`canceled`, reason `error`). The compensations run in a non-cancellable scope, so cancelling the workflow can't interrupt them. A business rejection completes the workflow with the final status as its result; a technical failure fails it after compensating, so it shows up red in the Web UI.
+
+The workflow only decides; every side effect is an activity (`OrderPlaceActivity`, `src/order/activity/`, a Nest provider with its dependencies). A step of the process is an activity; a fact about the order's own data is an outbox row written in the same transaction as the status. `OrderOutbox` therefore carries only Kafka events (`order.created`, `order.paid`, `order.failed`), sent by `OrderOutboxRelayService`, the same relay as identity's and user's. Activities are retried by Temporal, not by hand:
+
+- `reserveStock` and `chargeCustomer`: 10 s per attempt, backoff 1 s → 10 s, at most 1 minute in total, then the workflow compensates. A rejection is thrown as a non-retryable `ApplicationFailure` with a type (`InsufficientStock`, `PaymentRejected`) that the workflow maps to the status and reason.
+- `refundCustomer`, `releaseStock`, `markPaid`, `markFailed`: 10 s per attempt, retried until they succeed, because a compensation or a status must not be dropped.
+
+Every activity is idempotent, because a timed-out attempt may have done its work before the retry: reserve and release are keyed by the order's `publicId` in `StockReservation`, the charge and the refund carry `id` = the order's `publicId`, which account's inbox deduplicates, and `markPaid`/`markFailed` only move an order out of `pending_payment` (`UPDATE … WHERE status = 'pending_payment'`), writing their event only when the row changed.
+
+The compensations are request/reply like the forward steps, so an activity completes only when the receiver confirms. A fire-and-forget command would complete as soon as the broker took it, and a refund that then failed in account would end in a DLQ while the workflow reported success. A refund for a charge that never happened (the charge timed out before reaching account) answers `not_charged` instead of failing, so it is not retried forever.
+
+The worker (`OrderPlaceWorker`) runs inside the Nest app: it connects at bootstrap, bundles the workflow file into Temporal's isolated sandbox, and drains on shutdown, letting in-flight activities finish. The workflow file imports no Nest, TypeORM or broker code, only types and plain enums, because workflow code is replayed and must be deterministic. `TemporalClientService` (`src/generic/temporal/`) is the one client connection, shared like the Kafka client.
 
 `order.paid` carries the main data of the order: `orderId`, `orderPublicId`, `userId`, `totalAmount`, `discountAmount`, `currency`, the `lines` (`offerId`, `quantity`, `unitPrice`, `unitDiscountPrice`) and `paidAt`. Its `id` is a fresh uuid written with the row, so it stays the same on every resend; the order's `publicId` is the subject, correlation id and Kafka key, so all events of one order stay ordered.
 
@@ -139,7 +158,7 @@ Delivery over RabbitMQ is at-least-once, so every consumer makes its effect safe
 
 ### Events (Kafka)
 
-RabbitMQ keeps the commands and request/reply of the saga: work for one receiver, acked or dead-lettered per message. Kafka carries domain events, facts that already happened, kept in a log that any number of consumers can read and replay at their own pace.
+RabbitMQ keeps the request/reply calls of the placement workflow: work for one receiver, acked or dead-lettered per message. Kafka carries domain events, facts that already happened, kept in a log that any number of consumers can read and replay at their own pace.
 
 | Topic | Producer | Events | Consumer groups |
 |---|---|---|---|
@@ -247,6 +266,8 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `RABBITMQ_PORT` | no | `5672` | AMQP port (`15672` is the management UI) |
 | `KAFKA_BROKERS` | no | `kafka:29092` | comma-separated Kafka bootstrap servers (`localhost:9092` when the app runs outside Docker) |
 | `KAFKA_CONSUMERS_ENABLED` | no | `true` | `false` starts the app without Kafka consumers |
+| `TEMPORAL_ADDRESS` | no | `temporal:7233` | Temporal frontend (`localhost:7233` when the app runs outside Docker) |
+| `TEMPORAL_NAMESPACE` | no | `default` | Temporal namespace of the order workflows |
 | `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
 
 Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`) come from Infisical, or from the environment with `SKIP_VAULT=1`.

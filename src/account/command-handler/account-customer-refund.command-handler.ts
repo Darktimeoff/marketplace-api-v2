@@ -1,4 +1,4 @@
-import { AccountCustomerRefundCommand } from "@marketplace/messaging-contracts";
+import { AccountCustomerRefundRequest } from "@marketplace/messaging-contracts";
 import { Injectable } from "@nestjs/common";
 import { Transactional } from "@nestjs-cls/transactional";
 import { AccountRepository } from "../repository/account.repository.js";
@@ -16,7 +16,7 @@ export class AccountCustomerRefundCommandHandler {
   ) {}
 
   @Transactional()
-  async execute({ customerId, amount, chargeId }: AccountCustomerRefundCommand.DataInterface) {
+  async execute({ customerId, amount, chargeId }: AccountCustomerRefundRequest.DataInterface) {
     if (!await this.inbox.isProcessed(AccountInboxConsumerEnum.CUSTOMER_CHARGE, chargeId)) {
       throw new AccountCustomerRefundWithoutChargeException(chargeId)
     }

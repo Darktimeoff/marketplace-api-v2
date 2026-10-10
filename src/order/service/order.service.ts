@@ -1,45 +1,12 @@
 import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
-import { Transactional } from '@nestjs-cls/transactional';
 import { EntityNotFoundError } from 'typeorm';
-import { OrderRepository } from '../repository/order.repository.js';
-import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
-import { OrderProductRepository } from '../repository/order-product.repository.js';
-import {
-  OrderCreateInput,
-  OrderCreateItemInput,
-  OrderCreateRecipientInput,
-} from '../input/order-create.input.js';
-import { Order } from '../entity/order.entity.js';
-import { OrderRecipient } from '../entity/order-recipient.entity.js';
-import {
-  OrderProduct,
-  type OrderProductCreateEntityInterface,
-} from '../entity/order-product.entity.js';
-import { PhoneService } from '../../phone/service/phone.service.js';
-import { DeliveryAddressService } from '../../delivery-address/service/delivery-address.service.js';
-import { SellerOfferService } from '../../seller-offer/service/seller-offer.service.js';
-import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
-import { BackgroundJobTypeEnum, CurrencyEnum } from '../../generic/enum/enums.js';
-import { BackgroundJobService } from '../../background-job/service/background-job.service.js';
-import { BackgroundJobCreateInput } from '../../background-job/input/background-job-create.input.js';
-import { InsufficientStockProductInterface } from '../interface/insufficient-stock-product.interface.js';
-import { InsufficientStockException } from '../exception/insufficient-stock.exception.js';
-import { AccountService } from '../../account/service/account.service.js';
-import { OrderStatusEnum } from '../../generic/enum/enums.js';
-import { OrderNotifyService } from './order-notify.service.js';
-import { OrderAccessService } from './order-access.service.js';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ConfirmChannel, ConsumeMessage } from 'amqplib';
-import { OrderCreatedJobInterface } from '../../generic/rabbitmq/interface/order-created-job.interface.js';
-import { JobTypeEnum } from '../../generic/rabbitmq/enum/job-type.enum.js';
-import { RABBITMQ_EXCHANGE_NAME } from '../../generic/rabbitmq/constant/rabbitmq_exchange_name.constant.js';
-import { RABBITMQ_ROUTING_KEY } from '../../generic/rabbitmq/constant/rabbitmq_routing_key.constant.js';
-
-interface PricedOrderItem {
-  item: Omit<OrderProductCreateEntityInterface, 'orderId'>;
-  amount: number;
-  discount: number;
-}
+import { OrderStatusEnum } from '@marketplace/contracts-core';
+import { OrderRepository } from '../repository/order.repository.js';
+import { Order } from '../entity/order.entity.js';
+import { OrderNotifyService } from './order-notify.service.js';
+import { OrderAccessService } from './order-access.service.js';
 
 @Injectable()
 export class OrderService implements OnModuleInit {
@@ -47,13 +14,6 @@ export class OrderService implements OnModuleInit {
   
   constructor(
     private readonly orderRepository: OrderRepository,
-    private readonly orderRecipientRepository: OrderRecipientRepository,
-    private readonly orderProductRepository: OrderProductRepository,
-    private readonly phoneService: PhoneService,
-    private readonly deliveryAddressService: DeliveryAddressService,
-    private readonly backgroundJobService: BackgroundJobService,
-    private readonly offers: SellerOfferService,
-    private readonly accounts: AccountService,
     private readonly orderNotify: OrderNotifyService,
     private readonly orderAccess: OrderAccessService,
     private readonly amqpConnection: AmqpConnection
@@ -65,47 +25,6 @@ export class OrderService implements OnModuleInit {
           this.logger.error(`unroutable ${msg.fields.exchange}/${msg.fields.routingKey}`);
         });
       });
-  }
-
-  @Transactional()
-  async create(input: OrderCreateInput): Promise<Order> {
-    const orderProductIds = input.items
-      .map((item) => item.offerId)
-      .toSorted();
-
-    const phone = await this.phoneService.create(input.recipient.phone);
-    const deliveryAddress = await this.deliveryAddressService.create(
-      input.recipient.deliveryAddress,
-    );
-    const offers = await this.offers.findByIds(orderProductIds);
-
-    const recipient = await this.createRecipient(
-      input.recipient,
-      phone.id,
-      deliveryAddress.id,
-    );
-
-    const offersById = new Map(offers.map((offer) => [offer.id, offer]));
-    const pricedItems = input.items.map((item) =>
-      this.toPriceItemOrFail(item, offersById),
-    );
-
-    await this.reserveStockOrFail(input.items);
-
-    const order = await this.createOrder(
-      recipient.id,
-      pricedItems,
-      input.currency,
-    );
-
-    await this.accounts.charge(recipient.buyerId, Number(order.totalAmount));
-
-    await this.createItems(pricedItems, order.id);
-
-    await this.backgroundJobService.create(this.toBackgroundJobInput(order));
-    await this.amqpConnection.publish(RABBITMQ_EXCHANGE_NAME, RABBITMQ_ROUTING_KEY, this.toOrderCreatedJob(order))
-
-    return order;
   }
 
   async findById(id: Order['id']): Promise<Order> {
@@ -129,133 +48,5 @@ export class OrderService implements OnModuleInit {
     const updatedOrder = await this.orderRepository.updateStatusById(orderId, status);
     this.orderNotify.notifyStatusChanged(orderId, status);
     return updatedOrder;
-  }
-
-  private createRecipient(
-    recipient: OrderCreateRecipientInput,
-    phoneId: number,
-    deliveryAddressId: number,
-  ): Promise<OrderRecipient> {
-    return this.orderRecipientRepository.create({
-      buyerId: recipient.buyerId,
-      fullName: recipient.fullName,
-      phoneId,
-      deliveryAddressId,
-    });
-  }
-
-  private createOrder(
-    orderRecipientId: number,
-    items: PricedOrderItem[],
-    currency: CurrencyEnum,
-  ): Promise<Order> {
-    const totalAmount = items.reduce((sum, priced) => sum + priced.amount, 0);
-    const discountAmount = items.reduce(
-      (sum, priced) => sum + priced.discount,
-      0,
-    );
-
-    return this.orderRepository.create({
-      orderRecipientId,
-      totalAmount: totalAmount.toFixed(2),
-      discountAmount: discountAmount.toFixed(2),
-      currency,
-    });
-  }
-
-  private createItems(
-    pricedItems: PricedOrderItem[],
-    orderId: number,
-  ): Promise<OrderProduct[]> {
-    return this.orderProductRepository.create(
-      pricedItems.map((priced) => ({ ...priced.item, orderId })),
-    );
-  }
-
-  private toPriceItemOrFail(
-    item: OrderCreateItemInput,
-    offersById: Map<number, SellerOffer>,
-  ): PricedOrderItem {
-    const offer = offersById.get(item.offerId);
-    if (!offer) {
-      throw new NotFoundException(
-        `Product with this id ${item.offerId} not existed, please try again`,
-      );
-    }
-
-    const price = Number(offer.price);
-    const discountPrice =
-      offer.discountPrice !== null ? Number(offer.discountPrice) : price;
-
-    return {
-      item: {
-        offerId: item.offerId,
-        quantity: item.quantity,
-        price: offer.price,
-        discountPrice: offer.discountPrice,
-      },
-      amount: discountPrice * item.quantity,
-      discount: (price - discountPrice) * item.quantity,
-    };
-  }
-
-  private toBackgroundJobInput(order: Order): BackgroundJobCreateInput {
-    return {
-      type: BackgroundJobTypeEnum.ORDER,
-      dedupeKey: order.publicId,
-      orderId: order.id,
-      payload: {},
-    };
-  }
-
-  private toOrderCreatedJob(order: Order): OrderCreatedJobInterface {
-    return {
-      id: order.publicId,
-      type: JobTypeEnum.ORDER_CREATED,
-      data: {
-        id: order.id,
-        publicId: order.publicId,
-        totalAmount: order.totalAmount,
-        discountAmount: order.discountAmount,
-        status: order.status,
-        currency: order.currency,
-        createdAt: order.createdAt,
-        updatedAt: order.updatedAt
-      },
-      correlationId: order.publicId,
-      createdAt: new Date()
-    }
-  }
-
-  private async reserveStockOrFail(
-    items: OrderCreateInput['items'],
-  ): Promise<void> {
-    const reservations = items.map((item) => ({
-      id: item.offerId,
-      quantity: item.quantity,
-    }));
-    const reserved = await this.offers.reserveQuantityByIds(reservations);
-
-    if (reserved.length === reservations.length) {
-      return;
-    }
-
-    const reservedIds = new Set(reserved.map((row) => row.id));
-    const failed = items.filter(
-      (item) => !reservedIds.has(item.offerId),
-    );
-    const stockById = new Map(
-      (
-        await this.offers.findByIds(failed.map((item) => item.offerId))
-      ).map((offer) => [offer.id, offer.quantity]),
-    );
-
-    throw new InsufficientStockException(
-      failed.map<InsufficientStockProductInterface>((item) => ({
-        offerId: item.offerId,
-        requestedQuantity: item.quantity,
-        stockQuantity: stockById.get(item.offerId) ?? null,
-      })),
-    );
   }
 }

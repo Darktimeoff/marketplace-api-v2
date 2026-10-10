@@ -1,22 +1,11 @@
 import 'reflect-metadata';
 import { DeepPartial, FindOptionsWhere, ObjectLiteral, Repository } from 'typeorm';
+import { argon2id, hash } from 'argon2';
 import { AppDataSource } from './data-source.js';
-import {
-  BackgroundJobStatusEnum,
-  BackgroundJobTypeEnum,
-  CountryCodeEnum,
-  CurrencyEnum,
-  GenderEnum,
-  LanguageEnum,
-  RoleEnum,
-  OrderStatusEnum,
-  TransactionStatusEnum,
-  TransactionTypeEnum,
-} from './generic/enum/enums.js';
+import { CountryCodeEnum, CurrencyEnum, OrderStatusEnum, LanguageEnum } from '@marketplace/contracts-core';
 import { Identity } from './identity/entity/identity.entity.js';
 import { User } from './user/entity/user.entity.js';
-import { Phone } from './phone/entity/phone.entity.js';
-import { DeliveryAddress } from './delivery-address/entity/delivery-address.entity.js';
+import { Address } from './user/entity/address.entity.js';
 import { Brand } from './brand/entity/brand.entity.js';
 import { BrandTranslation } from './brand/entity/brand-translation.entity.js';
 import { Category } from './category/entity/category.entity.js';
@@ -27,10 +16,13 @@ import { ProductVariant } from './product-variant/entity/product-variant.entity.
 import { Seller } from './seller/entity/seller.entity.js';
 import { SellerOffer } from './seller-offer/entity/seller-offer.entity.js';
 import { Transaction } from './account/entity/transaction.entity.js';
-import { BackgroundJob } from './background-job/entity/background-job.entity.js';
 import { Order } from './order/entity/order.entity.js';
-import { OrderProduct } from './order/entity/order-product.entity.js';
+import { OrderLine } from './order/entity/order-line.entity.js';
 import { OrderRecipient } from './order/entity/order-recipient.entity.js';
+import { GenderEnum } from './user/enum/gender.enum.js';
+import { RoleEnum } from './identity/enum/role.enum.js';
+import { TransactionStatusEnum } from './account/enum/transaction-status.enum.js';
+import { TransactionTypeEnum } from './account/enum/transaction-type.enum.js';
 
 /**
  * Детерминированный идемпотентный seed: никакого random() и Date.now(), каждая строка
@@ -53,6 +45,7 @@ async function ensure<T extends ObjectLiteral>(
 
 const SELLERS = 2;
 const BUYERS = 4;
+const SEED_PASSWORD = 'marketplace-dev';
 const ORDERS = 10;
 
 function phoneFor(index: number) {
@@ -67,8 +60,7 @@ function phoneFor(index: number) {
 }
 
 async function seed(): Promise<void> {
-  const phones = AppDataSource.getRepository(Phone);
-  const addresses = AppDataSource.getRepository(DeliveryAddress);
+  const addresses = AppDataSource.getRepository(Address);
   const identities = AppDataSource.getRepository(Identity);
   const users = AppDataSource.getRepository(User);
   const brands = AppDataSource.getRepository(Brand);
@@ -82,9 +74,8 @@ async function seed(): Promise<void> {
   const offers = AppDataSource.getRepository(SellerOffer);
   const recipients = AppDataSource.getRepository(OrderRecipient);
   const orders = AppDataSource.getRepository(Order);
-  const orderProducts = AppDataSource.getRepository(OrderProduct);
+  const orderLines = AppDataSource.getRepository(OrderLine);
   const transactions = AppDataSource.getRepository(Transaction);
-  const backgroundJobs = AppDataSource.getRepository(BackgroundJob);
 
   const cities = ['Kyiv', 'Lviv', 'Odesa', 'Kharkiv', 'Dnipro'];
 
@@ -130,6 +121,7 @@ async function seed(): Promise<void> {
 
   // ---------- пользователи: продавцы и покупатели ----------
   const userRows: User[] = [];
+  const seedPasswordHash = await hash(SEED_PASSWORD, { type: argon2id });
 
   for (let i = 0; i < SELLERS + BUYERS; i++) {
     const isSeller = i < SELLERS;
@@ -138,13 +130,11 @@ async function seed(): Promise<void> {
     let identity = await identities.findOne({ where: { email } });
 
     if (!identity) {
-      const phone = await phones.save(phones.create(phoneFor(i)));
-
       identity = await identities.save(
         identities.create({
           email,
-          phoneId: phone.id,
-          passwordHash: `$2b$10$seed.deterministic.hash.${i}`,
+          loginPhone: phoneFor(i),
+          passwordHash: seedPasswordHash,
           role: isSeller ? RoleEnum.seller : RoleEnum.user,
           // activatedAt проставляется ниже одним UPDATE: CHECK Identity_activatedAt_ord
           // требует activatedAt >= createdAt, а createdAt приходит из DEFAULT now()
@@ -152,6 +142,8 @@ async function seed(): Promise<void> {
           activatedAt: null,
         }),
       );
+    } else if (!identity.passwordHash.startsWith('$argon2id$')) {
+      await identities.update({ id: identity.id }, { passwordHash: seedPasswordHash });
     }
 
     let user = await users.findOne({ where: { identityId: identity.id } });
@@ -168,13 +160,15 @@ async function seed(): Promise<void> {
       user = await users.save(
         users.create({
           identityId: identity.id,
+          email: identity.email,
+          phoneNumber: identity.loginPhone.fullNumber,
           firstName: isSeller ? `Seller${i + 1}` : `Buyer${i - SELLERS + 1}`,
           lastName: 'Seeded',
           dateOfBirth: '1990-01-01',
           gender: i % 2 === 0 ? GenderEnum.male : GenderEnum.female,
           language: LanguageEnum.ua,
           timezone: 'Europe/Kyiv',
-          deliveryAddressId: address.id,
+          addressId: address.id,
         }),
       );
     }
@@ -270,7 +264,7 @@ async function seed(): Promise<void> {
         currency: CurrencyEnum.UAH,
         discountPrice: i % 3 === 0 ? (90 + i * 25).toFixed(2) : null,
         // Перекос: часть офферов распродана (0), у остальных остаток растёт по i.
-        quantity: i % 4 === 0 ? 0 : (i + 1) * 5,
+        onHandQuantity: i % 4 === 0 ? 0 : (i + 1) * 5,
       },
     );
 
@@ -297,22 +291,15 @@ async function seed(): Promise<void> {
 
     const buyer = buyers[i % buyers.length];
 
-    // Снапшот: телефон и адрес — НОВЫЕ строки, скопированные с профиля покупателя.
-    const snapshotPhone = await phones.save(phones.create(phoneFor(100 + i)));
-    const snapshotAddress = await addresses.save(
-      addresses.create({
-        addressLine: `Seed delivery ${i + 1}`,
-        city: cities[i % cities.length],
-        building: String(i + 1),
-      }),
-    );
-
     const recipient = await recipients.save(
       recipients.create({
-        buyerId: buyer.id,
         fullName: `${buyer.firstName} ${buyer.lastName}`,
-        phoneId: snapshotPhone.id,
-        deliveryAddressId: snapshotAddress.id,
+        phone: phoneFor(100 + i),
+        address: {
+          addressLine: `Seed delivery ${i + 1}`,
+          city: cities[i % cities.length],
+          building: String(i + 1),
+        },
       }),
     );
 
@@ -323,6 +310,7 @@ async function seed(): Promise<void> {
     const order = await orders.save(
       orders.create({
         publicId,
+        userId: buyer.id,
         orderRecipientId: recipient.id,
         status: statuses[i % statuses.length],
         totalAmount: total.toFixed(2),
@@ -333,14 +321,14 @@ async function seed(): Promise<void> {
 
     for (const [position, offer] of items.entries()) {
       await ensure(
-        orderProducts,
-        { orderId: order.id, offerId: offer.id } as FindOptionsWhere<OrderProduct>,
+        orderLines,
+        { orderId: order.id, offerId: offer.id } as FindOptionsWhere<OrderLine>,
         {
           orderId: order.id,
           offerId: offer.id,
           quantity: position + 1,
-          price: offer.price,
-          discountPrice: offer.discountPrice,
+          unitPrice: offer.price,
+          unitDiscountPrice: offer.discountPrice,
         },
       );
     }
@@ -349,31 +337,28 @@ async function seed(): Promise<void> {
     // (домен "amount"), направление денег кодирует type = PAYMENT.
     const paidStatuses = [OrderStatusEnum.paid, OrderStatusEnum.shipped, OrderStatusEnum.delivered, OrderStatusEnum.completed];
 
+    await AppDataSource.query(`INSERT INTO "Account" ("customerId") VALUES ($1) ON CONFLICT ("customerId") DO NOTHING`, [buyer.id]);
+
     await ensure(
       transactions,
-      { userId: buyer.id, amount: total.toFixed(2), type: TransactionTypeEnum.PAYMENT } as FindOptionsWhere<Transaction>,
+      { customerId: buyer.id, amount: total.toFixed(2), type: TransactionTypeEnum.PAYMENT } as FindOptionsWhere<Transaction>,
       {
-        userId: buyer.id,
+        customerId: buyer.id,
         amount: total.toFixed(2),
         type: TransactionTypeEnum.PAYMENT,
         status: paidStatuses.includes(order.status) ? TransactionStatusEnum.SUCCESS : TransactionStatusEnum.PENDING,
       },
     );
-
-    // Фоновая задача обработки заказа. dedupeKey строится из publicId, а не из
-    // order.id: тот же ключ идемпотентности, что и у самого заказа.
-    await ensure(
-      backgroundJobs,
-      { dedupeKey: `order:${publicId}` } as FindOptionsWhere<BackgroundJob>,
-      {
-        type: BackgroundJobTypeEnum.ORDER,
-        status: paidStatuses.includes(order.status) ? BackgroundJobStatusEnum.READY : BackgroundJobStatusEnum.QUEUED,
-        payload: { orderId: order.id, publicId },
-        dedupeKey: `order:${publicId}`,
-        orderId: order.id,
-      },
-    );
   }
+
+  await AppDataSource.query(
+    `INSERT INTO "Account" ("customerId", "balance")
+     SELECT "customerId", COALESCE(SUM(CASE WHEN "type" IN ('DEPOSIT', 'REFUND') THEN "amount" ELSE -"amount" END) FILTER (WHERE "status" = 'SUCCESS'), 0)
+       FROM "Transaction"
+      WHERE "deletedAt" IS NULL
+      GROUP BY "customerId"
+     ON CONFLICT ("customerId") DO UPDATE SET "balance" = EXCLUDED."balance"`,
+  );
 }
 
 async function main(): Promise<void> {
@@ -383,7 +368,7 @@ async function main(): Promise<void> {
     await seed();
 
     const counts = await Promise.all(
-      ['Category', 'Brand', 'User', 'Product', 'Seller', 'ProductVariant', 'SellerOffer', 'Order', 'OrderProduct', 'Transaction', 'BackgroundJob'].map(
+      ['Category', 'Brand', 'User', 'Product', 'Seller', 'ProductVariant', 'SellerOffer', 'Order', 'OrderLine', 'Transaction'].map(
         async (table) => {
           const [row] = await AppDataSource.query(`SELECT count(*)::int AS count FROM "${table}"`);
 

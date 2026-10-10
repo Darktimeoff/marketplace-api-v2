@@ -1,9 +1,8 @@
 import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { CurrencyEnum, OrderStatusEnum } from '../../generic/enum/enums.js';
+import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
 import { OrderRecipient } from './order-recipient.entity.js';
 import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
-import type { OrderProduct } from './order-product.entity.js';
-import type { BackgroundJob } from '../../background-job/entity/background-job.entity.js';
+import type { OrderLine } from './order-line.entity.js';
 
 @Entity('Order')
 @Check('Order_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
@@ -13,6 +12,9 @@ export class Order {
 
   @Column({ type: 'uuid', unique: true, default: () => 'gen_random_uuid()' })
   publicId: string;
+
+  @Column({ type: 'integer' })
+  userId: number;
 
   @Column({ type: 'integer' })
   orderRecipientId: number;
@@ -45,12 +47,9 @@ export class Order {
   @JoinColumn({ name: 'orderRecipientId' })
   orderRecipient: OrderRecipient;
 
-  @OneToMany('OrderProduct', (item: OrderProduct) => item.order)
-  items: OrderProduct[];
-
-  @OneToMany('BackgroundJob', (job: BackgroundJob) => job.order)
-  backgroundJobs: BackgroundJob[];
+  @OneToMany('OrderLine', (line: OrderLine) => line.order)
+  lines: OrderLine[];
 }
 
 export interface OrderCreateEntityInterface
-  extends Pick<Order, 'orderRecipientId' | 'totalAmount' | 'discountAmount' | 'currency'> {}
+  extends Pick<Order, 'userId' | 'orderRecipientId' | 'totalAmount' | 'discountAmount' | 'currency'>, Partial<Pick<Order, 'status'>> {}

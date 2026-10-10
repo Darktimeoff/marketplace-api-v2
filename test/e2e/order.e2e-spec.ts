@@ -5,14 +5,11 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module.js';
 import { Transaction } from '../../src/account/entity/transaction.entity.js';
-import {
-  CountryCodeEnum,
-  CurrencyEnum,
-  TransactionStatusEnum,
-  TransactionTypeEnum,
-} from '../../src/generic/enum/enums.js';
+import { CountryCodeEnum, CurrencyEnum } from '@marketplace/contracts-core';
 import { aSellerOffer, aUser } from '../support/builders.js';
 import { truncateAllTables } from '../support/isolation.js';
+import { TransactionStatusEnum } from '../../src/account/enum/transaction-status.enum.js';
+import { TransactionTypeEnum } from '../../src/account/enum/transaction-type.enum.js';
 
 describe('Order (e2e)', () => {
   let app: INestApplication;
@@ -37,11 +34,16 @@ describe('Order (e2e)', () => {
     await app.close();
   });
 
-  async function fundBuyer(userId: number, amount: string): Promise<void> {
+  async function fundBuyer(customerId: number, amount: string): Promise<void> {
+    await dataSource.query(
+      `INSERT INTO "Account" ("customerId", "balance") VALUES ($1, $2)
+       ON CONFLICT ("customerId") DO UPDATE SET "balance" = "Account"."balance" + EXCLUDED."balance"`,
+      [customerId, amount],
+    );
     const transactions = dataSource.manager.getRepository(Transaction);
     await transactions.save(
       transactions.create({
-        userId,
+        customerId,
         amount,
         type: TransactionTypeEnum.DEPOSIT,
         status: TransactionStatusEnum.SUCCESS,
@@ -54,14 +56,14 @@ describe('Order (e2e)', () => {
     await fundBuyer(buyer.id, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, {
       price: '50.00',
-      quantity: 5,
+      onHandQuantity: 5,
     });
 
     const createResponse = await request(app.getHttpServer())
       .post('/order')
       .send({
+        userId: buyer.id,
         recipient: {
-          buyerId: buyer.id,
           fullName: 'Jane Doe',
           phone: {
             countryCode: CountryCodeEnum.UA,
@@ -69,7 +71,7 @@ describe('Order (e2e)', () => {
             fullNumber: '+380501234567',
             nationalNumber: '0501234567',
           },
-          deliveryAddress: {
+          address: {
             addressLine: 'Khreshchatyk St, 1',
             city: 'Kyiv',
           },
@@ -80,7 +82,7 @@ describe('Order (e2e)', () => {
       .expect(201);
 
     expect(createResponse.body).toMatchObject({
-      status: 'created',
+      status: 'paid',
       totalAmount: '100.00',
       currency: CurrencyEnum.UAH,
     });
@@ -94,7 +96,7 @@ describe('Order (e2e)', () => {
     expect(readResponse.body).toMatchObject({
       id: orderId,
       publicId: createResponse.body.publicId,
-      status: 'created',
+      status: 'paid',
       totalAmount: '100.00',
     });
   });

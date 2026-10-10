@@ -1,8 +1,8 @@
 import { Expose } from 'class-transformer';
 import { IsDate, IsEnum, IsInt, IsPositive, IsString, IsUUID } from 'class-validator';
-import { CurrencyEnum, OrderStatusEnum } from '../../generic/enum/enums.js';
+import { CurrencyEnum, OrderStatusEnum, type OrderResponseInterface } from '@marketplace/contracts-core';
 
-export class OrderDto {
+export class OrderDto implements OrderResponseInterface {
   @Expose()
   @IsInt()
   @IsPositive()

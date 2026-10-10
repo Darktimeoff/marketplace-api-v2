@@ -18,7 +18,7 @@ export class OrderAccessService {
       throw error;
     }
 
-    if (userId !== undefined && order.orderRecipient.buyerId !== userId) {
+    if (userId !== undefined && order.userId !== userId) {
       throw new ForbiddenException('Order belongs to a different buyer');
     }
     return;

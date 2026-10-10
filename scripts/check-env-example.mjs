@@ -5,6 +5,7 @@ import path from 'node:path';
 const rootDir = path.resolve(fileURLToPath(import.meta.url), '../..');
 const schemaPath = path.join(rootDir, 'src/generic/environment/environment.schema.ts');
 const envExamplePath = path.join(rootDir, '.env.example');
+const composeOnlyKeys = new Set(['RABBITMQ_UI_PORT', 'KAFKA_PORT', 'KAFKA_UI_PORT']);
 
 function extractSchemaKeys(source) {
   const objectStart = source.indexOf('z.object({');
@@ -56,7 +57,7 @@ const schemaKeys = extractSchemaKeys(readFileSync(schemaPath, 'utf8'));
 const envExampleKeys = extractEnvExampleKeys(readFileSync(envExamplePath, 'utf8'));
 
 const missingFromEnvExample = [...schemaKeys].filter((key) => !envExampleKeys.has(key));
-const staleInEnvExample = [...envExampleKeys].filter((key) => !schemaKeys.has(key));
+const staleInEnvExample = [...envExampleKeys].filter((key) => !schemaKeys.has(key) && !composeOnlyKeys.has(key));
 
 if (missingFromEnvExample.length > 0 || staleInEnvExample.length > 0) {
   console.error('.env.example is out of sync with environment.schema.ts');

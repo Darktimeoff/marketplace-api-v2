@@ -9,10 +9,11 @@ const environmentSchema = z.object({
   INFISICAL_SITE_URL: z.string().min(1),
   INFISICAL_CLIENT_ID: z.string().min(1),
   INFISICAL_PROJECT_ID: z.string().min(1),
-  INFISICAL_ENVIRONMENT: z.enum(['dev', 'stagin', 'prod']),
-  WORKER_POOL_SIZE: z.coerce.number().int().min(1).default(4),
+  INFISICAL_ENVIRONMENT: z.enum(['dev', 'staging', 'prod']),
   RABBITMQ_HOST: z.string().min(1).default('rabbitmq'),
   RABBITMQ_PORT: z.coerce.number().int().min(1).max(65535).default(5672),
+  KAFKA_BROKERS: z.string().min(1).default('kafka:29092'),
+  KAFKA_CONSUMERS_ENABLED: z.stringbool().default(true),
 })
 
 export type EnvironmentType = z.infer<typeof environmentSchema>

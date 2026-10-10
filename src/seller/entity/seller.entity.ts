@@ -1,12 +1,15 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { User } from '../../user/entity/user.entity.js';
+import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, OneToMany, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 import type { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
 
 @Entity('Seller')
+@Unique('Seller_userId_key', ['userId'])
 @Check('Seller_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
 export class Seller {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
+
+  @Column({ type: 'uuid', unique: true, default: () => 'gen_random_uuid()' })
+  publicId: string;
 
   @Column({ type: 'integer' })
   userId: number;
@@ -19,10 +22,6 @@ export class Seller {
 
   @DeleteDateColumn({ type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
-
-  @OneToOne(() => User, (user) => user.seller, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'userId' })
-  user: User;
 
   @OneToMany('SellerOffer', (offer: SellerOffer) => offer.seller)
   offers: SellerOffer[];

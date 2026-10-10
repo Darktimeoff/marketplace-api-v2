@@ -1,5 +1,4 @@
 import { BadRequestException, CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
-import { Socket } from 'socket.io';
 import { OrderAccessService } from '../service/order-access.service.js';
 
 @Injectable()
@@ -7,18 +6,6 @@ export class OrderAccessGuard implements CanActivate {
   constructor(private readonly orderAccess: OrderAccessService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (context.getType() === 'ws') {
-      const client = context.switchToWs().getClient<Socket>();
-      const message = context.switchToWs().getData<{ orderId?: number }>();
-      const orderId = Number(message?.orderId);
-      const userId = Number(client.handshake.auth?.userId);
-      if (!Number.isSafeInteger(orderId) || orderId <= 0 || !Number.isSafeInteger(userId) || userId <= 0) {
-        throw new BadRequestException('A valid order id and userId are required');
-      }
-      await this.orderAccess.canAccess(orderId, userId);
-      return true;
-    }
-
     const request = context.switchToHttp().getRequest<{
       params: { id: string };
       query: { userId?: string };

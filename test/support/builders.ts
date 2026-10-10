@@ -1,7 +1,4 @@
 import type { EntityManager } from 'typeorm';
-import { randomUUID } from 'node:crypto';
-import { Phone } from '../../src/phone/entity/phone.entity.js';
-import { DeliveryAddress } from '../../src/delivery-address/entity/delivery-address.entity.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { User } from '../../src/user/entity/user.entity.js';
 import { Brand } from '../../src/brand/entity/brand.entity.js';
@@ -14,53 +11,13 @@ import { ProductVariant } from '../../src/product-variant/entity/product-variant
 import { Seller } from '../../src/seller/entity/seller.entity.js';
 import { SellerOffer } from '../../src/seller-offer/entity/seller-offer.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
-import {
-  CountryCodeEnum,
-  CurrencyEnum,
-  LanguageEnum,
-  RoleEnum,
-} from '../../src/generic/enum/enums.js';
-import type { BackgroundJobCreateEntityInterface } from '../../src/background-job/entity/background-job.entity.js';
-import { BackgroundJobTypeEnum } from '../../src/generic/enum/enums.js';
+import { CountryCodeEnum, CurrencyEnum, LanguageEnum } from '@marketplace/contracts-core';
+import { RoleEnum } from '../../src/identity/enum/role.enum.js';
 
 let counter = 0;
 function nextSeq(): number {
   counter += 1;
   return counter;
-}
-
-export function aPhone(
-  manager: EntityManager,
-  overrides: Partial<Phone> = {},
-): Promise<Phone> {
-  const seq = nextSeq();
-  const repository = manager.getRepository(Phone);
-
-  return repository.save(
-    repository.create({
-      countryCode: CountryCodeEnum.UA,
-      rawNumber: `+38050${String(seq).padStart(7, '0')}`,
-      fullNumber: `+38050${String(seq).padStart(7, '0')}`,
-      nationalNumber: `050${String(seq).padStart(7, '0')}`,
-      ...overrides,
-    }),
-  );
-}
-
-export function aDeliveryAddress(
-  manager: EntityManager,
-  overrides: Partial<DeliveryAddress> = {},
-): Promise<DeliveryAddress> {
-  const repository = manager.getRepository(DeliveryAddress);
-
-  return repository.save(
-    repository.create({
-      addressLine: 'Khreshchatyk St, 1',
-      city: 'Kyiv',
-      building: '1A',
-      ...overrides,
-    }),
-  );
 }
 
 export async function aUser(
@@ -91,29 +48,26 @@ export async function aUser(
 
 export async function anOrderRecipient(
   manager: EntityManager,
-  overrides: Partial<
-    Pick<
-      OrderRecipient,
-      'buyerId' | 'fullName' | 'phoneId' | 'deliveryAddressId'
-    >
-  > = {},
+  overrides: Partial<Pick<OrderRecipient, 'fullName' | 'phone' | 'address'>> = {},
 ): Promise<OrderRecipient> {
-  const [buyer, phone, deliveryAddress] = await Promise.all([
-    overrides.buyerId === undefined ? aUser(manager) : undefined,
-    overrides.phoneId === undefined ? aPhone(manager) : undefined,
-    overrides.deliveryAddressId === undefined
-      ? aDeliveryAddress(manager)
-      : undefined,
-  ]);
-
+  const seq = nextSeq();
   const recipients = manager.getRepository(OrderRecipient);
 
   return recipients.save(
     recipients.create({
-      buyerId: overrides.buyerId ?? buyer!.id,
       fullName: 'Test Recipient',
-      phoneId: overrides.phoneId ?? phone!.id,
-      deliveryAddressId: overrides.deliveryAddressId ?? deliveryAddress!.id,
+      phone: {
+        countryCode: CountryCodeEnum.UA,
+        rawNumber: `+38050${String(seq).padStart(7, '0')}`,
+        fullNumber: `+38050${String(seq).padStart(7, '0')}`,
+        nationalNumber: `050${String(seq).padStart(7, '0')}`,
+      },
+      address: {
+        addressLine: 'Khreshchatyk St, 1',
+        city: 'Kyiv',
+        building: '1A',
+      },
+      ...overrides,
     }),
   );
 }
@@ -128,7 +82,7 @@ export async function aSellerOffer(
       | 'sellerSku'
       | 'price'
       | 'discountPrice'
-      | 'quantity'
+      | 'onHandQuantity'
       | 'currency'
     >
   > = {},
@@ -184,7 +138,7 @@ export async function aSellerOffer(
       price: overrides.price ?? '100.00',
       currency: overrides.currency ?? CurrencyEnum.UAH,
       discountPrice: overrides.discountPrice ?? null,
-      quantity: overrides.quantity ?? 10,
+      onHandQuantity: overrides.onHandQuantity ?? 10,
     }),
   );
 }
@@ -264,16 +218,4 @@ export async function aCatalogProduct(
   );
 
   return { product, variant };
-}
-
-export function aBackgroundJobInput(
-  overrides: Partial<BackgroundJobCreateEntityInterface> = {},
-): BackgroundJobCreateEntityInterface {
-  return {
-    type: BackgroundJobTypeEnum.ORDER,
-    dedupeKey: `job-${randomUUID()}`,
-    payload: {},
-    orderId: null,
-    ...overrides,
-  };
 }

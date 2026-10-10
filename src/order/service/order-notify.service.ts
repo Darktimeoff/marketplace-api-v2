@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Subject } from 'rxjs';
-import { OrderStatusEnum } from '../../generic/enum/enums.js';
+import { OrderStatusEnum } from '@marketplace/contracts-core';
 import { OrderStatusEvent } from '../interface/order-status-event.interface.js';
 
 export const ORDER_EVENT_HISTORY_LIMIT = 100;
@@ -10,8 +9,6 @@ export class OrderNotifyService {
   private nextEventId = 1;
   private readonly history = new Map<number, OrderStatusEvent[]>();
   private readonly listeners = new Map<number, Set<(event: OrderStatusEvent) => void>>();
-  private readonly subject = new Subject<OrderStatusEvent>();
-  readonly events$ = this.subject.asObservable();
 
   notifyStatusChanged(orderId: number, status: OrderStatusEnum): OrderStatusEvent {
     const event = { id: this.nextEventId++, orderId, status };
@@ -21,7 +18,6 @@ export class OrderNotifyService {
       history.shift();
     }
     this.history.set(orderId, history);
-    this.subject.next(event);
     for (const listener of this.listeners.get(orderId) ?? []) {
       listener(event);
     }

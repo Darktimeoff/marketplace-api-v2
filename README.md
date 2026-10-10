@@ -1,864 +1,244 @@
 # marketplace-api-v2
 
-Course project homework #1: OpenAPI contract for the Marketplace API
-(`openapi/openapi.yaml`) + contract test part.
+Marketplace backend in NestJS, built as a modular monolith whose modules behave like separate services: each owns its data and its broker topology, and they talk to each other only through messages described in shared contract packages: commands and requests over RabbitMQ, domain events over Kafka.
 
-**Chosen contract-test option: A — consumer-driven Pact.**
+| Service (module) | Owns | Talks over RabbitMQ |
+|---|---|---|
+| `order` | `Order`, `OrderRecipient`, `OrderLine` | sends `seller-offer.stock.reserve`, `account.customer.charge`, and the compensations `seller-offer.stock.release`, `account.customer.refund` |
+| `seller-offer` | `SellerOffer`, `StockReservation` | answers `seller-offer.stock.reserve`, handles `seller-offer.stock.release` |
+| `account` | `Account`, `Transaction`, `AccountInbox` | answers `account.customer.charge`, handles `account.customer.refund` |
 
----
+The other modules (`product`, `product-variant`, `category`, `brand`, `seller`, `user`, `identity`) only own entities. Order reads offers from `seller-offer` for pricing.
 
-## ORM: TypeORM (HW #13)
+## Bounded contexts
 
-Схема из ДЗ #12 переехала в код: entities + relations + миграции, `synchronize` выключен.
+| Context | Owns |
+|---|---|
+| identity | `Identity`, with the login phone as a value object |
+| user | `User`, `Address` |
+| catalog | `Product`, `ProductTranslation`, `ProductVariant`, `Category`, `CategoryTranslation`, `Brand`, `BrandTranslation` |
+| seller | `Seller`, `SellerOffer`, `StockReservation` |
+| order | `Order`, `OrderRecipient`, `OrderLine` |
+| account | `Account`, `Transaction`, `AccountInbox` |
 
-### Grading
+```
+identity ◄── user ◄──── order ───► seller ───► catalog
+                          │
+                          └──────► account
+```
 
-Свежий клон, чистая БД, без доступа к моему хранилищу секретов:
+An arrow means "holds an id of". Every table belongs to one context, and a context could be moved into its own service without changing its model:
+
+- **Plain ids across contexts, no foreign keys.** `User.identityId`, `Seller.userId`, `SellerOffer.variantId`, `Order.userId` and `OrderLine.offerId` are integers with no FK and no ORM relation, because a database constraint can't span two services. Foreign keys stay inside a context (`User → Address`, the catalog's own, `SellerOffer → Seller`, `StockReservation → SellerOffer`, `Order → OrderRecipient`, `OrderLine → Order`, `Transaction → Account`). The trade-off: the database no longer stops a reference to a deleted row in another context. Order validates offers at checkout, and order lines keep snapshot prices.
+- **Snapshots, not shared rows.** `OrderRecipient` is the delivery contact as written at checkout: `fullName`, a phone and an address. It references nothing outside the order, so later edits to a user's profile don't rewrite past orders. It stays its own table, leaving room for per-seller shipments with their own recipient.
+- **Value objects are embedded columns.** The recipient's phone and address and the identity's login phone are TypeORM embedded classes (`value-object/`), which give ordinary typed columns with their own CHECKs (`phoneFullNumber`, `addressCity`, `loginPhoneFullNumber`, …) rather than JSON or a shared `Phone` table.
+- **Each context names things in its own language.** Order calls the buyer `userId`, account calls the same person `customerId`, and order maps one to the other when it sends `account.customer.charge` and `account.customer.refund`. `OrderLine` holds `unitPrice`/`unitDiscountPrice` at purchase time; `SellerOffer.onHandQuantity` is the physical stock next to `reservedQuantity`.
+- **Public ids.** Every entity that something outside its context refers to has a `publicId uuid` (unique, `DEFAULT gen_random_uuid()`): `Identity`, `User`, `Address`, `Seller`, `SellerOffer`, `Product`, `ProductVariant`, `Category`, `Brand`, `Order`, `Transaction`. Children reached only through their parent (translations, `OrderRecipient`, `OrderLine`) and internal tables (`StockReservation`, `Account`, `AccountInbox`, `IdentitySession`) don't have one. The integer `id` stays the primary key and the FK target inside a context. Tokens and events already use `publicId`; HTTP routes, the RabbitMQ messages and the cross-context columns (`Order.userId`, `OrderLine.offerId`, …) still carry integer ids and move over one context at a time.
+- **Contract packages hold only the published language**: what crosses a boundary (HTTP requests and responses, messages, and the enums those use). Entities, internal enums (`RoleEnum`, `TransactionTypeEnum`, `StockReservationStatusEnum`, …) and repository types stay inside their context.
+
+`POST /order`:
+
+```json
+{
+  "userId": 4,
+  "recipient": {
+    "fullName": "Jane Doe",
+    "phone": { "countryCode": "UA", "rawNumber": "+380501234567", "fullNumber": "+380501234567", "nationalNumber": "0501234567" },
+    "address": { "addressLine": "Khreshchatyk St, 1", "city": "Kyiv", "building": "1A" }
+  },
+  "items": [{ "offerId": 1, "quantity": 2 }],
+  "currency": "UAH"
+}
+```
+
+## Quick start
+
+From a fresh clone, without access to the secret store:
 
 ```bash
 cp .env.example .env
 cp secrets/db_password.txt.example secrets/db_password.txt
 cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
-docker compose up -d --wait db rabbitmq
+docker compose up -d --wait db db-bouncer rabbitmq kafka
 
 export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
 export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
-export BROKER_URL=amqp://root:changeme@127.0.0.1:5672   # схема amqp, порт AMQP 5672 (15672 — веб-морда)
-export SKIP_VAULT=1    # у грейдера нет доступа к хранилищу
+export KAFKA_BROKERS=localhost:9092
+export SKIP_VAULT=1
 
 npm ci
-npx tsc --noEmit
-npm run build
-npm run migrate
-npm run migrate:show      # [X] InitSchema… [X] AddJobQueueProcessing…
-npm run seed && npm run seed
-
-# ДЗ #13
-npm run demo:nplus1
-npm run report
-
-# ДЗ #14 — конкурентность (каждая команда завершается с кодом 0)
-npm run demo:race
-npm run demo:workers
-npm run demo:retry
-
-# ДЗ #19 — RabbitMQ (API на :3000 должен быть остановлен: демо сами поднимают приложение)
-npm run demo:publish
-npm run demo:dlq
-npm run demo:duplicate
-
-npm run migrate:revert && npm run migrate
-```
-
-`npm run build` обязателен перед любой из команд ниже: npm-скрипты запускают
-скомпилированный `dist/`, а не исходники.
-
-Все три демо-сценария ДЗ #14 самодостаточны — свои фикстуры (демо-товар с
-остатком ровно 10, 50 покупателей с заведомо избыточным балансом, задачи в
-очереди) они создают и сбрасывают сами, идемпотентно, поэтому повторный запуск
-даёт тот же результат. `npm run seed` перед ними всё же нужен: без него в базе
-нет каталога, на котором проверяются остальные ДЗ.
-
-Три уточнения к блоку выше, каждое — из реального падения, а не из осторожности:
-
-- **`docker compose up -d --wait db`, а не без имени сервиса.** В compose кроме базы живёт
-  стек Infisical из ДЗ #11; без явного `db` команда поднимала бы и его, а он требует
-  недоступных грейдеру креденшелов.
-- **Два `cp` в начале.** `.env` и `secrets/db_password.txt` лежат вне git с ДЗ #11.
-  Шаблоны обоих в репозитории и содержат рабочие дев-значения, править их не нужно.
-- **`--wait` обязателен.** Без него `docker compose up -d` возвращает управление,
-  когда контейнер создан, но Postgres ещё не принимает соединений, и `npm run migrate`
-  падает с `Connection terminated unexpectedly`.
-
-### Как подключение приходит из хранилища
-
-Все команды, ходящие в базу, обёрнуты в `scripts/with-secrets.sh` прямо внутри
-npm-скриптов, так что префиксов набирать не нужно:
-
-```json
-"migrate": "bash scripts/with-secrets.sh dev npx typeorm migration:run -d dist/data-source.js",
-"seed":    "bash scripts/with-secrets.sh dev node dist/seed.js"
-```
-
-Обёртка отдаёт значения из Infisical (окружения `dev` и `prod`) в `process.env`, откуда их
-и берёт `src/data-source.ts` — ни хоста, ни пароля в коде нет.
-
-Имена переменных — те же, что в проекте с ДЗ #11, а не выдуманные под это ДЗ:
-`DBHOST`/`DBPORT`/`DBUSER`/`DBNAME` описаны в `.env.example` и zod-схеме, `DBPASSWORD`
-лежит в хранилище (см. `SecretsInterface`). Отдельный набор вида `DB_*` означал бы, что
-значения из хранилища не подхватываются вообще: `infisical run` подставляет `DBPASSWORD`,
-и DataSource падал бы на «DB_PASSWORD is not set». Для грейдера предусмотрен
-аварийный вход: при `SKIP_VAULT=1` обёртка сразу выполняет команду, считая, что значения
-уже в окружении. Проверка `if` стоит **после** `shift`, иначе обёртка съела бы первый
-аргумент и попыталась выполнить слово `dev` как команду (`exec: dev: not found`, exit 127).
-
-### Ротация пароля и ORM
-
-`npm run rotate:db-password` из ДЗ #11 работает без изменений и с TypeORM тоже. Что важно
-понимать про разделение:
-
-| Что | Где живёт | Кто подставляет |
-|---|---|---|
-| `DBHOST`, `DBPORT`, `DBNAME`, `DBUSER` | `.env` (несекретная конфигурация) | `scripts/with-secrets.sh` загружает `.env` |
-| `DBPASSWORD` | Infisical | `infisical run` внутри той же обёртки |
-
-Это тот же сплит, что и в приложении: `ConfigModule` читает `.env`, а `SecretManagerService`
-ходит в хранилище. `infisical run` подставляет только секреты и пробрасывает родительское
-окружение — `.env` он не читает, поэтому обёртка загружает его сама (уже выставленные
-вручную переменные при этом не перетираются).
-
-Как проходит ротация:
-
-1. Скрипт берёт текущий `DBPASSWORD` из Infisical (файл `secrets/db_password.txt` — только fallback).
-2. Делает `ALTER USER` на живой базе и пишет новый пароль в `secrets/db_password.txt`.
-3. Синхронизирует новое значение обратно в Infisical.
-4. Убивает оставшиеся сессии этой роли через `pg_terminate_backend`.
-
-После этого **следующий `npm run migrate` или `npm run seed` подхватывает новый пароль сам**:
-обёртка на каждый вызов заново тянет `DBPASSWORD` из хранилища. Пересоздание тома
-(`docker compose down -v`) тоже остаётся согласованным — контейнер инициализируется из
-`secrets/db_password.txt`, где уже лежит новый пароль.
-
-Два момента, о которых стоит знать заранее:
-
-- **`SKIP_VAULT=1` после ротации протухает.** В этом режиме значения задаёт тот, кто их
-  экспортировал, и обновлять их надо руками: `export DBPASSWORD=$(cat secrets/db_password.txt)`.
-- **DataSource получает пароль строкой один раз, при создании.** `DBService` из ДЗ #11
-  передаёт в `pg` функцию (`password: () => secrets.get('DBPASSWORD')`), поэтому переживает
-  ротацию сам — пул перечитывает пароль на каждое новое соединение. У TypeORM в конфиге
-  статическая строка. Для коротких CLI-скриптов это неважно, но когда в ДЗ #14 TypeORM
-  окажется внутри долгоживущего приложения, ротация потребует рестарта — либо надо будет
-  пересоздавать DataSource по ошибке аутентификации.
-
-### synchronize
-
-`synchronize: false` выставлен явно в `src/data-source.ts`. Здесь это не формальность:
-`synchronize: true` снёс бы то, чего TypeORM не знает в метаданных — домены `uint` и
-`amount`, generated-колонку `User."fullName"` и триггеры `updatedAt`.
-
-### Миграция
-
-`src/migrations/1788889879820-InitSchema.ts` получена через `migration:generate` и правлена
-руками. Генератор сам:
-
-1. четырежды выдавал `CREATE TYPE "LanguageEnum"` и дважды `"CurrencyEnum"` — по разу на
-   каждую использующую таблицу, второй такой вызов падает с `42710`;
-2. не создавал расширение `citext`, хотя `Identity."email"` объявлен как `citext`;
-3. разворачивал домены `uint` и `amount` в голые `integer` и `numeric(12,2)`, теряя
-   `CHECK (VALUE > 0)` и `CHECK (VALUE >= 0)` — замену `UNSIGNED` из ДЗ #12;
-4. не знал про триггеры `…_setUpdatedAt` и функцию `setUpdatedAt`;
-5. давал констрейнтам хешевые имена (`PK_faeb810…`) вместо `Phone_pkey`, `Identity_email_key`
-   и прочих исходных из схемы ДЗ #12 (`marketplace.dbml`).
-
-Всё это восстановлено вручную. На момент ДЗ #12/#13 схема сверялась машинно: `pg_dump
---schema-only` базы после миграции и базы, поднятой напрямую из raw-SQL схемы ДЗ #12, дали
-**111 идентичных стейтментов**, расхождений ноль (тот raw-SQL файл был служебным
-верификационным артефактом и убран из репозитория после проверки — дизайн схемы остаётся
-в `marketplace.dbml`).
-
-`down()` не заглушка: сносит все 14 таблиц, функцию, шесть enum-типов и оба домена.
-Расширение `citext` остаётся намеренно — это общее свойство базы, его мог поставить не
-только этот проект, а в `up()` оно создаётся через `IF NOT EXISTS`, так что повторный
-`npm run migrate` проходит.
-
-### Диф-миграция: quantity, Transaction, BackgroundJob
-
-`src/migrations/1789306283697-AddQuantityTransactionsBackgroundJobs.ts` — второй пример
-миграции, поверх `InitSchema`, а не с нуля: `ProductOffer` получает остаток `quantity`,
-плюс две новые таблицы — `Transaction` (денежные проводки пользователя) и `BackgroundJob`
-(очередь фоновых задач, пока только тип `ORDER`).
-
-Тоже получена через `migration:generate` и тоже урезана руками — по той же причине, что и
-`InitSchema`: генератор не узнал свои же старые имена FK (`Xxx_fkey`) в живой базе и выдал
-`DROP`+`ADD` на все 17 существующих внешних ключей, ни один из которых не менялся, плюс
-пересоздал `fullName` и дефолт `publicId` без единого содержательного изменения. Ниже — то,
-что от диф-миграции реально осталось: одна `ALTER TABLE ADD COLUMN`, четыре `CREATE TYPE`,
-две `CREATE TABLE`, два новых FK.
-
-Решения по этому дифу (расходятся с исходным ДЗ, отмечены заранее в цепочке правок):
-
-- **`quantity` — `integer`, не домен `amount`.** В черновике схемы колонка была типа
-  `amount` (домен для денег), но это остаток товара на складе, а не деньги: `quantity=1.50`
-  бессмысленно для штучного товара.
-- **`quantity` — `CHECK (>= 0)`, не домен `uint`.** `uint` запрещает `0` (`CHECK VALUE > 0`),
-  а распроданный оффер (`quantity = 0`) — нормальное состояние.
-- **`quantity` физически последняя колонка.** `ALTER TABLE ADD COLUMN` всегда добавляет
-  колонку в конец таблицы, а не туда, где она логически стоит в `CREATE TABLE` — это
-  видно в `\d "ProductOffer"` и в `pg_dump`, поэтому в `marketplace.dbml` она тоже
-  показана последней.
-- **`BackgroundJob.dedupeKey` — `UNIQUE`.** Название поля говорит про дедупликацию — без
-  ограничения это была бы просто ещё одна колонка, а дедуп пришлось бы делать вручную на
-  каждый `INSERT`.
-- **`BackgroundJob.payload` — `jsonb`, не `json`.** Единственная причина вообще выбирать
-  между ними в Postgres: `jsonb` поддерживает индексацию и containment-запросы (`@>`).
-- **`onDelete: 'RESTRICT'` у обоих новых FK** (`Transaction.userId → User`,
-  `BackgroundJob.orderId → Order`) — та же политика, что и у остальных 13 FK в схеме:
-  soft delete везде, физическое удаление аварийное, `RESTRICT` не даёт молча снести
-  финансовую историю или задачи.
-- **`Transaction.amount` — всегда неотрицательная величина** (домен `amount`, как и
-  везде), направление денег кодирует `type` (`DEPOSIT`/`PAYMENT`/`WITHDRAWAL`), а не знак
-  числа.
-
-После применения обеих миграций `pg_dump --schema-only` на момент этой работы был снова
-сверен с raw-SQL версией схемы: **126 идентичных стейтментов**, расхождений ноль. Откат
-(`migrate:revert`) проверен дважды подряд до пустой базы (остаются только служебные таблицы
-TypeORM) и обратно.
-
-### Деньги: расхождение с заданием
-
-Задание просит хранить деньги как `integer` в минорных единицах. В схеме ДЗ #12 они —
-`numeric(12,2)` через домен `amount`, и схему это ДЗ по условию не меняет, поэтому тип
-оставлен как есть. Плавающей точки при этом не возникает: `pg` отдаёт `numeric` строкой,
-и в TypeScript оно строкой и остаётся (`src/entities/money.transformer.ts`) — перевод в
-`number` сделал бы из точного десятичного значения `double`, то есть ровно ту ошибку,
-от которой `numeric` и защищает.
-
-### Relations и выбор onDelete
-
-Все связи — через `@ManyToOne`/`@OneToMany`/`@OneToOne`. `OrderProduct` — явная
-join-entity с составным PK, а не `@ManyToMany`: на связи висят данные (количество и
-цены на момент заказа).
-
-| Стратегия | Где | Почему |
-|---|---|---|
-| `CASCADE` | `BrandTranslation`, `CategoryTranslation`, `ProductTranslation` → родитель; `OrderProduct` → `Order` | Перевод без бренда/категории/товара и позиция без заказа не существуют как самостоятельные сущности |
-| `RESTRICT` | все остальные 15 FK (включая `Transaction.userId`, `BackgroundJob.orderId`) | В схеме везде soft delete, физическое удаление — аварийный сценарий, и `RESTRICT` не даст молча снести половину каталога |
-
-Отдельно: `OrderProduct → ProductOffer` — именно `RESTRICT`, хотя рядом
-`OrderProduct → Order` это `CASCADE`. Удаление оффера не должно вычищать позиции из уже
-оформленных исторических заказов.
-
-### N+1: до и после
-
-`npm run demo:nplus1`. Граф `Order → OrderProduct → ProductOffer → Product` — три уровня связей.
-
-| Стратегия | N=5 | N=10 | Растёт с N |
-|---|---|---|---|
-| наивно (запрос в цикле) | 26 | 51 | **да** |
-| `relations` (JOIN) | 2 | 2 | нет |
-| `relationLoadStrategy: 'query'` | 5 | 5 | нет |
-| `leftJoinAndSelect` | 2 | 2 | нет |
-
-Наивная стратегия даёт `1 + N + 2 × (позиции)` запросов, и при удвоении выборки число
-удваивается — это и есть N+1, в коде он не виден, виден только в логе SQL (скрипт его
-печатает построчно).
-
-Про «2, а не 1» у JOIN-стратегий: в замере стоит `take`, а пагинация вместе с JOIN'ом
-заставляет TypeORM сначала отдельным запросом выбрать id нужных заказов и только потом
-джойнить — иначе `LIMIT` резал бы строки джойна, а не заказы. Без `take` это был бы
-ровно 1 запрос. Важно, что число не зависит от N.
-
-### Repository или QueryBuilder
-
-Repository (`find`, `findOne`, `save`) — везде, где результат это сущности или их граф:
-CRUD, выборка заказа с позициями, seed. QueryBuilder — там, где результат сущностью не
-является: агрегаты, `GROUP BY`, оконные функции, наборы колонок из нескольких таблиц.
-Граница простая: если ответ нельзя положить в entity без выдумывания полей — это
-QueryBuilder с `getRawMany()`.
-
-`npm run report` — выторг по категориям: `SUM(COALESCE(discountPrice, price) * quantity)`
-с `GROUP BY` по категории и четырьмя JOIN'ами через `OrderProduct → ProductOffer →
-Product → Category → CategoryTranslation`. Через `find()` это не выражается. Агрегаты
-приходят строками (`COUNT` — bigint, `SUM(numeric)` — numeric) и в `number` не переводятся.
-
-### Идемпотентность seed
-
-`src/seed.ts` детерминирован: ни `random()`, ни `Date.now()`, каждая строка ищется по
-естественному ключу (`slug`, `email`, `(sellerId, sku)`, `publicId`, `dedupeKey`) и
-создаётся, только если её нет. Проверка:
-
-```bash
-npm run seed && npm run seed
-docker compose exec -T db psql -U root -d api -Atc \
-  'SELECT (SELECT count(*) FROM "Category") || \'/\' || (SELECT count(*) FROM "Product") || \'/\' ||
-          (SELECT count(*) FROM "ProductOffer") || \'/\' || (SELECT count(*) FROM "Order") || \'/\' ||
-          (SELECT count(*) FROM "OrderProduct") || \'/\' || (SELECT count(*) FROM "Transaction") || \'/\' ||
-          (SELECT count(*) FROM "BackgroundJob")'
-# 6/8/10/10/20/10/10 — одинаково после первого и после второго прогона
-```
-
-`Transaction` и `BackgroundJob` заводятся по одному на заказ: `Transaction` — снимок
-оплаты (`status = SUCCESS`, если статус заказа уже в числе «оплачен/отгружен/доставлен/
-завершён», иначе `PENDING`), `BackgroundJob` — задача обработки этого заказа с
-`dedupeKey = order:<publicId>` — тем же ключом идемпотентности, что и у самого заказа.
-
-### Файлы
-
-| Файл | Назначение |
-|---|---|
-| `src/entities/` | 16 entities (14 из ДЗ #12 + `Transaction`, `BackgroundJob`) + enum-типы и transformer для денег |
-| `src/migrations/` | `InitSchema` + диф-миграция (`quantity`, `Transaction`, `BackgroundJob`) |
-| `src/data-source.ts` | DataSource: `synchronize: false`, параметры только из `process.env` |
-| `src/seed.ts` | детерминированный идемпотентный seed |
-| `src/demo-nplus1.ts` | демо N+1 «до/после» со счётчиком запросов |
-| `src/query-count.logger.ts` | Logger, считающий отправленные в базу запросы |
-| `src/report.ts` | отчёт через `createQueryBuilder().getRawMany()` |
-| `scripts/with-secrets.sh` | обёртка «команда с секретами из хранилища» |
-
----
-
-## Конкурентность (ДЗ #14)
-
-Три сценария, каждый завершается с кодом 0 только если инварианты сошлись —
-скрипты проверяют их сами, глазами сверять числа не нужно.
-
-```bash
-npm run demo:race      # 50 параллельных checkout-ов на товар с остатком 10
-npm run demo:workers   # воркер-пул через FOR UPDATE SKIP LOCKED
-npm run demo:retry     # повтор транзакции на 40001
-```
-
-### Числа из своих запусков
-
-| Сценарий | Что мерилось | Результат |
-|---|---|---|
-| `demo:race` | попыток / успешных / финальный stock / строк с stock < 0 | **50 / 10 / 0 / 0**, 40 отказов `InsufficientStockException`, 111–330 мс |
-| `demo:workers` | 24 задачи, 4 воркера, по 40 мс на задачу | распределение **6 / 6 / 6 / 6**, обработано дважды **0**, **297 мс** против 960 мс последовательно (×3.2) |
-| `demo:workers` (чистая БД, в очереди ещё 12 задач из seed) | 36 задач, 4 воркера | **9 / 9 / 9 / 9**, дважды **0**, **402 мс** против 1440 мс (×3.6) |
-| `demo:retry` | 5 конкурентных read-modify-write под REPEATABLE READ | **10 повторов**, все `40001`, финальное `quantity` = 5 = 0 + 5 × 1 |
-
-`demo:race` устойчив к повторным запускам: фикстура каждый раз выставляет остаток
-ровно в 10, поэтому «успешных 10» — это результат, а не совпадение. Отдельно
-проверено, что скрипт ловит oversell, а не всегда печатает галочки: при снятой
-проверке `quantity >= $n` (и снятом CHECK, который её дублирует на уровне БД)
-тот же скрипт даёт **50 успешных, финальный stock −40, одну строку с
-отрицательным остатком и exit 1**.
-
-### Оптимистично-атомарный UPDATE против pessimistic FOR UPDATE
-
-В checkout-е используются оба инструмента — на разных данных, и это не
-непоследовательность, а следствие того, что данные разной формы.
-
-**Остаток товара — атомарный `UPDATE … WHERE quantity >= $n RETURNING`**
-(`src/product-offer/repository/product-offer.repository.ts`). Остаток — один
-счётчик в одной колонке, и вся бизнес-проверка («хватает ли») выражается тем же
-предикатом, что и защита от гонки. Раз так, проверять и списывать отдельными
-операторами незачем: условие уезжает в `WHERE` того же `UPDATE`, окна между
-проверкой и записью не остаётся физически, а ноль строк в `RETURNING` — это
-готовый ответ «не хватило», для которого не нужен ни повторный `SELECT`, ни
-доверие к прочитанному ранее значению. Дополнительный бонус — под
-`READ COMMITTED` Postgres, упёршись в чужой лок строки, дожидается его снятия и
-**перепроверяет `WHERE` на уже обновлённой версии строки**, так что второй
-покупатель видит новый остаток, а не тот, что был на старте его транзакции.
-`SELECT … FOR UPDATE` здесь дал бы тот же результат, но лишним раундтрипом и с
-локом, взятым раньше, чем он нужен.
-
-**Баланс покупателя — `SELECT … FOR UPDATE` по строке `User`**
-(`src/account/repository/account.repository.ts`). Здесь одним атомарным `UPDATE`
-не обойтись, потому что баланса как колонки не существует: он выводится
-агрегатом по журналу проводок `Transaction`
-(`SUM(DEPOSIT) − SUM(PAYMENT|WITHDRAWAL)` по успешным). Списание — это `INSERT`
-новой проводки, и «хватает ли денег» — предикат не над изменяемой строкой, а над
-набором строк, которого в момент вставки ещё нет. Такое условие в `WHERE`
-вставки не положишь; сериализовать конкурентные списания одного пользователя
-может только лок на чём-то одном, общем для них всех — на строке владельца
-журнала.
-
-Порядок захвата локов в `OrderService.create` фиксирован — сначала строки
-`ProductOffer` по возрастанию `id`, потом строка `User`, — и встречного порядка
-в коде нет ни у кого. Поэтому дедлок не «маловероятен», а невозможен по
-построению. По той же причине резерв нескольких позиций идёт отдельными
-`UPDATE` в порядке `id`, а не одним оператором на все строки: в одном операторе
-порядок захвата локов выбирает планировщик, и два заказа с пересекающимися
-позициями могут взять их в разном порядке — это `40P01` на ровном месте.
-
-### Транзакционность checkout
-
-Все четыре шага — резерв остатка, списание с баланса, `INSERT` заказа с
-позициями, постановка задачи на post-processing — идут в **одной** транзакции
-(`@Transactional()` на `OrderService.create`, `src/order/service/order.service.ts`).
-Транзакция живёт на одном соединении из пула (`dataSource.transaction(...)`
-внутри адаптера), а не раскидывается по `BEGIN`/`COMMIT` в разные соединения.
-
-Проверок вида `if (offer.quantity >= item.quantity)` в JS в этом пути нет
-намеренно: любая такая проверка — это окно между `SELECT` и `UPDATE`. Решение
-принимает БД внутри самого `UPDATE`, код только читает, сколько строк вернулось.
-
-Отсюда же «заказов-сирот не существует»: недостаток товара или денег бросает
-исключение, транзакция откатывается целиком, и заказ, списание и задача исчезают
-вместе. `demo:race` проверяет это не на слово — он сверяет, что создано ровно
-столько заказов, сколько было успехов, столько же списаний, и что сумма позиций
-в заказах совпадает со списанным со склада остатком.
-
-Про пул соединений: 50 параллельных клиентов на пуле по умолчанию (10 соединений
-у `pg`) — это 50 транзакций, вежливо стоящих в очереди пула. На результат это не
-влияет, потому что узкое место всё равно строка товара: конкуренты за неё
-сериализуются локом, а не пулом. Ни одному checkout-у не нужно второе соединение,
-пока он держит первое, поэтому взаимной блокировки на пуле возникнуть не может.
-
-### Воркер-пул и SKIP LOCKED
-
-`claimNext` (`src/background-job/repository/background-job.repository.ts`) берёт
-следующую задачу запросом `SELECT … FOR UPDATE SKIP LOCKED` — через
-QueryBuilder это `setLock('pessimistic_write')` + `setOnLocked('skip_locked')`.
-Без `SKIP LOCKED` второй воркер встал бы в очередь за первым на ту же строку и
-пул из четырёх работал бы со скоростью одного.
-
-Транзакция держится открытой **всё время обработки** задачи, а не закрывается
-сразу после claim: лок снимается только на `COMMIT`, поэтому «упал воркер —
-задачу подберёт другой» получается бесплатно. Если процесс умрёт на середине,
-транзакция не закоммитится, лок исчезнет вместе с соединением, и задача вернётся
-в `QUEUED` сама — без отдельного cron-а «отпусти зависшие». Статус `done` и
-результат работы пишутся одним оператором и коммитятся вместе с самой работой,
-так что разъехаться они не могут.
-
-Пустой результат `SKIP LOCKED` означает «свободных нет **прямо сейчас**», а не
-«очередь пуста»: оставшиеся строки могут быть просто залочены соседями. Поэтому
-воркер на пустом ответе не выходит, а переспрашивает счётчик по статусам
-(`countPending`) и останавливается, только если в `QUEUED` и `PROCESSING` не
-осталось ничего (`src/background-job/worker/worker-pool.service.ts`).
-
-«Ровно один раз» доказывает колонка `processedCount` **в самой строке задачи**, а
-не счётчик в памяти скрипта: счётчик в памяти доказывал бы только то, что скрипт
-умеет считать. `demo:workers` печатает `обработано дважды: 0` по результату
-запроса `count(*) FILTER (WHERE "processedCount" > 1)`.
-
-Тот же пул работает и как долгоживущий процесс: `npm run worker` (размер пула —
-`WORKER_POOL_SIZE`). Несколько таких процессов можно запускать параллельно —
-разводит их по разным задачам не код, а `SKIP LOCKED`.
-
-### Почему retry ловит всего два кода
-
-`DEADLOCK_ERROR_CODES = { '40P01', '40001' }`
-(`src/generic/db/typeorm-retry.adapter.ts`). Это единственные два состояния, в
-которых Postgres откатывает транзакцию, **заранее зная, что виновата не она
-сама**, а чужая конкурентная транзакция: `40001` (`serialization_failure`) и
-`40P01` (`deadlock_detected`). Тот же запрос на тех же данных, запущенный ещё
-раз, имеет все шансы пройти — повтор здесь штатная часть протокола, а не «а вдруг
-повезёт».
-
-Всё остальное повторять бессмысленно или опасно:
-
-- `23505`, `23503`, `23514` (нарушения unique / FK / CHECK) детерминированы —
-  второй раз упадут ровно так же, повтор только удвоит нагрузку;
-- `55P03` (`lock_not_available`), `57014` (`query_canceled`) означают, что ждать
-  не разрешили; это решение вызывающего, а не сбой, и повтор его отменяет;
-- ошибки соединения повторять вслепую нельзя вообще: транзакция могла
-  закоммититься **до** обрыва, и повтор выполнит бизнес-операцию дважды.
-
-Проверка идёт по SQLSTATE, а не по тексту сообщения и не по `instanceof`: текст
-зависит от локали сервера, а класс ошибки у драйвера один на все сбои запроса.
-
-Повторяется транзакция **целиком, вместе с чтениями**. Повтор одной записи по
-значению, прочитанному в прошлой попытке, — это тот же lost update, только с
-ретраем в стектрейсе: значение уже устарело. Backoff экспоненциальный и с
-джиттером — без джиттера все проигравшие просыпаются одновременно и сталкиваются
-снова.
-
-`maxAttempts: 10` в `DBModule` выбрано не «с запасом»: под конкурентной нагрузкой
-проигравшие выбывают по одной за раунд, и последней из пяти соперниц нужно
-четыре повтора только чтобы дойти до своей очереди — что и видно в выводе
-`demo:retry` (`повтор 4/9`). Если конфликта нет, лишние попытки ничего не стоят.
-
-### Что появилось в схеме
-
-Очередь задач (`BackgroundJob`) заведена ещё диф-миграцией ДЗ #13; ДЗ #14
-добавляет к ней миграцией — не `synchronize` —
-`src/migrations/1789405980915-AddJobQueueProcessing.ts`:
-
-- `processedCount` (`integer NOT NULL DEFAULT 0` + `CHECK >= 0`) — счётчик
-  доведённых до конца обработок в самой строке;
-- `processedBy` (`varchar(64)`) — кто взял задачу: и распределение по воркерам в
-  демо, и ответ на вопрос «на ком зависла задача в `PROCESSING`» в проде;
-- частичный индекс `BackgroundJob_queue_idx (type, createdAt) WHERE status = 'QUEUED'`
-  — ровно под claim-запрос: строки в других статусах воркеру не нужны никогда,
-  поэтому partial index не тащит их в себе и не перестраивается, когда задача
-  уходит в `READY`.
-
-`migrate:revert` для этой миграции проверен и возвращает таблицу к состоянию ДЗ #13.
-
-### Файлы ДЗ #14
-
-| Файл | Назначение |
-|---|---|
-| `src/order/service/order.service.ts` | checkout в одной транзакции: резерв, списание, заказ, задача |
-| `src/product-offer/repository/product-offer.repository.ts` | атомарный резерв остатка `UPDATE … WHERE quantity >= $n RETURNING` |
-| `src/account/repository/account.repository.ts` | баланс по журналу проводок под `FOR UPDATE` на строке `User` |
-| `src/background-job/repository/background-job.repository.ts` | claim через `FOR UPDATE SKIP LOCKED`, `processedCount` |
-| `src/background-job/worker/worker-pool.service.ts` | пул воркеров, транзакция открыта на время обработки |
-| `src/generic/db/typeorm-retry.adapter.ts` | повтор транзакции на `40001` / `40P01` с backoff, подключённый ко всем `@Transactional()` |
-| `src/demo-race.ts`, `src/demo-workers.ts`, `src/demo-retry.ts` | три демо-сценария с самопроверкой инвариантов |
-| `src/demo/fixtures.ts` | идемпотентные фикстуры: демо-товар с заданным остатком, покупатели с избыточным балансом |
-| `src/worker.ts` | долгоживущий воркер-процесс (`npm run worker`) |
-| `src/migrations/1789405980915-AddJobQueueProcessing.ts` | `processedCount`, `processedBy`, частичный индекс очереди |
-
----
-
-## Visualizing the spec
-
-```bash
-npm run spec:docs
-```
-
-Generates `docs.html` (Redoc) with interactive documentation — open it in a browser.
-
-## Install
-
-```bash
-npm install
-```
-
-## Running the API (NestJS)
-
-```bash
-npm run start:dev          # watch mode
-npm run test               # unit tests (vitest)
-npm run test:integration   # repository tests against a real Postgres (testcontainers)
-npm run test:e2e           # e2e tests (full Nest app, supertest, real Postgres)
-npm run test:contract      # Pact consumer test — produces pacts/*.json
-npm run verify:provider    # Pact provider verification against the broker (real app, real Postgres)
-```
-
-### Integration & e2e tests
-
-`test:integration` and `test:e2e` each spin up a single `postgres:16-alpine`
-container via `testcontainers`/`@testcontainers/postgresql` for the whole
-suite run, apply the three migrations from `src/migrations/*.ts` directly
-(no build step needed), then point the app at it via env vars + `SKIP_VAULT=1`
-(`test/support/container-lifecycle.ts`, `test/support/env.ts`) — the same
-mechanism the Grading recipe above uses.
-
-**Isolation strategy: `TRUNCATE ... RESTART IDENTITY CASCADE` after every
-test**, not a per-test transaction and not a container per test file:
-
-- A wrapping-transaction-then-ROLLBACK strategy doesn't fit here — the app's
-  own `@Transactional()` decorator (`@nestjs-cls/transactional`) opens its own
-  real transaction per call, and `BackgroundJobRepository.claimNext` relies on
-  row locks (`SKIP LOCKED`) that only make sense against committed rows. Both
-  would behave differently, or deadlock, if forced to run nested inside an
-  outer test transaction.
-- A container per test file is correct but far more expensive: starting
-  Postgres is the one real cost in this suite, and it buys no isolation that
-  a table truncate doesn't already give.
-- `TRUNCATE` after each test (`test/support/isolation.ts`) walks
-  `pg_tables` generically and resets identities, so the suite is green on
-  repeated runs with no manual cleanup, and it doesn't need updating when the
-  schema grows.
-
-Integration tests live in `test/integration/*.integration-spec.ts` and
-exercise `BackgroundJobRepository` and `OrderRepository` directly (unique/FK
-constraint violations, `claimNext`'s `SKIP LOCKED` behaviour, and
-`findByIdOrFail`'s JOIN across `orderRecipient`/`items`). The e2e test in
-`test/e2e/order.e2e-spec.ts` boots the real `AppModule` with no provider
-overrides and drives `POST /order` → `GET /order/:id` over HTTP with
-`supertest`, plus a `400` from the global `ValidationPipe` and a `404` for a
-missing order. `test/support/builders.ts` has the test data builders
-(`aUser`, `aProductOffer`, ...) used by both.
-
-### Contract test (Pact, option A — consumer-driven)
-
-Lives in `test/contract/`:
-
-- `consumer.pact.test.mjs` — plain `node:test` (no DB, no Nest), the imagined
-  frontend (`marketplace-web`) describes one interaction —
-  `GET /product/{id}` under the state `product 1 exists in category
-  "phones"` — against a Pact mock server, producing `pacts/*.json`. The
-  path and response shape match `GET /product/{id}` in
-  `openapi/openapi.yaml` (`ProductDetailEnvelope`: `{ data: { product,
-  breadcrumbs }, error: null }`, `product.offers` is an Amazon/eBay-style
-  array of per-seller offers).
-- `provider.pact.test.ts` — runs under its own Vitest config
-  (`vitest.config.contract.ts`, `npm run verify:provider`) because it needs
-  the real Nest DI container (decorators), which the plain `node:test`
-  runner can't transform. It boots the **real** `AppModule` with
-  `NestFactory.create` + `app.listen(0)` against the same kind of
-  `testcontainers` Postgres as the integration/e2e suites, defines a
-  `stateHandlers['product 1 exists in category "phones"']` that truncates
-  the DB and seeds a real Category → Brand → Product → ProductOffer chain
-  via the builders, then runs Pact's `Verifier` against the pact **pulled
-  from the broker** (`pactBrokerUrl` + `consumerVersionSelectors: [{ latest:
-  true }]`, `publishVerificationResult: true`). A green run means the
-  contract, the real HTTP handler, and a real Postgres row all agree — and
-  the result is recorded on the broker against this commit's SHA
-  (`providerVersion`).
-- `GET /product/{id}` itself (`src/product/`) is a small read-only module
-  built from entities that already existed (`Product`, `*Translation`,
-  `Brand`, `Category`, `ProductOffer`) — no new migration. It uses its own
-  `{ data, error }` envelope + `application/problem+json` 404s
-  (`ProblemJsonFilter`), scoped to this controller only, since that's the
-  contract this endpoint has to honor — `OrderController`'s plain JSON
-  error style is untouched.
-
-npm scripts (fixed names, matched by the grading rubric):
-
-```bash
-npm run test:contract     # consumer only — produces pacts/*.json
-npm run verify:provider   # provider verification against the broker, publishes the result
-npm run pact:publish      # publishes pacts/*.json to the broker under this commit's SHA
-npm run pact:can-i-deploy # fails (exit 1) unless both pacticipants are verified-deployable
-```
-
-**Pact Broker.** `docker compose up -d --wait pact-broker` starts a real OSS
-Pact Broker (+ its own Postgres) locally, matching the same
-`cp secrets/*.example` pattern as the app's own DB:
-
-```bash
-cp secrets/pact_broker_password.txt.example secrets/pact_broker_password.txt
-docker compose up -d --wait pact-broker
-export PACT_BROKER_URL=http://127.0.0.1:9292 PACT_BROKER_TOKEN=changeme
-npm run test:contract && npm run pact:publish && npm run verify:provider && npm run pact:can-i-deploy
-```
-
-- **`PACT_BROKER_URL` and `PACT_BROKER_TOKEN` are the only two broker settings
-  read from `process.env`** — never hardcoded. `PACT_BROKER_URL` defaulting to
-  `http://127.0.0.1:9292` is fine to bake in as a fallback (not a secret, see
-  `test/contract/provider.pact.test.ts`); the token always comes from outside
-  the code — locally from the ДЗ #11 secret store via
-  `bash scripts/with-secrets.sh dev npm run verify:provider`, in CI from a
-  GitHub secret (`.github/workflows/contract.yml`).
-- **OSS Pact Broker only supports HTTP Basic Auth**, not a bearer-token
-  endpoint (verified against the real `pactfoundation/pact-broker` image —
-  see `scripts/pact-publish.sh`). So `PACT_BROKER_TOKEN` is used as the Basic
-  Auth *password*; the *username* (`ci`) is a fixed, non-secret constant —
-  exactly the "constants in code are fine, the address and token are the
-  secrets" split from the brief.
-- `scripts/pact-publish.sh` / `scripts/pact-can-i-deploy.sh` explicitly
-  `unset PACT_BROKER_TOKEN` before invoking the `pact-broker` CLI binary
-  (`@pact-foundation/pact-cli`): that binary *also* auto-binds a
-  `--broker-token` (bearer) flag to the same env var name, and sending both
-  Basic and Bearer auth at once makes the OSS broker reject the request with
-  `400` — confirmed by running the whole pipeline against a real broker
-  container. `verify:provider` doesn't need this workaround since it calls
-  the JS `Verifier` class directly (`pactBrokerUsername`/`pactBrokerPassword`
-  options), not the CLI binary.
-- `DATABASE_URL` for the app's own DB in tests is a separate concern and
-  deliberately doesn't go through the secret store at all: `testcontainers`
-  hands it out at runtime (see "Integration & e2e tests" above) — the secret
-  store stays the source of truth for the app's normal runs (Grading recipe),
-  not for tests.
-
-**CI** (`.github/workflows/contract.yml`) runs a single `contract` job: an
-ephemeral sqlite-backed `pact-broker` service container (no separate DB
-service — no startup-ordering race to manage), then
-`test:contract → pact:publish → verify:provider → pact:can-i-deploy` in
-order, with `PACT_BROKER_TOKEN` coming from a GitHub secret. `can-i-deploy`
-exits non-zero when the two pacticipants aren't both verified-deployable for
-this SHA, which fails the job.
-
-Every Vitest config (`vitest.config*.ts`) pins `reporters: ['default']`:
-Vitest — like Jest — can pick a different default reporter depending on the
-environment it detects (TTY vs CI vs piped output), which would make a
-passing suite print differently depending on who runs it. Pinning the
-reporter keeps `npm run test`/`test:integration`/`test:e2e`/`verify:provider`
-output identical everywhere.
-
-## Configuration
-
-Environment variables are validated at startup with zod
-(`src/generic/environment/environment.schema.ts`) — the app exits
-immediately with a validation error if any are missing or invalid.
-
-| Variable  | Required | Default | Description                          |
-|-----------|----------|---------|---------------------------------------|
-| `PORT`    | no       | `3000`  | HTTP port the Nest app listens on     |
-| `DBHOST`  | yes      | —       | Postgres host                         |
-| `DBPORT`  | no       | `3000`  | Postgres port (host-mapped, see `docker-compose.yml`) |
-| `DBUSER`  | yes      | —       | Postgres role/user                    |
-| `DBNAME`  | yes      | —       | Postgres database name                |
-| `WORKER_POOL_SIZE` | no | `4` | Сколько воркеров поднимает `npm run worker` |
-
-Секрет подключения к базе живёт **в хранилище секретов из ДЗ #11**, а не в env-файле:
-пароль `DBPASSWORD` `SecretManagerService` читает из Infisical (окружения `dev` и
-`prod`), остальные параметры подключения — обычные несекретные переменные выше.
-Код подключения в ДЗ #12 не менялся.
-
-Дев-креденшелы контейнера Postgres — отдельная история: они не секрет и лежат
-дефолтами прямо в `docker-compose.yml`, чтобы база поднималась из свежего клона.
-
-`.env.example` mirrors the schema and is checked against it in CI/locally:
-
-```bash
-npm run check:env   # fails with exit 1 if .env.example drifts from the schema
-```
-
-### Running locally
-
-```bash
-cp .env.example .env                        # fill in real values
-
-docker compose up -d --wait db              # start Postgres (дефолты уже рабочие)
-npm install
-npm run start:dev                           # watch mode
-```
-
-### Rotating the database password
-
-```bash
-npm run rotate:db-password
-```
-
-
-
-This connects to Postgres with the current password from
-`secrets/db_password.txt`, runs `ALTER USER ... PASSWORD`, writes the new
-password back to that file (atomically), and terminates any other open
-sessions for that role so nothing keeps running on the old credential. The
-app itself needs no restart — `DBService` reads the password file fresh on
-every new pool connection and has a `pool.on('error', ...)` handler so a
-terminated idle connection is logged and replaced instead of crashing the
-process.
-
-## Realtime order status (HM-18)
-
-The status endpoint is `PATCH /orders/:id/status` with `{ "userId": <buyerId>, "status": "preparing" }`. The buyer ID is a homework-only ownership hint, not authentication. SSE is available at `GET /orders/:id/events`; it accepts an optional `userId` query parameter for the same ownership check and replays buffered events after `Last-Event-ID` (the in-memory history retains the most recent 100 events per order).
-
-Build the compiled app before starting it; this project relies on emitted decorator metadata and does not run its server through `tsx`:
-
-```bash
 npm run build
 npm run migrate
 npm run seed
-npm run start
+node dist/main.js
 ```
 
-Once the API is listening on port 3000, run the two-client Socket.IO demo with seeded order and buyer IDs:
+- `--wait` matters: without it `docker compose up -d` returns before Postgres and RabbitMQ accept connections, and `migrate` fails with `Connection terminated unexpectedly`. RabbitMQ's healthcheck is `rabbitmq-diagnostics -q check_running`.
+- Postgres is reached through pgbouncer (`db-bouncer`), which is what `DBPORT` points at.
+- Name the services explicitly: the compose file also contains the Infisical stack, which needs credentials of its own.
+- `kafka` is a single KRaft node (broker and controller in one process) on `localhost:${KAFKA_PORT:-9092}`; containers reach it at `kafka:29092`. Add `kafka-ui` to the command for Kafka UI on `localhost:${KAFKA_UI_PORT:-8090}`. Automatic topic creation is off: the app creates the topics it owns at startup, like the RabbitMQ exchanges, so a typo in a topic name fails instead of creating a new topic.
+- `npm run build` is required before `migrate`, `seed` and starting the app: they run the compiled `dist/`. The build compiles the contract packages first, then the app.
+
+## Architecture
+
+### Module layout
+
+```
+src/<domain>/
+  controller/      HTTP controllers (input → service/handler, @ResponseDto)
+  gateway/         RabbitMQ adapters: @RabbitRPC / @RabbitSubscribe, envelope + payload validation, ack/nack
+  command-handler/ one operation each, execute(), uses repositories directly
+  service/         reusable domain logic and the <Domain>Topology service
+  repository/      the only layer that touches TypeORM (TransactionHost per method)
+  entity/          TypeORM entities; they implement contract interfaces
+  enum/            names the module owns: queues, DLX, DLQ, inbox consumers
+```
+
+### Placing an order (saga)
+
+`OrderPlaceCommandHandler.execute` runs placement as a saga instead of one database transaction, because stock and money live in other services:
+
+1. **Commit the order as `pending_payment`** in its own short transaction (recipient, phone, address, order, items).
+2. **Reserve stock**: RPC `seller-offer.stock.reserve`. Rejected → `422`, order `canceled`.
+3. **Charge**: RPC `account.customer.charge`. Rejected → release the stock, `422`, order `failed_payment`.
+4. **Mark `paid`.**
+
+Any other failure after step 1 compensates whatever was already done: `account.customer.refund` if a charge was sent, `seller-offer.stock.release` if stock was reserved. The order is then marked `canceled` and the error is rethrown. No database connection is held while waiting for an RPC.
+
+### Stock: on hand + reserved
+
+`SellerOffer.quantity` is stock on hand, `SellerOffer.reservedQuantity` is what active reservations hold, and **available = `quantity - reservedQuantity`**. `CHECK (0 <= reservedQuantity <= quantity)` guards it in the database.
+
+Each reservation is a `StockReservation` row keyed by `(orderPublicId, offerId)` with a status (`reserved`, `confirmed`, `fulfilled`, `released`). Reserving inserts the row with `ON CONFLICT DO NOTHING` and, in the same statement, increments `reservedQuantity` only `WHERE quantity - "reservedQuantity" >= $n`. A redelivered request therefore holds stock once; releasing moves active rows to `released` and subtracts their quantity once.
+
+### Money: balance + ledger
+
+`Account(customerId, balance)` is the current balance; `Transaction` is the append-only ledger (`DEPOSIT`, `PAYMENT`, `WITHDRAWAL`, `REFUND`) with an FK to `Account`. Every movement writes both in one transaction. A charge is a single guarded statement, `UPDATE "Account" SET balance = balance - $2 WHERE "customerId" = $1 AND balance >= $2 RETURNING`, so two concurrent charges can never overdraw. The invariant is `Account.balance = SUM(ledger)` per customer; the seed recomputes accounts from the ledger.
+
+Money is `numeric(12,2)` and stays a string in TypeScript (`moneyTransformer`): converting to `number` would turn an exact decimal into a `double`.
+
+### Idempotency
+
+Delivery over RabbitMQ is at-least-once, so every consumer makes its effect safe to repeat:
+
+- **Natural key where the effect has one**: stock reservations (`(orderPublicId, offerId)`).
+- **Per-service inbox where it doesn't**: account's `AccountInbox(consumer, messageId)`. `processOnce` inserts the row and runs the effect in the same transaction only if the row was new. A rejected charge rolls its row back, so a skipped duplicate is always a past success. A refund is applied only if the charge's inbox row exists. Inboxes are never shared between services.
+
+### Messaging
+
+- **CloudEvents 1.0, structured mode**: the whole event is the JSON body, content type `application/cloudevents+json`. The stable `id` is the dedup key.
+- **Ownership**: an event belongs to its producer; a command or request belongs to its receiver (`seller-offer.stock.reserve` lives under `seller-offer/` in the contracts). A request with a reply is `XRequest` (`RESPONSE_TYPE` = `TYPE` + `.response`), a fire-and-forget instruction is `XCommand`.
+- **Topology**: one topic exchange per owner (`seller-offer.commands`, `account.commands`, listed in `TopicEnum`). Each consumer names its own queue `<consumer>.<message>`, DLX `<consumer>.dlx`, DLQ `<queue>.dlq`, dead-letter routing key = queue name, all quorum queues. Each module's `…TopologyService` declares its DLX/DLQ and re-declares them on reconnect.
+- **Publishing**: confirm channel, `persistent`, `mandatory`, plus a `return` listener that logs unroutable messages.
+- **Consuming**: manual ack after the effect. A message that can never succeed (wrong `specversion`/`type`, invalid ids, invalid payload) is `Nack(false)` → DLQ with reason `rejected`; transient failures are retried.
+- There is a single `RabbitMQModule.forRootAsync` (`src/generic/rabbitmq/rabbitmq.module.ts`); a second registration would silently share one connection with the wrong config.
+
+### Events (Kafka)
+
+RabbitMQ keeps the commands and request/reply of the saga: work for one receiver, acked or dead-lettered per message. Kafka carries domain events, facts that already happened, kept in a log that any number of consumers can read and replay at their own pace.
+
+| Topic | Producer | Events | Consumer groups |
+|---|---|---|---|
+| `identity.events` (3 partitions, kept forever) | identity | `identity.registered` after a registration commits | `user.profile` |
+| `user.events` (3 partitions, kept forever) | user | `user.created` after the user row commits | `account.provisioning` |
+
+Registration provisions the rest of the person asynchronously:
+
+```
+POST /auth/register ─► Identity ─► identity.registered ─► user.profile ─► User ─► user.created ─► account.provisioning ─► Account(balance 0)
+```
+
+Each step is owned by its context: identity never writes users, user never writes accounts. An account belongs to the user (`Account.customerId` = `User.id`, the id order charges), so account follows `user.created`, not `identity.registered`.
+
+- **Same envelope**: a structured CloudEvent as the JSON value, headers `content-type: application/cloudevents+json` and `ce_type` (the event type, from the CloudEvents Kafka binding, so a consumer can skip types it doesn't handle without parsing the body). `id`, `subject` and `correlationid` are the aggregate's `publicId`, so `id` is stable for the fact and works as a consumer's dedup key.
+- **Events carry the main data**, so a consumer never has to call back: `identity.registered` has `identityId`, `identityPublicId`, `email`, `phoneNumber`, `role`, `createdAt`; `user.created` has `userId`, `userPublicId`, `identityId`, `email`, `phoneNumber`, `firstName`, `lastName`, `language`, `createdAt`. Integer ids are included for now because the cross-context columns (`User.identityId`, `Account.customerId`) are still integers. `data` is built by hand, never the entity.
+- **Key = `subject`**: all events about one identity land on the same partition and stay in order; different identities spread across partitions.
+- **Topics**: `TopicEnum` lists every topic name regardless of broker. `RabbitMqModule` declares only the command exchanges, and `KafkaProducerService` (`src/generic/kafka/`) creates the topics it owns at startup with the admin API (an existing topic is left as it is; replication factor `-1` takes the broker default).
+- **Producer**: `@confluentinc/kafka-javascript` (librdkafka) with idempotence on and `acks: all`, so a retried send never writes a duplicate and a send succeeds only once every in-sync replica has it.
+- **Publish after commit**: register commits the identity, then publishes. A failed publish is logged and registration still answers `201`, because the commit can't be undone. Until an outbox exists, an event can be lost if the process dies or Kafka is down between the commit and the send.
+- **One topic per aggregate, not per event type**: Kafka orders messages only within a partition of one topic, so `identity.registered`, a later `identity.email-changed` and `identity.deleted` for the same identity must share a topic to reach consumers in that order. A stream gets its own topic only when its volume or retention differs (e.g. a per-login event).
+- **Replay instead of losing skipped events**: a consumer commits its offset past events it skips, so a handler added later never sees them in that group. Instead each use case is its own consumer group (`user.profile`, later `user.email-sync`): a new group starts from the earliest offset and replays the whole topic. An existing group can also be rewound (`kafka-consumer-groups.sh --group <group> --reset-offsets --to-earliest --execute --topic identity.events` while it is stopped) and relies on its idempotency for the events it already handled. Either works only while the events still exist, which is why `identity.events` has `retention.ms=-1`.
+- **Topic config is set at creation only**: the client can't read or alter configs, so a change to an existing topic (as for `retention.ms` on a Kafka created before it was added) is a one-off `kafka-configs.sh --entity-type topics --entity-name <topic> --alter --add-config <name>=<value>`.
+- **Consumers** (`KafkaConsumerService`, `src/generic/kafka/`): a context's gateway registers `{ groupId, topic, handle }` (`src/user/gateway/user-identity-events.gateway.ts`, `src/account/gateway/account-user-events.gateway.ts`), and all consumers start once the app has bootstrapped. The gateway skips types it doesn't handle and validates the rest with a zod schema of the fields it needs.
+- **Commit after the effect**: the offset is committed only after `handle` resolves. A thrown error redelivers the same message, so a transient failure (database restarting, Kafka down while user publishes `user.created`) retries until it succeeds. That makes the user → account step reliable without an outbox: if user commits the row but fails to publish, the event is redelivered, the insert is a no-op and the publish is repeated.
+- **Idempotent by natural key**: `User.identityId` is unique and `Account.customerId` is the primary key; both inserts are `ON CONFLICT DO NOTHING`, so a redelivered or replayed event changes nothing.
+- **Dead letters**: a message that can never succeed (not JSON, or failing the schema) is copied to `<group>.dlt` (`user.profile.dlt`, kept forever) with headers `dlt_reason` and `dlt_source` (`topic/partition@offset`), and the offset moves on, so one bad message doesn't block its partition.
+- **`KAFKA_CONSUMERS_ENABLED=false`** runs the app without consumers (an API-only instance). The tests use it everywhere except `registration-provisioning.e2e-spec.ts`, so background inserts can't land after a test truncates its tables.
+
+### Contract packages
+
+Two npm workspaces, transport-agnostic, with folders mirroring `src/<domain>/`:
+
+- `@marketplace/contracts-core`: HTTP request/response interfaces and the enums they use (`OrderStatusEnum`, `CurrencyEnum`, `CountryCodeEnum`, `LanguageEnum`). Inputs and DTOs `implement` these interfaces; ORM entities implement nothing shared.
+- `@marketplace/messaging-contracts`: `CloudEventInterface`, `TopicEnum` and one namespace per message (`TOPIC`, `TYPE`, `SOURCE`, `DataInterface`, `MessageType`, and for requests `RESPONSE_TYPE`, `ResponseMessageType`).
+
+Packages export TypeScript sources for types (so `npx tsc --noEmit` works without building them) and `dist/` for Node. Mapping `TOPIC`/`TYPE` to an exchange and routing key happens only in the app's infrastructure.
+
+## Auth (identity)
+
+| Endpoint | Body | Result |
+|---|---|---|
+| `POST /auth/register` | `{ email?, phone?, password }`, at least one of email or phone | `201` token pair, `409` if the email or phone is taken |
+| `POST /auth/login` | `{ login, password }`; a `login` starting with `+` is an E.164 phone, anything else an email | `200` token pair, `401` |
+| `POST /auth/refresh` | `{ refreshToken }` | `200` new token pair, `401` |
+| `POST /auth/logout` | `{ refreshToken }` | `204`, also for an unknown or already revoked token |
+
+A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
+
+- **Access token**: a 15-minute JWT signed with ES256. Claims: `sub` (the identity's `publicId`, a uuid; the integer id never leaves identity), `role`, `email`, `phone_number` (E.164), `iss: identity-service`, and a `kid` header (the public key's JWK thumbprint). Email and phone are in the token so other contexts don't have to ask identity for them on every request. A JWT is signed, not encrypted: anyone holding it can read these claims.
+- **Asymmetric keys**: only identity reads `JWT_PRIVATE_KEY` and signs. Verifying needs only `JWT_PUBLIC_KEY`, so any service can check a token without being able to mint one. `AccessTokenGuard` (`src/generic/auth/`) accepts only ES256 from `identity-service`, which rules out `alg: none` and HS/RS key confusion, validates the payload with a zod schema, and puts `{ identityPublicId, role, email, phoneNumber }` on the request. Today the public key comes from configuration; the next step towards zero trust is identity publishing it at `/.well-known/jwks.json` and verifiers fetching it from there.
+- **`@Identity()`** (`src/generic/auth/decorator/`) reads those claims in a handler: `@UseGuards(AccessTokenGuard) @Get() me(@Identity() identity: AccessTokenClaimsInterface)`, or `@Identity('identityPublicId') identityPublicId: string` for one field. Without the guard on the route it fails with 500 instead of silently returning `undefined`.
+- **Refresh token**: 32 random bytes, valid for 30 days, stored only as a SHA-256 hash in `IdentitySession`. Every refresh marks the token used and issues a new one in the same session family. The "not used yet" check is an `UPDATE … WHERE "usedAt" IS NULL RETURNING`, so two parallel refreshes can't both win. Presenting a used token again means it was copied, so the whole family is revoked. Logout revokes the family too. Each login starts a new family, so sessions on other devices are unaffected.
+- **Passwords**: argon2id, 8–128 characters, no composition rules (NIST 800-63B). Login answers an unknown login, a wrong password and a deleted identity with the same `401 Invalid login or password`, and hashes a dummy password when the login doesn't exist, so timing doesn't reveal which accounts exist.
+- **Registration** creates the `Identity` (role `user`; a `role` in the body is ignored), and the User and its account follow asynchronously through Kafka (see Events). The user starts with the identity's `email` and `phoneNumber` as contact details. `activatedAt` stays `NULL` until a verification flow exists.
+- **Keys** live in Infisical (`JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, PEM). Generate a pair with `openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt` and `openssl ec -pubout`. Tests generate a fresh pair per run (`test/support/env.ts`).
+- **Seeded logins**: `seller1@example.com`, `buyer1@example.com`, … with the password `marketplace-dev`.
+- **Not done yet**: rate limiting on `/auth/*`, email/phone verification, the JWKS endpoint, cleanup of expired sessions, and a grace window for a client that refreshes twice in parallel (today the second request revokes the session).
+
+## Realtime order status (SSE)
+
+`PATCH /orders/:id/status` with `{ "userId": <buyerId>, "status": "preparing" }` changes a status; `GET /orders/:id/events?userId=<buyerId>` streams `order.status` events as SSE and replays events after `Last-Event-ID` (the most recent 100 per order). The buyer id is an ownership hint, not authentication.
+
+SSE fits one-way notifications: the browser's `EventSource` reconnects by itself and sends `Last-Event-ID`. The history is process-local, so several app instances would need a shared pub/sub or event store behind the stream.
+
+## Secrets
+
+Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` (see `SecretsInterface`). Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.
+
+`npm run rotate:db-password` rotates the database password: it changes it in Postgres, writes `secrets/db_password.txt`, syncs Infisical and terminates the old sessions. With `SKIP_VAULT=1`, re-export `DBPASSWORD` afterwards.
+
+## Database
+
+- **Migrations only**: `synchronize: false`. `synchronize: true` would destroy what TypeORM doesn't model: the `uint` and `amount` domains, the `User.fullName` generated column and the `setUpdatedAt` triggers.
+- **Generated migrations need review**: `migration:generate` also emits unrelated drift (FK renames to hash names, `User.fullName`, and a `DROP DEFAULT` / `SET DEFAULT gen_random_uuid()` pair for every `publicId`). Keep only the statements the change needs, and write a migration by hand when generation would recreate a table.
+- **`onDelete`**: `CASCADE` for compositions that can't exist without their parent (translations, `OrderLine → Order`), `RESTRICT` everywhere else, including all money and order history.
+- **Seed**: `npm run seed` is deterministic and idempotent; every row is looked up by a natural key before it is created, so running it twice gives the same database.
+
+## Testing
 
 ```bash
-API_URL=http://localhost:3000 ORDER_ID_A=1 ORDER_ID_B=2 BUYER_ID_A=3 BUYER_ID_B=4 node scripts/realtime-demo.mjs
-API_URL=http://localhost:3000 ORDER_ID_A=1 BUYER_ID_A=3 node scripts/realtime-demo.mjs --same-room
+npm test                  # unit tests
+npm run test:integration  # repositories against Postgres (testcontainers)
+npm run test:e2e          # the full app over HTTP (testcontainers: Postgres, RabbitMQ, Kafka)
 ```
 
-Set `ORDER_STATUS` to any `OrderStatusEnum` value and `EVENT_TIMEOUT_MS` to change the target status or receive deadline. The first run expects client A to receive the event and client B not to; `--same-room` makes both clients join order A and expects both to receive it.
+Integration and e2e tests start their containers once per run and truncate all tables after every test (`test/support/isolation.ts`), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with.
 
-## Trade-offs: WebSocket vs SSE
+## Configuration
 
-| Criterion | WebSocket | SSE |
-|---|---|---|
-| Channel direction | Bidirectional, client and server | Server-to-client; client commands use HTTP |
-| Reconnect and recovery | Client-managed reconnect; replay needs application support | Browser `EventSource` reconnects and sends `Last-Event-ID`; server replays buffered events |
-| Infrastructure requirements | WebSocket upgrade support and shared Socket.IO adapter for multiple instances | Long-lived HTTP response support and shared event replay state across instances |
-| Cost per event | Framing and protocol state are more involved; efficient for frequent two-way messages | Small UTF-8 text event over HTTP; reconnects are straightforward |
+Validated at startup with zod (`src/generic/environment/environment.schema.ts`); `npm run check:env` fails if `.env.example` drifts from the schema.
 
-For one-way order notifications, I would keep SSE in production because the server only needs to push updates and native `EventSource` reconnects with `Last-Event-ID`. WebSockets are a better fit when clients also need frequent real-time commands or interactive bidirectional traffic. With two app instances, process-local Socket.IO rooms and event buffers split subscribers and replay history; use a shared Socket.IO adapter and shared pub/sub or event store to coordinate delivery and recovery.
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `PORT` | no | `3000` | HTTP port |
+| `DBHOST` | yes | — | Postgres (pgbouncer) host |
+| `DBPORT` | no | `3000` | Postgres (pgbouncer) port |
+| `DBUSER` | yes | — | Postgres user |
+| `DBNAME` | yes | — | Postgres database |
+| `RABBITMQ_HOST` | no | `rabbitmq` | broker host (`localhost` when the app runs outside Docker) |
+| `RABBITMQ_PORT` | no | `5672` | AMQP port (`15672` is the management UI) |
+| `KAFKA_BROKERS` | no | `kafka:29092` | comma-separated Kafka bootstrap servers (`localhost:9092` when the app runs outside Docker) |
+| `KAFKA_CONSUMERS_ENABLED` | no | `true` | `false` starts the app without Kafka consumers |
+| `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
 
-## Async-події через RabbitMQ (ДЗ #19)
-
-Оформление заказа (`POST /order`) публикует событие `order.placed`, а email-консюмер
-подтверждает заказ письмом. Брокер — RabbitMQ 4.3 (`rabbitmq:4.3-management` в
-`docker-compose.yml`), healthcheck — `rabbitmq-diagnostics -q check_running`.
-
-### Топология
-
-| Что | Имя | Кто объявляет |
-|---|---|---|
-| topic-exchange событий | `shop.events` | `RabbitMqModule` (`src/generic/rabbitmq/rabbitmq.module.ts`) |
-| рабочая очередь, quorum | `order` | консюмер (`@RabbitSubscribe` в `OrderEmailGateway`) |
-| binding | `shop.events` → `order` по `order.placed` | консюмер |
-| DLX | `email.dlx` (topic) | `RabbitMqModule` |
-| DLQ, quorum | `email.dlq`, binding `email.dead-letter` | `RabbitMqModule` |
-
-Продюсер (`OrderService`) только публикует в `shop.events` и не знает, кто слушает.
-DLX висит на рабочей очереди аргументами `x-dead-letter-exchange` /
-`x-dead-letter-routing-key`.
-
-### Публикация
-
-- Контракт события: `{ id, type, data, correlationId, createdAt }`. `id` — это
-  `order.publicId`: стабильный ключ, по которому консюмер узнаёт дубль. `data` —
-  отдельно собранный объект, а не ORM-сущность.
-- Канал — confirm-канал (golevelup/amqp-connection-manager открывает его по
-  умолчанию), `await publish()` ждёт `basic.ack` брокера.
-- `mandatory: true` + обработчик `return` в `OrderService.onModuleInit`: сообщение без
-  binding не исчезает молча, а логируется как `unroutable`. Положительный confirm
-  при этом всё равно приходит, поэтому одного confirm мало.
-- `persistent: true` для всех публикаций (`defaultPublishOptions`).
-
-### Консюмер
-
-- `noAck: false`. golevelup отправляет `ack` только после того, как промис хендлера
-  зарезолвился, то есть после коммита эффекта.
-- Ошибка формы события (нет валидного `id` или `data`) — `Nack(false)`: такое
-  сообщение не обработается никогда, поэтому сразу уходит в DLQ (причина `rejected`).
-- Временная ошибка (БД, отправка письма) — `Nack(true)`: повтор.
-
-### prefetch
-
-`prefetchCount: 10` на отдельном канале `email` консюмера: обработка события ≈1 с
-(`EmailService.sendOrderCreated`), значит 10 × 1 с = 10 с ≪ 30 мин `consumer_timeout`,
-а не-ноль не даёт одному консюмеру забрать всю очередь у второго.
-
-### Идемпотентность
-
-Паттерн — Idempotent Consumer / Transactional Inbox. Эффект выражен через
-натуральный ключ: `INSERT INTO "Inbox" ("consumer", "messageId") … ON CONFLICT DO
-NOTHING` (`InboxRepository.createIfAbsent`). `InboxService.processOnce` открывает
-транзакцию, вставляет строку и только если она вставилась, вызывает эффект
-(`EmailService.sendOrderCreated`) — в той же транзакции. Не вставилась — это дубль,
-консюмер логирует `skipped` и подтверждает.
-
-Слои: `OrderEmailGateway` — адаптер RabbitMQ (валидация конверта, результат →
-`ack`/`nack`), `InboxService` — дедуп и граница транзакции, `EmailService` — только
-бизнес, ничего не знает ни о брокере, ни о дублях. Ключ составной
-`(consumer, messageId)`: второй обработчик того же события в email-сервисе получит
-своё имя консюмера и не будет пропускать работу из-за чужой строки. Таблица живёт
-в данных email-сервиса, рядом с эффектом, который она защищает. Хранилище — Postgres, поэтому
-гарантия переживает рестарт и работает между несколькими инстансами (а не `Set` в
-памяти).
-
-### Почему это at-least-once, а не exactly-once
-
-Доставка у RabbitMQ — at-least-once: брокер повторяет всё, на что не получил `ack`,
-а `ack` может не доехать (падение консюмера после эффекта, обрыв сети). Exactly-once
-доставки нет ни у кого. Чтобы *результат* был один, понадобилось три вещи: `ack`
-строго после эффекта (иначе работа теряется), эффект с ключом идемпотентности
-`id` события в Postgres (иначе повтор удваивает эффект) и DLQ для сообщений,
-которые не обработаются никогда (иначе они крутятся вечно). At-least-once доставка
-+ идемпотентный эффект = один результат. Граница честности: дедуп защищает запись в
-БД, а не внешнее письмо — если письмо ушло, а коммит упал, повтор отправит его ещё
-раз. В проде это закрывается ключом идемпотентности у почтового провайдера
-(тот же `id`).
-
-### Демо
-
-Каждое демо поднимает настоящее приложение (`dist/main.js`) дочерним процессом на
-порту `DEMO_APP_PORT` (3109), чистит обе очереди, проверяет, что других консюмеров
-нет, печатает `ключ=значение` и завершается с кодом ≠ 0, если инвариант нарушен.
-
-- `demo:publish` — 5 заказов через `POST /order` (перед этим докидывает остаток
-  оффера и депозит покупателю), считает доставки по логам консюмера, эффекты по
-  `Inbox`, `acked` — по статистике очереди в management API, `prefetch` — у
-  живого консюмера.
-- `demo:dlq` — публикует событие без `data`; консюмер делает `Nack(false)`, демо
-  читает сообщение из `email.dlq` и причину из `x-first-death-reason`.
-- `demo:duplicate` — повторная доставка через **настоящий `kill -9` дочернего
-  процесса-консюмера**: консюмер берёт событие (`noAck: false`), применяет эффект
-  (та же вставка в `Inbox`), и его убивают до `ack`. Брокер возвращает
-  сообщение в очередь, приложение получает его повторно и пропускает как дубль.
-
-Мои прогоны (два подряд, числа совпали):
-
-| Демо | Вывод |
-|---|---|
-| `demo:publish` | `published=5 delivered=5 effect=5 acked=5 work=0 dlq=0 prefetch=10` |
-| `demo:dlq` | `rejected=1 work=0 dlq=1 dlq-reason=rejected effect=0` |
-| `demo:duplicate` | `deliveries=2 effect=1 skipped=1 work=0` |
-
-## Checks (acceptance criteria)
-
-```bash
-# 1. Spec is valid (exit code 0, security-defined is satisfied via security: [])
-npx @redocly/cli lint openapi/openapi.yaml
-
-# 2. Spec size: >=2 resources, >=5 operations, Idempotency-Key required + description >=40 chars
-npx @redocly/cli bundle openapi/openapi.yaml -o spec.json
-node -e "const s=require('./spec.json'),M=['get','post','put','patch','delete'];\
-const ops=Object.entries(s.paths).flatMap(([p,v])=>Object.keys(v).filter(m=>M.includes(m)).map(m=>[p,m]));\
-const idem=ops.flatMap(([p,m])=>s.paths[p][m].parameters??[]).find(x=>x.in==='header'&&/idempotency-key/i.test(x.name));\
-console.log('operations:',ops.length,'· resources:',new Set(Object.keys(s.paths).map(p=>p.split('/')[1])).size);\
-console.log('Idempotency-Key: required =',idem?.required,'· description length =',(idem?.description??'').trim().length)"
-
-# 3. Idempotency-Key is declared
-grep -c 'Idempotency-Key' openapi/openapi.yaml
-
-# 4. Cursor pagination is in the contract
-grep -c 'nextCursor' openapi/openapi.yaml
-
-# 5. problem+json is used for every error
-grep -c 'application/problem+json' openapi/openapi.yaml
-
-# 6. Contract test part (option A): the consumer test produces pacts/*.json
-npm run test:contract
-ls pacts/*.json
-```
-
-All commands pass right after `npm install`, with no extra manual steps.
+Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`) come from Infisical, or from the environment with `SKIP_VAULT=1`.

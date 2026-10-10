@@ -1,6 +1,5 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { Product } from '../../product/entity/product.entity.js';
-import type { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
 
 @Entity('ProductVariant')
 @Index('ProductVariant_productId_idx', ['productId'])
@@ -11,6 +10,9 @@ import type { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.
 export class ProductVariant {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
+
+  @Column({ type: 'uuid', unique: true, default: () => 'gen_random_uuid()' })
+  publicId: string;
 
   @Column({ type: 'integer' })
   productId: number;
@@ -36,7 +38,4 @@ export class ProductVariant {
   @ManyToOne(() => Product, (product) => product.variants, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'productId' })
   product: Product;
-
-  @OneToMany('SellerOffer', (offer: SellerOffer) => offer.variant)
-  offers: SellerOffer[];
 }

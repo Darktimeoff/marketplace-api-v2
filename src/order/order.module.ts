@@ -7,6 +7,7 @@ import { OrderOutbox } from "./entity/order-outbox.entity.js";
 import { OrderOutboxRepository } from "./repository/order-outbox.repository.js";
 import { OrderOutboxRelayService } from "./service/order-outbox-relay.service.js";
 import { OrderNotifyEventsGateway } from "./gateway/order-notify-events.gateway.js";
+import { OrderPlaceMessageService } from "./service/order-place-message.service.js";
 import { OrderRepository } from "./repository/order.repository.js";
 import { OrderRecipientRepository } from "./repository/order-recipient.repository.js";
 import { OrderLineRepository } from "./repository/order-line.repository.js";
@@ -38,6 +39,7 @@ import { KafkaModule } from "../generic/kafka/kafka.module.js";
     OrderOutboxRepository,
     OrderOutboxRelayService,
     OrderNotifyEventsGateway,
+    OrderPlaceMessageService,
     OrderService,
     OrderPlaceCommandHandler,
     OrderAccessService,

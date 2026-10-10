@@ -1,9 +1,8 @@
-import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
-import { AccountCustomerChargeRequest, AccountCustomerRefundCommand, OrderCreatedEvent, OrderFailedEvent, OrderPaidEvent, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
+import { AccountCustomerChargeRequest, StockReserveRequest } from '@marketplace/messaging-contracts';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
 import { OrderLineRepository } from '../repository/order-line.repository.js';
@@ -25,9 +24,8 @@ import { InsufficientStockException } from '../exception/insufficient-stock.exce
 import { BalanceException } from '../exception/balance.exception.js';
 import type { OrderFailureInterface } from '../interface/order-failure.interface.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
+import { OrderPlaceMessageService } from '../service/order-place-message.service.js';
 import type { OrderOutboxCreateEntityInterface } from '../entity/order-outbox.entity.js';
-import { OrderOutboxAggregateTypeEnum } from '../enum/order-outbox-aggregate-type.enum.js';
-import { OrderOutboxBrokerEnum } from '../enum/order-outbox-broker.enum.js';
 
 interface PricedOrderLine {
   item: Omit<OrderLineCreateEntityInterface, 'orderId'>;
@@ -46,6 +44,7 @@ export class OrderPlaceCommandHandler {
     private readonly offers: SellerOfferService,
     private readonly amqpConnection: AmqpConnection,
     private readonly outbox: OrderOutboxRepository,
+    private readonly messages: OrderPlaceMessageService,
   ) {}
 
   async execute(input: OrderCreateInput): Promise<Order> {
@@ -59,8 +58,8 @@ export class OrderPlaceCommandHandler {
       return await this.markPaid(order);
     } catch (error) {
       const compensations = [
-        ...(isChargeSent && !(error instanceof BalanceException) ? [this.toAccountCustomerRefundOutbox(order)] : []),
-        ...(!(error instanceof InsufficientStockException) ? [this.toStockReleaseOutbox(order.publicId)] : []),
+        ...(isChargeSent && !(error instanceof BalanceException) ? [this.messages.toAccountCustomerRefundOutbox(order)] : []),
+        ...(!(error instanceof InsufficientStockException) ? [this.messages.toStockReleaseOutbox(order.publicId)] : []),
       ];
 
       await this.markFailed(order, this.toFailure(error), compensations);
@@ -91,7 +90,7 @@ export class OrderPlaceCommandHandler {
     );
 
     await this.createItems(pricedItems, order.id);
-    await this.outbox.create(this.toOrderCreatedOutbox(order));
+    await this.outbox.create(this.messages.toOrderCreatedOutbox(order));
 
     return order;
   }
@@ -99,7 +98,7 @@ export class OrderPlaceCommandHandler {
   @Transactional()
   private async markPaid(order: Order): Promise<Order> {
     const paid = await this.orderRepository.updateStatusById(order.id, OrderStatusEnum.paid);
-    await this.outbox.create(this.toOrderPaidOutbox(paid));
+    await this.outbox.create(this.messages.toOrderPaidOutbox(paid));
     return paid;
   }
 
@@ -119,7 +118,7 @@ export class OrderPlaceCommandHandler {
       await this.outbox.create(compensation);
     }
 
-    await this.outbox.create(this.toOrderFailedOutbox(failed, failure));
+    await this.outbox.create(this.messages.toOrderFailedOutbox(failed, failure));
   }
 
   private toFailure(error: unknown): OrderFailureInterface {
@@ -204,135 +203,11 @@ export class OrderPlaceCommandHandler {
     };
   }
 
-  private toOrderCreatedOutbox(order: Order): OrderOutboxCreateEntityInterface {
-    const data: OrderCreatedEvent.DataInterface = {
-      orderId: order.id,
-      orderPublicId: order.publicId,
-      userId: order.userId,
-      totalAmount: order.totalAmount,
-      discountAmount: order.discountAmount,
-      currency: order.currency,
-      createdAt: order.createdAt.toISOString(),
-    };
-
-    return {
-      id: randomUUID(),
-      broker: OrderOutboxBrokerEnum.KAFKA,
-      topic: OrderCreatedEvent.TOPIC,
-      aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
-      aggregateId: order.publicId,
-      type: OrderCreatedEvent.TYPE,
-      payload: data,
-    }
-  }
-
-  private toOrderFailedOutbox(order: Order, failure: OrderFailureInterface): OrderOutboxCreateEntityInterface {
-    const data: OrderFailedEvent.DataInterface = {
-      orderId: order.id,
-      orderPublicId: order.publicId,
-      userId: order.userId,
-      status: failure.status,
-      reason: failure.reason,
-      failedAt: order.updatedAt.toISOString(),
-    };
-
-    return {
-      id: randomUUID(),
-      broker: OrderOutboxBrokerEnum.KAFKA,
-      topic: OrderFailedEvent.TOPIC,
-      aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
-      aggregateId: order.publicId,
-      type: OrderFailedEvent.TYPE,
-      payload: data,
-    }
-  }
-
-  private toOrderPaidOutbox(order: Order): OrderOutboxCreateEntityInterface {
-    return {
-      id: randomUUID(),
-      broker: OrderOutboxBrokerEnum.KAFKA,
-      topic: OrderPaidEvent.TOPIC,
-      aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
-      aggregateId: order.publicId,
-      type: OrderPaidEvent.TYPE,
-      payload: this.toOrderPaidData(order),
-    }
-  }
-
-  private toOrderPaidData(order: Order): OrderPaidEvent.DataInterface {
-    return {
-      orderId: order.id,
-      orderPublicId: order.publicId,
-      userId: order.userId,
-      totalAmount: order.totalAmount,
-      discountAmount: order.discountAmount,
-      currency: order.currency,
-      lines: order.lines.map(({ offerId, quantity, unitPrice, unitDiscountPrice }) => ({ offerId, quantity, unitPrice, unitDiscountPrice })),
-      paidAt: order.updatedAt.toISOString(),
-    }
-  }
-
-  private toAccountCustomerRefundOutbox(order: Order): OrderOutboxCreateEntityInterface {
-    const data: AccountCustomerRefundCommand.DataInterface = { customerId: order.userId, amount: order.totalAmount, chargeId: order.publicId };
-
-    return {
-      id: order.publicId,
-      broker: OrderOutboxBrokerEnum.RABBITMQ,
-      topic: AccountCustomerRefundCommand.TOPIC,
-      aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
-      aggregateId: order.publicId,
-      type: AccountCustomerRefundCommand.TYPE,
-      payload: data,
-    }
-  }
-
-  private toStockReleaseOutbox(orderPublicId: string): OrderOutboxCreateEntityInterface {
-    const data: StockReleaseCommand.DataInterface = { orderPublicId };
-
-    return {
-      id: randomUUID(),
-      broker: OrderOutboxBrokerEnum.RABBITMQ,
-      topic: StockReleaseCommand.TOPIC,
-      aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
-      aggregateId: orderPublicId,
-      type: StockReleaseCommand.TYPE,
-      payload: data,
-    }
-  }
-
-  private toStockReserveRequest(id: string, items: OrderCreateInput['items']): StockReserveRequest.MessageType {
-    return {
-      specversion: '1.0',
-      id,
-      source: StockReserveRequest.SOURCE,
-      type: StockReserveRequest.TYPE,
-      time: new Date().toISOString(),
-      datacontenttype: 'application/json',
-      subject: id,
-      correlationid: id,
-      data: { items: items.map(({ offerId, quantity }) => ({ offerId, quantity })) },
-    }
-  }
-
-  private toAccountCustomerChargeRequest(id: string, customerId: Order['userId'], amount: string): AccountCustomerChargeRequest.MessageType {
-    return {
-      specversion: '1.0',
-      id,
-      source: AccountCustomerChargeRequest.SOURCE,
-      type: AccountCustomerChargeRequest.TYPE,
-      time: new Date().toISOString(),
-      datacontenttype: 'application/json',
-      subject: id,
-      correlationid: id,
-      data: { customerId, amount  },
-    }
-  }
-
   private async reserveStockOrFail(order: Order, input: OrderCreateInput): Promise<void> {
     const { data: result } = await this.amqpConnection.request<StockReserveRequest.ResponseMessageType>({
       exchange: StockReserveRequest.TOPIC,
       routingKey: StockReserveRequest.TYPE,
-      payload: this.toStockReserveRequest(order.publicId, input.items),
+      payload: this.messages.toStockReserveRequest(order.publicId, input.items),
       timeout: 5000
     })
 
@@ -351,7 +226,7 @@ export class OrderPlaceCommandHandler {
     const chargeResult = await this.amqpConnection.request<AccountCustomerChargeRequest.ResponseMessageType>({
       exchange: AccountCustomerChargeRequest.TOPIC,
       routingKey: AccountCustomerChargeRequest.TYPE,
-      payload: this.toAccountCustomerChargeRequest(order.publicId, order.userId, order.totalAmount),
+      payload: this.messages.toAccountCustomerChargeRequest(order.publicId, order.userId, order.totalAmount),
       timeout: 5000
     })
 

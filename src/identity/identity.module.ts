@@ -5,6 +5,7 @@ import { IdentitySession } from './entity/identity-session.entity.js';
 import { IdentityOutbox } from './entity/identity-outbox.entity.js';
 import { IdentityOutboxRepository } from './repository/identity-outbox.repository.js';
 import { IdentityOutboxRelayService } from './service/identity-outbox-relay.service.js';
+import { IdentityMessageService } from './service/identity-message.service.js';
 import { SecretManagerModule } from '../generic/secret-manager/secret-manager.module.js';
 import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { AuthController } from './controller/auth.controller.js';
@@ -25,6 +26,7 @@ import { IdentityLogoutCommandHandler } from './command-handler/identity-logout.
     IdentitySessionRepository,
     IdentityOutboxRepository,
     IdentityOutboxRelayService,
+    IdentityMessageService,
     PasswordService,
     TokenService,
     IdentityRegisterCommandHandler,

@@ -203,6 +203,22 @@ Two npm workspaces, transport-agnostic, with folders mirroring `src/<domain>/`:
 
 Packages export TypeScript sources for types (so `npx tsc --noEmit` works without building them) and `dist/` for Node. Mapping `TOPIC`/`TYPE` to an exchange and routing key happens only in the app's infrastructure.
 
+## Outbox та ідемпотентність
+
+The chain the three demos exercise: `POST /order` with an `Idempotency-Key` → `Order` and its `order.created` row in `OrderOutbox`, in one COMMIT → `OrderOutboxRelayService` (`FOR UPDATE SKIP LOCKED`) → Kafka `order.events` (a separate process from Postgres) → the `order.confirmation` consumer group → one `OrderConfirmation` per event, deduplicated through `OrderInbox` (`INSERT … ON CONFLICT DO NOTHING` on `(consumer, messageId)`, the CloudEvent id). The confirmation is a plain insert, so without the inbox a second delivery would write a second row; the inbox row and the confirmation are written in one transaction, so a crash between them can't leave one without the other. The confirmation consumer exists for these demos and is marked `TODO(hw-22)`.
+
+Each demo starts its own copy of the order module (HTTP, relay, consumer) in-process, with the scheduler off so the relay runs exactly when the demo calls it, and uses a fresh random buyer id and key, so earlier runs never leak into its counts. It prints `key=number` lines and exits non-zero if an invariant breaks. `deliveries` and `applied` are counted by wrapping the consumer's handler; the other numbers are read from the database. Stop a running API first: it would join the same consumer group and take some of the deliveries.
+
+| Run | Output | What it shows |
+|---|---|---|
+| `npm run demo:outbox` | `requests=2 accepted=2 orders=1 outbox=1 published=1 deliveries=1 effect=1 processed=1` | two concurrent requests with one `Idempotency-Key` give one order, one event, one effect |
+| `npm run demo:crash-write` | `write-failed=1 orders=0 outbox=0 published=0 deliveries=0 effect=0` | the request crashes right after the outbox row is inserted; the row is rolled back with the order, so nothing is ever published |
+| `npm run demo:crash-relay` | `relay-crashes=1 published-after-crash=0 published=1 deliveries=2 applied=1 effect=1 processed=1` | the relay sends the event, then fails before `UPDATE publishedAt`; the row stays unpublished, the next run sends it again, and the consumer applies it once |
+
+The crashes are simulated, not `kill -9`: `demo:crash-write` makes `OrderOutboxRepository.create` throw after its insert, inside the request's transaction, and `demo:crash-relay` makes `OrderOutboxRepository.markPublished` throw once, after the send and before the `UPDATE`, inside the relay's transaction. That is the exact point a killed process would stop at, and the rollback that follows is what Postgres does when the connection of a killed process goes away.
+
+**Why publish and `UPDATE publishedAt` can't swap places.** With the `UPDATE` first, a crash or a failed send after it leaves a row that says "published" for an event the broker never got: the relay never looks at it again and the event is lost for good, at-most-once delivery. With the send first, the worst a crash can do is send it twice: the row stays unpublished and is sent again, at-least-once delivery, and a duplicate is something the consumer can drop by the event id, while a lost event can't be recovered by anyone. Doing both in one transaction doesn't remove the choice: the broker isn't part of the Postgres transaction, so whatever order they run in, the commit and the send can still disagree, and the relay must pick which way they may disagree. It picks the one the inbox repairs.
+
 ## Auth (identity)
 
 | Endpoint | Body | Result |
@@ -252,6 +268,36 @@ npm run test:e2e          # the full app over HTTP (testcontainers: Postgres, Ra
 ```
 
 Integration and e2e tests start their containers once per run and truncate all tables after every test (`test/support/isolation.ts`), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with.
+
+## Grading
+
+The broker for the outbox demos is Kafka (`KAFKA_BROKERS`, `host:9092`). The app also needs Postgres, RabbitMQ and Temporal running. Values below are the dev credentials from `docker-compose.yml` and `secrets/*.example`; the grader has no secret store, hence `SKIP_VAULT=1`.
+
+```bash
+cp .env.example .env
+cp secrets/db_password.txt.example secrets/db_password.txt
+cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
+docker compose up -d --wait db db-bouncer rabbitmq kafka temporal
+
+export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
+export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
+export KAFKA_BROKERS=127.0.0.1:9092
+export TEMPORAL_ADDRESS=127.0.0.1:7233
+export SKIP_VAULT=1
+
+npm ci
+npm run build
+npm run migrate
+npm run seed
+
+npm run demo:outbox
+npm run demo:crash-write
+npm run demo:crash-relay
+```
+
+- `--wait` matters: without it the scripts start before Postgres accepts connections and fail with `ECONNREFUSED`.
+- Name the services: the compose file also has the Infisical stack, which needs credentials of its own.
+- `npm run build` is required: the demos, `migrate` and `seed` run the compiled `dist/`. `seed` provides the offer the demos order.
 
 ## Configuration
 

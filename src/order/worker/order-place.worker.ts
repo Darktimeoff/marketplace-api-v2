@@ -35,7 +35,10 @@ export class OrderPlaceWorker implements OnApplicationBootstrap, OnModuleDestroy
   }
 
   async onModuleDestroy(): Promise<void> {
-    this.worker?.shutdown();
+    if (this.worker?.getState() === 'RUNNING') {
+      this.worker.shutdown();
+    }
+
     await this.running;
     await this.connection?.close();
   }

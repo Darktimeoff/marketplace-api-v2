@@ -100,6 +100,40 @@ export class OrderPlaceMessageService {
     }
   }
 
+  toAccountCustomerRefundCommand(orderPublicId: string, customerId: number, amount: string): AccountCustomerRefundCommand.MessageType {
+    return {
+      specversion: '1.0',
+      id: orderPublicId,
+      source: AccountCustomerRefundCommand.SOURCE,
+      type: AccountCustomerRefundCommand.TYPE,
+      time: new Date().toISOString(),
+      datacontenttype: 'application/json',
+      subject: orderPublicId,
+      correlationid: orderPublicId,
+      data: {
+        customerId,
+        amount,
+        chargeId: orderPublicId,
+      },
+    }
+  }
+
+  toStockReleaseCommand(orderPublicId: string): StockReleaseCommand.MessageType {
+    return {
+      specversion: '1.0',
+      id: randomUUID(),
+      source: StockReleaseCommand.SOURCE,
+      type: StockReleaseCommand.TYPE,
+      time: new Date().toISOString(),
+      datacontenttype: 'application/json',
+      subject: orderPublicId,
+      correlationid: orderPublicId,
+      data: {
+        orderPublicId,
+      },
+    }
+  }
+
   toStockReserveRequest(id: string, items: OrderCreateInput['items']): StockReserveRequest.MessageType {
     return {
       specversion: '1.0',

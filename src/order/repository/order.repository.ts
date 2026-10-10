@@ -19,6 +19,19 @@ export class OrderRepository {
     return this.findByIdOrFail(id);
   }
 
+  async updatePendingStatusById(id: Order['id'], status: OrderStatusEnum): Promise<Order | null> {
+    const result = await this.txHost.tx
+      .getRepository(Order)
+      .createQueryBuilder()
+      .update()
+      .set({ status })
+      .where({ id, status: OrderStatusEnum.pending_payment })
+      .returning(['id'])
+      .execute();
+
+    return result.raw.length > 0 ? this.findByIdOrFail(id) : null;
+  }
+
   async findByIdOrFail(id: Order['id']): Promise<Order> {
     return await this.txHost.tx.getRepository(Order).findOneOrFail({
       where: { id },

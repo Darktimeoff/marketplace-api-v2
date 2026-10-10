@@ -19,10 +19,12 @@ import { SellerOfferModule } from "../seller-offer/seller-offer.module.js";
 import { AccountModule } from "../account/account.module.js";
 import { OrderAccessGuard } from "./guard/order-access.guard.js";
 import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
+import { KafkaModule } from "../generic/kafka/kafka.module.js";
 
 @Module({
   imports: [
     RabbitMqModule,
+    KafkaModule,
     TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient, OrderOutbox]),
     SellerOfferModule,
     AccountModule,

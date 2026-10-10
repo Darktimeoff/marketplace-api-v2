@@ -6,6 +6,8 @@ import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { CLOUD_EVENT_CONTENT_TYPE, SourceEnum, type CloudEventInterface } from '@marketplace/messaging-contracts';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
 import { OrderOutbox } from '../entity/order-outbox.entity.js';
+import { OrderOutboxBrokerEnum } from '../enum/order-outbox-broker.enum.js';
+import { KafkaProducerService } from '../../generic/kafka/kafka-producer.service.js';
 
 @Injectable()
 export class OrderOutboxRelayService {
@@ -18,6 +20,7 @@ export class OrderOutboxRelayService {
   constructor(
     private readonly outbox: OrderOutboxRepository,
     private readonly amqpConnection: AmqpConnection,
+    private readonly kafka: KafkaProducerService,
   ) {}
 
   @Interval(1000)
@@ -50,7 +53,7 @@ export class OrderOutboxRelayService {
 
     for (const row of rows) {
       try {
-        await this.amqpConnection.publish(row.topic, row.type, this.toCloudEvent(row), this.publishOptions);
+        await this.send(row);
         published.push(row.id);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -63,6 +66,15 @@ export class OrderOutboxRelayService {
     if (published.length > 0) {
       await this.outbox.markPublished(published);
     }
+  }
+
+  private async send(row: OrderOutbox): Promise<void> {
+    if (row.broker === OrderOutboxBrokerEnum.KAFKA) {
+      await this.kafka.publish(row.topic, this.toCloudEvent(row));
+      return;
+    }
+
+    await this.amqpConnection.publish(row.topic, row.type, this.toCloudEvent(row), this.publishOptions);
   }
 
   private toCloudEvent(row: OrderOutbox): CloudEventInterface<string, object> {

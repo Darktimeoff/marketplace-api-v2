@@ -3,7 +3,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
-import { AccountCustomerChargeRequest, AccountCustomerRefundCommand, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
+import { AccountCustomerChargeRequest, AccountCustomerRefundCommand, OrderPaidEvent, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
 import { OrderLineRepository } from '../repository/order-line.repository.js';
@@ -27,6 +27,7 @@ import { OrderNotifyService } from '../service/order-notify.service.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
 import type { OrderOutboxCreateEntityInterface } from '../entity/order-outbox.entity.js';
 import { OrderOutboxAggregateTypeEnum } from '../enum/order-outbox-aggregate-type.enum.js';
+import { OrderOutboxBrokerEnum } from '../enum/order-outbox-broker.enum.js';
 
 interface PricedOrderLine {
   item: Omit<OrderLineCreateEntityInterface, 'orderId'>;
@@ -96,8 +97,15 @@ export class OrderPlaceCommandHandler {
   }
 
   private async markPaid(order: Order): Promise<Order> {
-    const paid = await this.orderRepository.updateStatusById(order.id, OrderStatusEnum.paid);
+    const paid = await this.payAndAnnounce(order);
     this.orderNotify.notifyStatusChanged(paid.id, paid.status);
+    return paid;
+  }
+
+  @Transactional()
+  private async payAndAnnounce(order: Order): Promise<Order> {
+    const paid = await this.orderRepository.updateStatusById(order.id, OrderStatusEnum.paid);
+    await this.outbox.create(this.toOrderPaidOutbox(paid));
     return paid;
   }
 
@@ -189,11 +197,37 @@ export class OrderPlaceCommandHandler {
     };
   }
 
+  private toOrderPaidOutbox(order: Order): OrderOutboxCreateEntityInterface {
+    return {
+      id: randomUUID(),
+      broker: OrderOutboxBrokerEnum.KAFKA,
+      topic: OrderPaidEvent.TOPIC,
+      aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
+      aggregateId: order.publicId,
+      type: OrderPaidEvent.TYPE,
+      payload: this.toOrderPaidData(order),
+    }
+  }
+
+  private toOrderPaidData(order: Order): OrderPaidEvent.DataInterface {
+    return {
+      orderId: order.id,
+      orderPublicId: order.publicId,
+      userId: order.userId,
+      totalAmount: order.totalAmount,
+      discountAmount: order.discountAmount,
+      currency: order.currency,
+      lines: order.lines.map(({ offerId, quantity, unitPrice, unitDiscountPrice }) => ({ offerId, quantity, unitPrice, unitDiscountPrice })),
+      paidAt: order.updatedAt.toISOString(),
+    }
+  }
+
   private toAccountCustomerRefundOutbox(order: Order): OrderOutboxCreateEntityInterface {
     const data: AccountCustomerRefundCommand.DataInterface = { customerId: order.userId, amount: order.totalAmount, chargeId: order.publicId };
 
     return {
       id: order.publicId,
+      broker: OrderOutboxBrokerEnum.RABBITMQ,
       topic: AccountCustomerRefundCommand.TOPIC,
       aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
       aggregateId: order.publicId,
@@ -207,6 +241,7 @@ export class OrderPlaceCommandHandler {
 
     return {
       id: randomUUID(),
+      broker: OrderOutboxBrokerEnum.RABBITMQ,
       topic: StockReleaseCommand.TOPIC,
       aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
       aggregateId: orderPublicId,

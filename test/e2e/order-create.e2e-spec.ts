@@ -2,6 +2,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { Test } from '@nestjs/testing';
 import { Logger, type INestApplication } from '@nestjs/common';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module.js';
@@ -86,6 +88,33 @@ describe('Order create (e2e)', () => {
     }, { timeout: 15000, interval: 100 });
   }
 
+  async function kafkaEvent(topic: string, id: string): Promise<Record<string, unknown>> {
+    const kafka = new KafkaJS.Kafka({ kafkaJS: { brokers: [process.env.KAFKA_BROKERS as string], logLevel: KafkaJS.logLevel.NOTHING } });
+    const consumer = kafka.consumer({ kafkaJS: { groupId: `order-create-test-${randomUUID()}`, fromBeginning: true } });
+    const received: Record<string, unknown>[] = [];
+    await consumer.connect();
+    await consumer.subscribe({ topic });
+    await consumer.run({
+      eachMessage: async ({ message }) => {
+        try {
+          received.push(JSON.parse(message.value?.toString() ?? ''));
+        } catch {
+          return;
+        }
+      },
+    });
+
+    try {
+      return await vi.waitFor(() => {
+        const event = received.find((candidate) => candidate.id === id);
+        if (!event) throw new Error(`no event ${id} on ${topic} yet`);
+        return event;
+      }, { timeout: 15000, interval: 100 });
+    } finally {
+      await consumer.disconnect();
+    }
+  }
+
   function onlyOrder(): Promise<Order> {
     return dataSource.getRepository(Order).findOneOrFail({ where: {}, relations: { orderRecipient: true, lines: true } });
   }
@@ -127,7 +156,29 @@ describe('Order create (e2e)', () => {
 
     expect(await balanceOf(buyer.id)).toBe('840.00');
 
-    expect(await outboxRows()).toEqual([]);
+    const [paidRow] = await publishedOutboxRows(1);
+    expect(paidRow).toMatchObject({ broker: 'kafka', topic: 'order.events', type: 'order.paid', aggregateId: order.publicId, attempts: 0 });
+    const event = await kafkaEvent('order.events', paidRow.id);
+    expect(event).toEqual({
+      specversion: '1.0',
+      id: paidRow.id,
+      source: '/order-service',
+      type: 'order.paid',
+      time: paidRow.createdAt.toISOString(),
+      datacontenttype: 'application/json',
+      subject: order.publicId,
+      correlationid: order.publicId,
+      data: {
+        orderId: order.id,
+        orderPublicId: order.publicId,
+        userId: buyer.id,
+        totalAmount: '160.00',
+        discountAmount: '40.00',
+        currency: CurrencyEnum.UAH,
+        lines: [{ offerId: offer.id, quantity: 2, unitPrice: '100.00', unitDiscountPrice: '80.00' }],
+        paidAt: expect.any(String),
+      },
+    });
     expect(await dataSource.getRepository(Transaction).findBy({ customerId: buyer.id })).toEqual([
       expect.objectContaining({ amount: '160.00', type: TransactionTypeEnum.PAYMENT, status: TransactionStatusEnum.SUCCESS }),
     ]);

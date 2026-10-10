@@ -101,11 +101,13 @@ src/<domain>/
 1. **Commit the order as `pending_payment`** in its own short transaction (recipient, phone, address, order, items).
 2. **Reserve stock**: RPC `seller-offer.stock.reserve`. Rejected → `422`, order `canceled`.
 3. **Charge**: RPC `account.customer.charge`. Rejected → release the stock, `422`, order `failed_payment`.
-4. **Mark `paid`.**
+4. **Mark `paid` and announce it**: the status change and an `order.paid` outbox row are written in one transaction, so every paid order is announced exactly once and no event exists for an order that isn't paid.
 
 Any other failure after step 1 compensates whatever was already done: `account.customer.refund` if a charge was sent, `seller-offer.stock.release` if stock was reserved. The order is then marked `canceled` (or `failed_payment`) and the error is rethrown. No database connection is held while waiting for an RPC.
 
-The compensations go through `OrderOutbox`, never straight to RabbitMQ: the status change and the compensation commands are written in one transaction, so an order is never marked failed without its refund and release queued, and a broker outage can't lose a refund. `OrderOutboxRelayService` is the same relay as identity's and user's (every second, `FOR UPDATE SKIP LOCKED`, in order, `attempts`/`lastError`, daily cleanup) and publishes each row to the RabbitMQ exchange in `topic` with the routing key `type`, timing out after 10 s. The refund keeps `id` = the order's `publicId`, which account's inbox deduplicates; the reserve and charge requests stay direct RPC calls, because the saga waits for their answer.
+The compensations go through `OrderOutbox`, never straight to RabbitMQ: the status change and the compensation commands are written in one transaction, so an order is never marked failed without its refund and release queued, and a broker outage can't lose a refund. `OrderOutboxRelayService` is the same relay as identity's and user's (every second, `FOR UPDATE SKIP LOCKED`, in order, `attempts`/`lastError`, daily cleanup) and sends each row to the broker in its `broker` column: `rabbitmq` rows to the exchange in `topic` with the routing key `type` (10 s publish timeout), `kafka` rows (`order.paid`) to the Kafka topic in `topic`, keyed by the order's `publicId`. The refund keeps `id` = the order's `publicId`, which account's inbox deduplicates; the reserve and charge requests stay direct RPC calls, because the saga waits for their answer.
+
+`order.paid` carries the main data of the order: `orderId`, `orderPublicId`, `userId`, `totalAmount`, `discountAmount`, `currency`, the `lines` (`offerId`, `quantity`, `unitPrice`, `unitDiscountPrice`) and `paidAt`. Its `id` is a fresh uuid written with the row, so it stays the same on every resend; the order's `publicId` is the subject, correlation id and Kafka key, so all events of one order stay ordered.
 
 ### Stock: on hand + reserved
 
@@ -143,6 +145,7 @@ RabbitMQ keeps the commands and request/reply of the saga: work for one receiver
 |---|---|---|---|
 | `identity.events` (3 partitions, kept forever) | identity | `identity.registered` after a registration commits | `user.profile` |
 | `user.events` (3 partitions, kept forever) | user | `user.created` after the user row commits | `account.provisioning` |
+| `order.events` (3 partitions, kept forever) | order | `order.paid` when an order is paid | none yet |
 
 Registration provisions the rest of the person asynchronously:
 

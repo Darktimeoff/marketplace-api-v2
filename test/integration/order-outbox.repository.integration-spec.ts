@@ -7,6 +7,7 @@ import { TopicEnum } from '@marketplace/messaging-contracts';
 import { OrderOutbox } from '../../src/order/entity/order-outbox.entity.js';
 import { OrderOutboxRepository } from '../../src/order/repository/order-outbox.repository.js';
 import { OrderOutboxAggregateTypeEnum } from '../../src/order/enum/order-outbox-aggregate-type.enum.js';
+import { OrderOutboxBrokerEnum } from '../../src/order/enum/order-outbox-broker.enum.js';
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
 
@@ -39,6 +40,7 @@ describe('OrderOutboxRepository', () => {
     const id = randomUUID();
     await outbox.create({
       id,
+      broker: OrderOutboxBrokerEnum.RABBITMQ,
       topic: TopicEnum.SELLER_OFFER_COMMANDS,
       aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
       aggregateId: id,

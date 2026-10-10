@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Identity } from './entity/identity.entity.js';
 import { IdentitySession } from './entity/identity-session.entity.js';
+import { IdentityOutbox } from './entity/identity-outbox.entity.js';
+import { IdentityOutboxRepository } from './repository/identity-outbox.repository.js';
+import { IdentityOutboxRelayService } from './service/identity-outbox-relay.service.js';
 import { SecretManagerModule } from '../generic/secret-manager/secret-manager.module.js';
 import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { AuthController } from './controller/auth.controller.js';
@@ -15,11 +18,13 @@ import { IdentityRefreshCommandHandler } from './command-handler/identity-refres
 import { IdentityLogoutCommandHandler } from './command-handler/identity-logout.command-handler.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Identity, IdentitySession]), SecretManagerModule, KafkaModule],
+  imports: [TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox]), SecretManagerModule, KafkaModule],
   controllers: [AuthController],
   providers: [
     IdentityRepository,
     IdentitySessionRepository,
+    IdentityOutboxRepository,
+    IdentityOutboxRelayService,
     PasswordService,
     TokenService,
     IdentityRegisterCommandHandler,

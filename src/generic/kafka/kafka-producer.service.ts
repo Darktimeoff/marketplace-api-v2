@@ -16,7 +16,7 @@ export class KafkaProducerService implements OnModuleInit, OnModuleDestroy {
   private readonly producer: KafkaJS.Producer;
 
   constructor(private readonly client: KafkaClientService) {
-    this.producer = this.client.kafka.producer({ kafkaJS: { idempotent: true, acks: -1 } });
+    this.producer = this.client.kafka.producer({ kafkaJS: { idempotent: true, acks: -1 }, 'message.timeout.ms': 10000 });
   }
 
   async onModuleInit(): Promise<void> {

@@ -1,12 +1,13 @@
 import { TopicEnum } from "../../generic/enum/topic.enum.js";
+import { SourceEnum } from "../../generic/enum/source.enum.js";
 import { CloudEventInterface } from "../../generic/interface/cloud-event.interface.js";
 
 export namespace StockReserveRequest {
   export const TOPIC = TopicEnum.SELLER_OFFER_COMMANDS;
   export const TYPE = 'seller-offer.stock.reserve';
   export const RESPONSE_TYPE = 'seller-offer.stock.reserve.response';
-  export const SOURCE = '/order-service';
-  export const RESPONSE_SOURCE = '/seller-offer-service';
+  export const SOURCE = SourceEnum.ORDER;
+  export const RESPONSE_SOURCE = SourceEnum.SELLER_OFFER;
 
   export interface ItemInterface {
     offerId: number;

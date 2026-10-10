@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { QueryFailedError } from 'typeorm';
 import type { IdentityTokenResponseInterface } from '@marketplace/contracts-core';
@@ -9,28 +9,26 @@ import { TokenService } from '../service/token.service.js';
 import { IdentityRegisterInput } from '../input/identity-register.input.js';
 import { RoleEnum } from '../enum/role.enum.js';
 import { Identity } from '../entity/identity.entity.js';
-import { KafkaProducerService } from '../../generic/kafka/kafka-producer.service.js';
+import { IdentityOutboxRepository } from '../repository/identity-outbox.repository.js';
+import type { IdentityOutboxCreateEntityInterface } from '../entity/identity-outbox.entity.js';
+import { IdentityOutboxAggregateTypeEnum } from '../enum/identity-outbox-aggregate-type.enum.js';
 
 const UNIQUE_VIOLATION = '23505';
 
 @Injectable()
 export class IdentityRegisterCommandHandler {
-  private readonly logger = new Logger(IdentityRegisterCommandHandler.name);
-
   constructor(
     private readonly identities: IdentityRepository,
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
-    private readonly kafka: KafkaProducerService,
+    private readonly outbox: IdentityOutboxRepository,
   ) {}
 
   async execute(input: IdentityRegisterInput): Promise<IdentityTokenResponseInterface> {
     const passwordHash = await this.passwords.hash(input.password);
 
-    let registered: { identity: Identity; tokenPair: IdentityTokenResponseInterface };
-
     try {
-      registered = await this.register(input, passwordHash);
+      return await this.register(input, passwordHash);
     } catch (error) {
       if (error instanceof QueryFailedError && (error.driverError as { code?: string }).code === UNIQUE_VIOLATION) {
         throw new ConflictException('An identity with this email or phone already exists');
@@ -38,13 +36,10 @@ export class IdentityRegisterCommandHandler {
 
       throw error;
     }
-
-    await this.publishRegistered(registered.identity);
-    return registered.tokenPair;
   }
 
   @Transactional()
-  private async register(input: IdentityRegisterInput, passwordHash: string): Promise<{ identity: Identity; tokenPair: IdentityTokenResponseInterface }> {
+  private async register(input: IdentityRegisterInput, passwordHash: string): Promise<IdentityTokenResponseInterface> {
     const identity = await this.identities.create({
       email: input.email ?? null,
       loginPhone: {
@@ -57,35 +52,30 @@ export class IdentityRegisterCommandHandler {
       role: RoleEnum.user,
     });
 
-    return { identity, tokenPair: await this.tokens.createTokenPair(identity) };
+    await this.outbox.create(this.toIdentityRegisteredOutbox(identity));
+
+    return this.tokens.createTokenPair(identity);
   }
 
-  private async publishRegistered(identity: Identity): Promise<void> {
-    try {
-      await this.kafka.publish(IdentityRegisteredEvent.TOPIC, this.toIdentityRegisteredEvent(identity));
-    } catch (error) {
-      this.logger.error(`failed to publish ${IdentityRegisteredEvent.TYPE} for identity=${identity.publicId}`, error instanceof Error ? error.stack : String(error));
-    }
-  }
-
-  private toIdentityRegisteredEvent(identity: Identity): IdentityRegisteredEvent.MessageType {
+  private toIdentityRegisteredOutbox(identity: Identity): IdentityOutboxCreateEntityInterface {
     return {
-      specversion: '1.0',
       id: identity.publicId,
-      source: IdentityRegisteredEvent.SOURCE,
+      topic: IdentityRegisteredEvent.TOPIC,
+      aggregateType: IdentityOutboxAggregateTypeEnum.IDENTITY,
+      aggregateId: identity.publicId,
       type: IdentityRegisteredEvent.TYPE,
-      time: identity.createdAt.toISOString(),
-      datacontenttype: 'application/json',
-      subject: identity.publicId,
-      correlationid: identity.publicId,
-      data: {
-        identityId: identity.id,
-        identityPublicId: identity.publicId,
-        email: identity.email,
-        phoneNumber: identity.loginPhone.fullNumber,
-        role: identity.role,
-        createdAt: identity.createdAt.toISOString(),
-      },
+      payload: this.toIdentityRegisteredData(identity),
+    };
+  }
+
+  private toIdentityRegisteredData(identity: Identity): IdentityRegisteredEvent.DataInterface {
+    return {
+      identityId: identity.id,
+      identityPublicId: identity.publicId,
+      email: identity.email,
+      phoneNumber: identity.loginPhone.fullNumber,
+      role: identity.role,
+      createdAt: identity.createdAt.toISOString(),
     };
   }
 }

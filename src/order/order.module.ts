@@ -3,6 +3,9 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { Order } from "./entity/order.entity.js";
 import { OrderLine } from "./entity/order-line.entity.js";
 import { OrderRecipient } from "./entity/order-recipient.entity.js";
+import { OrderOutbox } from "./entity/order-outbox.entity.js";
+import { OrderOutboxRepository } from "./repository/order-outbox.repository.js";
+import { OrderOutboxRelayService } from "./service/order-outbox-relay.service.js";
 import { OrderRepository } from "./repository/order.repository.js";
 import { OrderRecipientRepository } from "./repository/order-recipient.repository.js";
 import { OrderLineRepository } from "./repository/order-line.repository.js";
@@ -20,7 +23,7 @@ import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
 @Module({
   imports: [
     RabbitMqModule,
-    TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient]),
+    TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient, OrderOutbox]),
     SellerOfferModule,
     AccountModule,
   ],
@@ -29,6 +32,8 @@ import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
     OrderRepository,
     OrderRecipientRepository,
     OrderLineRepository,
+    OrderOutboxRepository,
+    OrderOutboxRelayService,
     OrderService,
     OrderPlaceCommandHandler,
     OrderAccessService,

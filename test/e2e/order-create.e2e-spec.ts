@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
-import type { INestApplication } from '@nestjs/common';
+import { Logger, type INestApplication } from '@nestjs/common';
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module.js';
@@ -11,6 +12,7 @@ import { SellerOffer } from '../../src/seller-offer/entity/seller-offer.entity.j
 import { StockReservation } from '../../src/seller-offer/entity/stock-reservation.entity.js';
 import { Account } from '../../src/account/entity/account.entity.js';
 import { Transaction } from '../../src/account/entity/transaction.entity.js';
+import { OrderOutbox } from '../../src/order/entity/order-outbox.entity.js';
 import { CountryCodeEnum, CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
 import { aSellerOffer, aUser } from '../support/builders.js';
 import { truncateAllTables } from '../support/isolation.js';
@@ -30,6 +32,7 @@ describe('Order create (e2e)', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await truncateAllTables(dataSource);
   });
 
@@ -69,6 +72,18 @@ describe('Order create (e2e)', () => {
 
   function offerById(id: number): Promise<SellerOffer> {
     return dataSource.getRepository(SellerOffer).findOneByOrFail({ id });
+  }
+
+  function outboxRows(): Promise<OrderOutbox[]> {
+    return dataSource.getRepository(OrderOutbox).find({ order: { type: 'ASC' } });
+  }
+
+  async function publishedOutboxRows(count: number): Promise<OrderOutbox[]> {
+    return vi.waitFor(async () => {
+      const rows = await outboxRows();
+      if (rows.length !== count || rows.some((row) => row.publishedAt === null)) throw new Error('outbox not published yet');
+      return rows;
+    }, { timeout: 15000, interval: 100 });
   }
 
   function onlyOrder(): Promise<Order> {
@@ -111,6 +126,8 @@ describe('Order create (e2e)', () => {
     ]);
 
     expect(await balanceOf(buyer.id)).toBe('840.00');
+
+    expect(await outboxRows()).toEqual([]);
     expect(await dataSource.getRepository(Transaction).findBy({ customerId: buyer.id })).toEqual([
       expect.objectContaining({ amount: '160.00', type: TransactionTypeEnum.PAYMENT, status: TransactionStatusEnum.SUCCESS }),
     ]);
@@ -145,6 +162,7 @@ describe('Order create (e2e)', () => {
     expect(await dataSource.getRepository(StockReservation).count()).toBe(0);
     expect(await balanceOf(buyer.id)).toBe('1000.00');
     expect(await dataSource.getRepository(Transaction).count()).toBe(0);
+    expect(await outboxRows()).toEqual([]);
   });
 
   it('marks the order failed_payment and releases the stock when the balance is too low', async () => {
@@ -164,6 +182,33 @@ describe('Order create (e2e)', () => {
     ]);
     expect(await balanceOf(buyer.id)).toBe('50.00');
     expect(await dataSource.getRepository(Transaction).count()).toBe(0);
+    expect(await publishedOutboxRows(1)).toEqual([
+      expect.objectContaining({ type: 'seller-offer.stock.release', aggregateType: 'Order', aggregateId: order.publicId, payload: { orderPublicId: order.publicId } }),
+    ]);
+  });
+
+  it('still releases the stock when the broker refuses the first send of the compensation', async () => {
+    const amqpConnection = app.get(AmqpConnection);
+    const publish = amqpConnection.publish.bind(amqpConnection);
+    let refused = false;
+    vi.spyOn(amqpConnection, 'publish').mockImplementation(async (exchange, routingKey, message, options) => {
+      if (routingKey === 'seller-offer.stock.release' && !refused) {
+        refused = true;
+        throw new Error('broker down');
+      }
+      return publish(exchange, routingKey, message, options);
+    });
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const buyer = await aUser(dataSource.manager);
+    await fund(buyer.id, '50.00');
+    const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
+
+    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(422);
+
+    await vi.waitFor(async () => {
+      expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
+    }, { timeout: 15000, interval: 100 });
+    expect(await publishedOutboxRows(1)).toEqual([expect.objectContaining({ attempts: 1, lastError: 'broker down' })]);
   });
 
   it('marks the order failed_payment when the user has no account', async () => {
@@ -204,6 +249,11 @@ describe('Order create (e2e)', () => {
     expect(transactions.map(({ type, amount, status }) => ({ type, amount, status }))).toEqual([
       { type: TransactionTypeEnum.PAYMENT, amount: '100.00', status: TransactionStatusEnum.SUCCESS },
       { type: TransactionTypeEnum.REFUND, amount: '100.00', status: TransactionStatusEnum.SUCCESS },
+    ]);
+    const order = await onlyOrder();
+    expect(await publishedOutboxRows(2)).toEqual([
+      expect.objectContaining({ id: order.publicId, type: 'account.customer.refund', payload: { customerId: buyer.id, amount: '100.00', chargeId: order.publicId } }),
+      expect.objectContaining({ type: 'seller-offer.stock.release', payload: { orderPublicId: order.publicId } }),
     ]);
   });
 

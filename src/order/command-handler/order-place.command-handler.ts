@@ -3,7 +3,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
-import { AccountCustomerChargeRequest, AccountCustomerRefundCommand, CLOUD_EVENT_CONTENT_TYPE, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
+import { AccountCustomerChargeRequest, AccountCustomerRefundCommand, StockReleaseCommand, StockReserveRequest } from '@marketplace/messaging-contracts';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
 import { OrderLineRepository } from '../repository/order-line.repository.js';
@@ -24,6 +24,9 @@ import { InsufficientStockProductInterface } from '../interface/insufficient-sto
 import { InsufficientStockException } from '../exception/insufficient-stock.exception.js';
 import { BalanceException } from '../exception/balance.exception.js';
 import { OrderNotifyService } from '../service/order-notify.service.js';
+import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
+import type { OrderOutboxCreateEntityInterface } from '../entity/order-outbox.entity.js';
+import { OrderOutboxAggregateTypeEnum } from '../enum/order-outbox-aggregate-type.enum.js';
 
 interface PricedOrderLine {
   item: Omit<OrderLineCreateEntityInterface, 'orderId'>;
@@ -42,6 +45,7 @@ export class OrderPlaceCommandHandler {
     private readonly offers: SellerOfferService,
     private readonly orderNotify: OrderNotifyService,
     private readonly amqpConnection: AmqpConnection,
+    private readonly outbox: OrderOutboxRepository,
   ) {}
 
   async execute(input: OrderCreateInput): Promise<Order> {
@@ -54,15 +58,12 @@ export class OrderPlaceCommandHandler {
       await this.chargeOrFail(order);
       return await this.markPaid(order);
     } catch (error) {
-      if (isChargeSent && !(error instanceof BalanceException)) {
-        await this.refundCharge(order);
-      }
+      const compensations = [
+        ...(isChargeSent && !(error instanceof BalanceException) ? [this.toAccountCustomerRefundOutbox(order)] : []),
+        ...(!(error instanceof InsufficientStockException) ? [this.toStockReleaseOutbox(order.publicId)] : []),
+      ];
 
-      if (!(error instanceof InsufficientStockException)) {
-        await this.releaseStock(order.publicId);
-      }
-
-      await this.markFailed(order, error instanceof BalanceException ? OrderStatusEnum.failed_payment : OrderStatusEnum.canceled);
+      await this.markFailed(order, error instanceof BalanceException ? OrderStatusEnum.failed_payment : OrderStatusEnum.canceled, compensations);
       throw error;
     }
   }
@@ -100,12 +101,21 @@ export class OrderPlaceCommandHandler {
     return paid;
   }
 
-  private async markFailed(order: Order, status: OrderStatusEnum): Promise<void> {
+  private async markFailed(order: Order, status: OrderStatusEnum, compensations: OrderOutboxCreateEntityInterface[]): Promise<void> {
     try {
-      await this.orderRepository.updateStatusById(order.id, status);
+      await this.failAndCompensate(order, status, compensations);
       this.orderNotify.notifyStatusChanged(order.id, status);
     } catch (error) {
       this.logger.error(`failed to mark order=${order.publicId} ${status}`, error instanceof Error ? error.stack : String(error));
+    }
+  }
+
+  @Transactional()
+  private async failAndCompensate(order: Order, status: OrderStatusEnum, compensations: OrderOutboxCreateEntityInterface[]): Promise<void> {
+    await this.orderRepository.updateStatusById(order.id, status);
+
+    for (const compensation of compensations) {
+      await this.outbox.create(compensation);
     }
   }
 
@@ -179,31 +189,29 @@ export class OrderPlaceCommandHandler {
     };
   }
 
-  private toAccountCustomerRefundCommand(order: Order): AccountCustomerRefundCommand.MessageType {
+  private toAccountCustomerRefundOutbox(order: Order): OrderOutboxCreateEntityInterface {
+    const data: AccountCustomerRefundCommand.DataInterface = { customerId: order.userId, amount: order.totalAmount, chargeId: order.publicId };
+
     return {
-      specversion: '1.0',
       id: order.publicId,
-      source: AccountCustomerRefundCommand.SOURCE,
+      topic: AccountCustomerRefundCommand.TOPIC,
+      aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
+      aggregateId: order.publicId,
       type: AccountCustomerRefundCommand.TYPE,
-      time: new Date().toISOString(),
-      datacontenttype: 'application/json',
-      subject: order.publicId,
-      correlationid: order.publicId,
-      data: { customerId: order.userId, amount: order.totalAmount, chargeId: order.publicId },
+      payload: data,
     }
   }
 
-  private toStockReleaseCommand(orderPublicId: string): StockReleaseCommand.MessageType {
+  private toStockReleaseOutbox(orderPublicId: string): OrderOutboxCreateEntityInterface {
+    const data: StockReleaseCommand.DataInterface = { orderPublicId };
+
     return {
-      specversion: '1.0',
       id: randomUUID(),
-      source: StockReleaseCommand.SOURCE,
+      topic: StockReleaseCommand.TOPIC,
+      aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
+      aggregateId: orderPublicId,
       type: StockReleaseCommand.TYPE,
-      time: new Date().toISOString(),
-      datacontenttype: 'application/json',
-      subject: orderPublicId,
-      correlationid: orderPublicId,
-      data: { orderPublicId },
+      payload: data,
     }
   }
 
@@ -264,26 +272,6 @@ export class OrderPlaceCommandHandler {
 
     if (chargeResult.data.status === 'rejected') { 
       throw new BalanceException(order.userId, Number(chargeResult.data.available), Number(order.totalAmount))
-    }
-  }
-
-  private async refundCharge(order: Order): Promise<void> {
-    try {
-      await this.amqpConnection.publish(AccountCustomerRefundCommand.TOPIC, AccountCustomerRefundCommand.TYPE, this.toAccountCustomerRefundCommand(order), {
-        contentType: CLOUD_EVENT_CONTENT_TYPE,
-      })
-    } catch (error) {
-      this.logger.error(`failed to refund charge for order=${order.publicId}`, error instanceof Error ? error.stack : String(error));
-    }
-  }
-
-  private async releaseStock(orderPublicId: string): Promise<void> {
-    try {
-      await this.amqpConnection.publish(StockReleaseCommand.TOPIC, StockReleaseCommand.TYPE, this.toStockReleaseCommand(orderPublicId), {
-        contentType: CLOUD_EVENT_CONTENT_TYPE,
-      })
-    } catch (error) {
-      this.logger.error(`failed to release stock for order=${orderPublicId}`, error instanceof Error ? error.stack : String(error));
     }
   }
 }

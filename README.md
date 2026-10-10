@@ -103,7 +103,9 @@ src/<domain>/
 3. **Charge**: RPC `account.customer.charge`. Rejected → release the stock, `422`, order `failed_payment`.
 4. **Mark `paid`.**
 
-Any other failure after step 1 compensates whatever was already done: `account.customer.refund` if a charge was sent, `seller-offer.stock.release` if stock was reserved. The order is then marked `canceled` and the error is rethrown. No database connection is held while waiting for an RPC.
+Any other failure after step 1 compensates whatever was already done: `account.customer.refund` if a charge was sent, `seller-offer.stock.release` if stock was reserved. The order is then marked `canceled` (or `failed_payment`) and the error is rethrown. No database connection is held while waiting for an RPC.
+
+The compensations go through `OrderOutbox`, never straight to RabbitMQ: the status change and the compensation commands are written in one transaction, so an order is never marked failed without its refund and release queued, and a broker outage can't lose a refund. `OrderOutboxRelayService` is the same relay as identity's and user's (every second, `FOR UPDATE SKIP LOCKED`, in order, `attempts`/`lastError`, daily cleanup) and publishes each row to the RabbitMQ exchange in `topic` with the routing key `type`, timing out after 10 s. The refund keeps `id` = the order's `publicId`, which account's inbox deduplicates; the reserve and charge requests stay direct RPC calls, because the saga waits for their answer.
 
 ### Stock: on hand + reserved
 

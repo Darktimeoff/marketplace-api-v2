@@ -39,12 +39,21 @@ export class OrderPlaceCommandHandler {
     private readonly messages: OrderPlaceMessageService,
   ) {}
 
-  execute(input: OrderCreateInput): Promise<Order> {
-    return this.createPending(input);
+  execute(input: OrderCreateInput, idempotencyKey: string | null = null): Promise<Order> {
+    return this.createPending(input, idempotencyKey);
   }
 
   @Transactional()
-  private async createPending(input: OrderCreateInput): Promise<Order> {
+  private async createPending(input: OrderCreateInput, idempotencyKey: string | null): Promise<Order> {
+    if (idempotencyKey) {
+      await this.orderRepository.lockIdempotencyKey(input.userId, idempotencyKey);
+      const placed = await this.orderRepository.findByIdempotencyKey(input.userId, idempotencyKey);
+
+      if (placed) {
+        return placed;
+      }
+    }
+
     const orderProductIds = input.items
       .map((item) => item.offerId)
       .toSorted();
@@ -63,6 +72,7 @@ export class OrderPlaceCommandHandler {
       recipient.id,
       pricedItems,
       input.currency,
+      idempotencyKey,
     );
 
     await this.createItems(pricedItems, order.id);
@@ -89,6 +99,7 @@ export class OrderPlaceCommandHandler {
     orderRecipientId: number,
     items: PricedOrderLine[],
     currency: CurrencyEnum,
+    idempotencyKey: string | null,
   ): Promise<Order> {
     const totalAmount = items.reduce((sum, priced) => sum + priced.amount, 0);
     const discountAmount = items.reduce(
@@ -103,6 +114,7 @@ export class OrderPlaceCommandHandler {
       discountAmount: discountAmount.toFixed(2),
       currency,
       status: OrderStatusEnum.pending_payment,
+      idempotencyKey,
     });
   }
 

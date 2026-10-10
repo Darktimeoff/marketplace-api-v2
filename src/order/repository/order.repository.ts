@@ -13,6 +13,14 @@ export class OrderRepository {
     return orders.save(orders.create(input));
   }
 
+  async lockIdempotencyKey(userId: Order['userId'], idempotencyKey: string): Promise<void> {
+    await this.txHost.tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`order:${userId}:${idempotencyKey}`]);
+  }
+
+  findByIdempotencyKey(userId: Order['userId'], idempotencyKey: string): Promise<Order | null> {
+    return this.txHost.tx.getRepository(Order).findOneBy({ userId, idempotencyKey });
+  }
+
   async updateStatusById(id: Order['id'], status: OrderStatusEnum): Promise<Order> {
     const orders = this.txHost.tx.getRepository(Order);
     await orders.update(id, { status });

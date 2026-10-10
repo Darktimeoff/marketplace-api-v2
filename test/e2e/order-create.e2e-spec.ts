@@ -65,8 +65,9 @@ describe('Order create (e2e)', () => {
     };
   }
 
-  function placeOrder(body: object) {
-    return request(app.getHttpServer()).post('/order').send(body);
+  function placeOrder(body: object, idempotencyKey?: string) {
+    const post = request(app.getHttpServer()).post('/order');
+    return (idempotencyKey ? post.set('Idempotency-Key', idempotencyKey) : post).send(body);
   }
 
   function balanceOf(customerId: number): Promise<string | undefined> {
@@ -357,6 +358,79 @@ describe('Order create (e2e)', () => {
     const statuses = (await settledOrders(2)).map((order) => order.status).toSorted();
     expect(statuses).toEqual([OrderStatusEnum.canceled, OrderStatusEnum.paid].toSorted());
     expect(await offerById(offer.id)).toMatchObject({ onHandQuantity: 1, reservedQuantity: 1 });
+  });
+
+  describe('Idempotency-Key', () => {
+    it('places one order for concurrent requests with the same key', async () => {
+      const buyer = await aUser(dataSource.manager);
+      await fund(buyer.id, '1000.00');
+      const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
+      const key = randomUUID();
+      const body = aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }]);
+
+      const responses = await Promise.all([placeOrder(body, key), placeOrder(body, key)]);
+
+      expect(responses.map(({ status }) => status)).toEqual([202, 202]);
+      expect(responses[0].body.publicId).toBe(responses[1].body.publicId);
+      const [order] = await settledOrders(1);
+      expect(order).toMatchObject({ publicId: responses[0].body.publicId, idempotencyKey: key, status: OrderStatusEnum.paid });
+      expect(await dataSource.getRepository(OrderRecipient).count()).toBe(1);
+      expect(await balanceOf(buyer.id)).toBe('900.00');
+      expect((await publishedOutboxRows(2)).map(({ type }) => type)).toEqual(['order.created', 'order.paid']);
+    });
+
+    it('returns the same order when the request is retried after it settled', async () => {
+      const buyer = await aUser(dataSource.manager);
+      await fund(buyer.id, '1000.00');
+      const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
+      const key = randomUUID();
+      const body = aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }]);
+
+      const first = await placeOrder(body, key).expect(202);
+      await settledOrders(1);
+      const retry = await placeOrder(body, key).expect(202);
+
+      expect(retry.body).toMatchObject({ id: first.body.id, publicId: first.body.publicId, status: OrderStatusEnum.paid });
+      expect(await dataSource.getRepository(Order).count()).toBe(1);
+      expect(await balanceOf(buyer.id)).toBe('900.00');
+    });
+
+    it('places two orders for the same body with different keys or without a key', async () => {
+      const buyer = await aUser(dataSource.manager);
+      await fund(buyer.id, '1000.00');
+      const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
+      const body = aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }]);
+
+      await placeOrder(body, randomUUID()).expect(202);
+      await placeOrder(body, randomUUID()).expect(202);
+      await placeOrder(body).expect(202);
+      await placeOrder(body).expect(202);
+
+      expect((await settledOrders(4)).map(({ status }) => status)).toEqual(Array(4).fill(OrderStatusEnum.paid));
+    });
+
+    it('scopes the key to the user', async () => {
+      const first = await aUser(dataSource.manager);
+      const second = await aUser(dataSource.manager);
+      await fund(first.id, '1000.00');
+      await fund(second.id, '1000.00');
+      const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
+      const key = randomUUID();
+
+      await placeOrder(aBody(first.id, [{ offerId: offer.id, quantity: 1 }]), key).expect(202);
+      await placeOrder(aBody(second.id, [{ offerId: offer.id, quantity: 1 }]), key).expect(202);
+
+      expect((await settledOrders(2)).map(({ userId }) => userId).toSorted()).toEqual([first.id, second.id].toSorted());
+    });
+
+    it('rejects a key that is not a uuid with 400 and creates nothing', async () => {
+      const buyer = await aUser(dataSource.manager);
+      const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
+
+      await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }]), 'not-a-uuid').expect(400);
+
+      expect(await dataSource.getRepository(Order).count()).toBe(0);
+    });
   });
 
   describe('rejects an invalid body with 400 and creates nothing', () => {

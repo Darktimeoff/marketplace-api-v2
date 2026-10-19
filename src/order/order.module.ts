@@ -9,12 +9,6 @@ import { OrderOutboxRelayService } from "./service/order-outbox-relay.service.js
 import { OrderWorkflowOutbox } from "./entity/order-workflow-outbox.entity.js";
 import { OrderWorkflowOutboxRepository } from "./repository/order-workflow-outbox.repository.js";
 import { OrderWorkflowOutboxRelayService } from "./service/order-workflow-outbox-relay.service.js";
-import { OrderInbox } from "./entity/order-inbox.entity.js";
-import { OrderConfirmation } from "./entity/order-confirmation.entity.js";
-import { OrderInboxRepository } from "./repository/order-inbox.repository.js";
-import { OrderConfirmationRepository } from "./repository/order-confirmation.repository.js";
-import { OrderConfirmCommandHandler } from "./command-handler/order-confirm.command-handler.js";
-import { OrderConfirmationEventsGateway } from "./gateway/order-confirmation-events.gateway.js";
 import { OrderNotifyEventsGateway } from "./gateway/order-notify-events.gateway.js";
 import { OrderPlaceMessageService } from "./service/order-place-message.service.js";
 import { OrderRepository } from "./repository/order.repository.js";
@@ -40,7 +34,7 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
     RabbitMqModule,
     KafkaModule,
     TemporalModule,
-    TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient, OrderOutbox, OrderWorkflowOutbox, OrderInbox, OrderConfirmation]),
+    TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient, OrderOutbox, OrderWorkflowOutbox]),
     SellerOfferModule,
     AccountModule,
   ],
@@ -53,10 +47,6 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
     OrderOutboxRelayService,
     OrderWorkflowOutboxRepository,
     OrderWorkflowOutboxRelayService,
-    OrderInboxRepository,
-    OrderConfirmationRepository,
-    OrderConfirmCommandHandler,
-    OrderConfirmationEventsGateway,
     OrderNotifyEventsGateway,
     OrderPlaceMessageService,
     OrderService,

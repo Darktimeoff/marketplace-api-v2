@@ -28,10 +28,7 @@
     "migrate:show": "bash scripts/with-secrets.sh dev npx typeorm migration:show -d dist/data-source.js",
     "migrate:revert": "bash scripts/with-secrets.sh dev npx typeorm migration:revert -d dist/data-source.js",
     "migrate:generate": "bash scripts/with-secrets.sh dev npx typeorm migration:generate -d dist/data-source.js",
-    "seed": "bash scripts/with-secrets.sh dev node dist/seed.js",
-    "demo:outbox": "bash scripts/with-secrets.sh dev node dist/demo/demo-outbox.js",
-    "demo:crash-write": "bash scripts/with-secrets.sh dev node dist/demo/demo-crash-write.js",
-    "demo:crash-relay": "bash scripts/with-secrets.sh dev node dist/demo/demo-crash-relay.js"
+    "seed": "bash scripts/with-secrets.sh dev node dist/seed.js"
   },
   "dependencies": {
     "@confluentinc/kafka-javascript": "^1.10.1",

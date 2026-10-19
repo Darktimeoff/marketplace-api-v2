@@ -1,4 +1,3 @@
-// TODO(hw-22): remove after homework, together with a migration dropping both tables
 import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class AddOrderConfirmation1791000000150 implements MigrationInterface {

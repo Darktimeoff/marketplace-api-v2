@@ -139,7 +139,7 @@ services:
       start_period: 10s
 
   redis-cache:
-    image: redis:8.2.2-alpine
+    image: redis:8.4.1-alpine
     container_name: redis-cache
     entrypoint: >
       sh -c '
@@ -159,7 +159,7 @@ services:
       retries: 10
 
   redis-queue:
-    image: redis:8.2.2-alpine
+    image: redis:8.4.1-alpine
     container_name: redis-queue
     entrypoint: >
       sh -c '

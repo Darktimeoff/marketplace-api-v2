@@ -129,7 +129,7 @@ export function createDbLifecycle(suite: string, { withBroker = false, withKafka
 const REDIS_TEST_PASSWORD = 'test';
 
 function startRedis(args: string[]): Promise<StartedTestContainer> {
-  return new GenericContainer('redis:8.2.2-alpine')
+  return new GenericContainer('redis:8.4.1-alpine')
     .withCommand(['redis-server', ...args, '--requirepass', REDIS_TEST_PASSWORD])
     .withExposedPorts(6379)
     .withWaitStrategy(Wait.forLogMessage(/Ready to accept connections/))

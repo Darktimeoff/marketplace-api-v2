@@ -10,6 +10,7 @@ import { CLOUD_EVENT_CONTENT_TYPE, IdentityRegisteredEvent, TopicEnum } from '@m
 import { CountryCodeEnum } from '@marketplace/contracts-core';
 import { AppModule } from '../../src/app.module.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
+import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
 import { KafkaProducerService } from '../../src/generic/kafka/kafka-producer.service.js';
 import { truncateAllTables } from '../support/isolation.js';
 
@@ -123,27 +124,55 @@ describe('Identity events (e2e)', () => {
     expect(event.data).toMatchObject({ identityId: identity.id, identityPublicId: identity.publicId, email: null, phoneNumber: fullNumber });
   });
 
-  it('publishes nothing for a rejected registration', async () => {
+  it('writes the event to the outbox in the registration transaction and marks it published once sent', async () => {
     const email = `jane-${randomUUID()}@example.com`;
     await register({ email, password: 'correct-horse' }).expect(201);
-    const publish = vi.spyOn(app.get(KafkaProducerService), 'publish');
+    const identity = await dataSource.getRepository(Identity).findOneByOrFail({ email });
+
+    await eventFor(identity.publicId);
+
+    const row = await vi.waitFor(async () => {
+      const found = await dataSource.getRepository(IdentityOutbox).findOneByOrFail({ id: identity.publicId });
+      if (!found.publishedAt) throw new Error('not marked published yet');
+      return found;
+    }, { timeout: 15000, interval: 100 });
+    expect(row).toMatchObject({
+      topic: TopicEnum.IDENTITY_EVENTS,
+      aggregateType: 'Identity',
+      aggregateId: identity.publicId,
+      type: IdentityRegisteredEvent.TYPE,
+      attempts: 0,
+      lastError: null,
+      payload: { identityId: identity.id, identityPublicId: identity.publicId, email },
+    });
+  });
+
+  it('writes nothing to the outbox for a rejected registration', async () => {
+    const email = `jane-${randomUUID()}@example.com`;
+    await register({ email, password: 'correct-horse' }).expect(201);
 
     await register({ email, password: 'correct-horse' }).expect(409);
     await register({ password: 'correct-horse' }).expect(400);
 
-    expect(publish).not.toHaveBeenCalled();
+    expect(await dataSource.getRepository(IdentityOutbox).count()).toBe(1);
   });
 
-  it('still registers when publishing fails, and logs the failure', async () => {
+  it('keeps the event in the outbox while Kafka fails and sends it on a later run', async () => {
     vi.spyOn(app.get(KafkaProducerService), 'publish').mockRejectedValueOnce(new Error('broker down'));
-    const logged = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const email = `jane-${randomUUID()}@example.com`;
 
     const response = await register({ email, password: 'correct-horse' }).expect(201);
+    const identity = await dataSource.getRepository(Identity).findOneByOrFail({ email });
 
     expect(response.body.accessToken).toEqual(expect.any(String));
-    expect(await dataSource.getRepository(Identity).countBy({ email })).toBe(1);
-    expect(logged).toHaveBeenCalledWith(expect.stringContaining('failed to publish identity.registered'), expect.stringContaining('broker down'));
+    await eventFor(identity.publicId);
+    const row = await vi.waitFor(async () => {
+      const found = await dataSource.getRepository(IdentityOutbox).findOneByOrFail({ id: identity.publicId });
+      if (!found.publishedAt) throw new Error('not marked published yet');
+      return found;
+    }, { timeout: 15000, interval: 100 });
+    expect(row).toMatchObject({ attempts: 1, lastError: 'broker down' });
   });
 
   it('keeps identity.events forever so a new consumer group can replay the whole history', async () => {

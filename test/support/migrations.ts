@@ -21,8 +21,21 @@ import { AddIdentitySession1791000000050 } from '../../src/migrations/1791000000
 import { AddIdentityPublicId1791000000060 } from '../../src/migrations/1791000000060-AddIdentityPublicId.js';
 import { AddPublicIds1791000000070 } from '../../src/migrations/1791000000070-AddPublicIds.js';
 import { AddUserContact1791000000080 } from '../../src/migrations/1791000000080-AddUserContact.js';
+import { AddIdentityOutbox1791000000090 } from '../../src/migrations/1791000000090-AddIdentityOutbox.js';
+import { AddUserOutbox1791000000100 } from '../../src/migrations/1791000000100-AddUserOutbox.js';
+import { AddOrderOutbox1791000000110 } from '../../src/migrations/1791000000110-AddOrderOutbox.js';
+import { AddOrderWorkflowOutbox1791000000120 } from '../../src/migrations/1791000000120-AddOrderWorkflowOutbox.js';
+import { DropOrderOutboxBroker1791000000130 } from '../../src/migrations/1791000000130-DropOrderOutboxBroker.js';
+import { AddOrderIdempotencyKey1791000000140 } from '../../src/migrations/1791000000140-AddOrderIdempotencyKey.js';
+import { AddOrderConfirmation1791000000150 } from '../../src/migrations/1791000000150-AddOrderConfirmation.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
+import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
+import { UserOutbox } from '../../src/user/entity/user-outbox.entity.js';
+import { OrderOutbox } from '../../src/order/entity/order-outbox.entity.js';
+import { OrderWorkflowOutbox } from '../../src/order/entity/order-workflow-outbox.entity.js';
+import { OrderInbox } from '../../src/order/entity/order-inbox.entity.js';
+import { OrderConfirmation } from '../../src/order/entity/order-confirmation.entity.js';
 import { User } from '../../src/user/entity/user.entity.js';
 import { Brand } from '../../src/brand/entity/brand.entity.js';
 import { BrandTranslation } from '../../src/brand/entity/brand-translation.entity.js';
@@ -65,11 +78,24 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   AddIdentityPublicId1791000000060,
   AddPublicIds1791000000070,
   AddUserContact1791000000080,
+  AddIdentityOutbox1791000000090,
+  AddUserOutbox1791000000100,
+  AddOrderOutbox1791000000110,
+  AddOrderWorkflowOutbox1791000000120,
+  DropOrderOutboxBroker1791000000130,
+  AddOrderIdempotencyKey1791000000140,
+  AddOrderConfirmation1791000000150,
 ];
 
 export const testEntities = [
   Identity,
   IdentitySession,
+  IdentityOutbox,
+  UserOutbox,
+  OrderOutbox,
+  OrderWorkflowOutbox,
+  OrderInbox,
+  OrderConfirmation,
   User,
   Brand,
   BrandTranslation,

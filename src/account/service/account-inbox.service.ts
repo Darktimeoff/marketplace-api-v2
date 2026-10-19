@@ -17,7 +17,7 @@ export class AccountInboxService {
     return true
   }
 
-  isProcessed(consumer: AccountInbox['consumer'], messageId: AccountInbox['messageId']): Promise<boolean> {
-    return this.inbox.exists({ consumer, messageId })
+  markProcessed(consumer: AccountInbox['consumer'], messageId: AccountInbox['messageId']): Promise<boolean> {
+    return this.inbox.createIfAbsent({ consumer, messageId })
   }
 }

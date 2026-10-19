@@ -7,8 +7,17 @@ import { User, type UserCreateEntityInterface } from '../entity/user.entity.js';
 export class UserRepository {
   constructor(private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>) {}
 
-  async createIfAbsent(input: UserCreateEntityInterface): Promise<void> {
-    await this.txHost.tx.getRepository(User).createQueryBuilder().insert().values(input).orIgnore().execute();
+  async createIfAbsent(input: UserCreateEntityInterface): Promise<boolean> {
+    const result = await this.txHost.tx
+      .getRepository(User)
+      .createQueryBuilder()
+      .insert()
+      .values(input)
+      .orIgnore()
+      .returning(['id'])
+      .execute();
+
+    return result.raw.length > 0;
   }
 
   findByIdentityIdOrFail(identityId: User['identityId']): Promise<User> {

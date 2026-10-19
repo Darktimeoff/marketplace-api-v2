@@ -1,4 +1,4 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToMany, OneToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
 import { OrderRecipient } from './order-recipient.entity.js';
 import { moneyTransformer } from '../../generic/transformer/money.transformer.js';
@@ -6,6 +6,7 @@ import type { OrderLine } from './order-line.entity.js';
 
 @Entity('Order')
 @Check('Order_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
+@Unique('Order_userId_idempotencyKey_key', ['userId', 'idempotencyKey'])
 export class Order {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
@@ -18,6 +19,9 @@ export class Order {
 
   @Column({ type: 'integer' })
   orderRecipientId: number;
+
+  @Column({ type: 'uuid', nullable: true })
+  idempotencyKey: string | null;
 
   // Переходы статусов валидирует приложение, не БД: машина состояний зависит
   // от роли, оплаты и прав, триггер дублировал бы эту логику.
@@ -52,4 +56,4 @@ export class Order {
 }
 
 export interface OrderCreateEntityInterface
-  extends Pick<Order, 'userId' | 'orderRecipientId' | 'totalAmount' | 'discountAmount' | 'currency'>, Partial<Pick<Order, 'status'>> {}
+  extends Pick<Order, 'userId' | 'orderRecipientId' | 'totalAmount' | 'discountAmount' | 'currency'>, Partial<Pick<Order, 'status' | 'idempotencyKey'>> {}

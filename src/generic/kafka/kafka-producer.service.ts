@@ -8,6 +8,7 @@ const KEEP_FOREVER = [{ name: 'retention.ms', value: '-1' }];
 const OWNED_TOPICS: KafkaTopicInterface[] = [
   { topic: TopicEnum.IDENTITY_EVENTS, numPartitions: 3, configEntries: KEEP_FOREVER },
   { topic: TopicEnum.USER_EVENTS, numPartitions: 3, configEntries: KEEP_FOREVER },
+  { topic: TopicEnum.ORDER_EVENTS, numPartitions: 3, configEntries: KEEP_FOREVER },
 ];
 
 @Injectable()
@@ -16,7 +17,7 @@ export class KafkaProducerService implements OnModuleInit, OnModuleDestroy {
   private readonly producer: KafkaJS.Producer;
 
   constructor(private readonly client: KafkaClientService) {
-    this.producer = this.client.kafka.producer({ kafkaJS: { idempotent: true, acks: -1 } });
+    this.producer = this.client.kafka.producer({ kafkaJS: { idempotent: true, acks: -1 }, 'message.timeout.ms': 10000 });
   }
 
   async onModuleInit(): Promise<void> {

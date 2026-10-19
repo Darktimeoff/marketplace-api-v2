@@ -8,6 +8,7 @@ import { IdentityRegisteredEvent, TopicEnum, UserCreatedEvent } from '@marketpla
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { User } from '../../src/user/entity/user.entity.js';
 import { Account } from '../../src/account/entity/account.entity.js';
+import { UserOutbox } from '../../src/user/entity/user-outbox.entity.js';
 import { truncateAllTables } from '../support/isolation.js';
 
 process.env.KAFKA_CONSUMERS_ENABLED = 'true';
@@ -129,6 +130,11 @@ describe('Registration provisioning over Kafka (e2e)', () => {
     expect(account.balance).toBe('0.00');
 
     const received = await waitFor(() => userEvents.find(({ key }) => key === user.publicId), 'user.created');
+    const outboxRow = await waitFor(async () => {
+      const row = await dataSource.getRepository(UserOutbox).findOneBy({ id: user.publicId });
+      return row?.publishedAt ? row : undefined;
+    }, 'the published user outbox row');
+    expect(outboxRow).toMatchObject({ topic: TopicEnum.USER_EVENTS, aggregateType: 'User', aggregateId: user.publicId, type: UserCreatedEvent.TYPE, attempts: 0 });
     expect(received.headers).toMatchObject({ 'content-type': 'application/cloudevents+json', ce_type: UserCreatedEvent.TYPE });
     expect(JSON.parse(received.value)).toEqual({
       specversion: '1.0',
@@ -178,8 +184,7 @@ describe('Registration provisioning over Kafka (e2e)', () => {
     await waitFor(() => (execute.mock.settledResults.filter(({ type }) => type === 'fulfilled').length >= 2 ? true : undefined), 'both redeliveries');
     expect(await dataSource.getRepository(User).countBy({ identityId: identity.id })).toBe(1);
     expect(await dataSource.getRepository(Account).countBy({ customerId: user.id })).toBe(1);
-    await waitFor(() => (userEvents.filter(({ key }) => key === user.publicId).length >= 3 ? true : undefined), 'republished user.created');
-    expect(new Set(userEvents.filter(({ key }) => key === user.publicId).map(({ value }) => JSON.parse(value).id))).toEqual(new Set([user.publicId]));
+    expect(await dataSource.getRepository(UserOutbox).countBy({ aggregateId: user.publicId })).toBe(1);
   });
 
   it('retries a transient failure until the user is created', async () => {

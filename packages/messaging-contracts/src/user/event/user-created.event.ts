@@ -1,4 +1,5 @@
 import { TopicEnum } from "../../generic/enum/topic.enum.js";
+import { SourceEnum } from "../../generic/enum/source.enum.js";
 import { CloudEventInterface } from "../../generic/interface/cloud-event.interface.js";
 import type { MessageContractInterface } from "../../generic/interface/message-contract.interface.js";
 import type { LanguageEnum } from "@marketplace/contracts-core";
@@ -6,7 +7,7 @@ import type { LanguageEnum } from "@marketplace/contracts-core";
 export namespace UserCreatedEvent {
   export const TOPIC = TopicEnum.USER_EVENTS;
   export const TYPE = 'user.created';
-  export const SOURCE = '/user-service';
+  export const SOURCE = SourceEnum.USER;
 
   export interface DataInterface {
     userId: number;

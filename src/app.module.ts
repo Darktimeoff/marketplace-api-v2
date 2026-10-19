@@ -1,5 +1,6 @@
 import { Module, ValidationPipe } from '@nestjs/common';
 import { APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { EnvironmentModule } from './generic/environment/environment.module.js';
 import { DBModule } from './generic/db/db.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -15,6 +16,7 @@ import { ValidationResponseInterceptor } from './generic/validation/validation-r
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     EnvironmentModule,
     DBModule,
     HealthModule,

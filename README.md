@@ -4,9 +4,9 @@ Marketplace backend in NestJS, built as a modular monolith whose modules behave 
 
 | Service (module) | Owns | Talks over RabbitMQ |
 |---|---|---|
-| `order` | `Order`, `OrderRecipient`, `OrderLine` | sends `seller-offer.stock.reserve`, `account.customer.charge`, and the compensations `seller-offer.stock.release`, `account.customer.refund` |
-| `seller-offer` | `SellerOffer`, `StockReservation` | answers `seller-offer.stock.reserve`, handles `seller-offer.stock.release` |
-| `account` | `Account`, `Transaction`, `AccountInbox` | answers `account.customer.charge`, handles `account.customer.refund` |
+| `order` | `Order`, `OrderRecipient`, `OrderLine` | runs the placement workflow on Temporal, which sends `seller-offer.stock.reserve`, `account.customer.charge`, and the compensations `seller-offer.stock.release`, `account.customer.refund` |
+| `seller-offer` | `SellerOffer`, `StockReservation` | answers `seller-offer.stock.reserve` and `seller-offer.stock.release` |
+| `account` | `Account`, `Transaction`, `AccountInbox` | answers `account.customer.charge` and `account.customer.refund` |
 
 The other modules (`product`, `product-variant`, `category`, `brand`, `seller`, `user`, `identity`) only own entities. Order reads offers from `seller-offer` for pricing.
 
@@ -59,11 +59,12 @@ From a fresh clone, without access to the secret store:
 cp .env.example .env
 cp secrets/db_password.txt.example secrets/db_password.txt
 cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
-docker compose up -d --wait db db-bouncer rabbitmq kafka
+docker compose up -d --wait db db-bouncer rabbitmq kafka temporal
 
 export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
 export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
 export KAFKA_BROKERS=localhost:9092
+export TEMPORAL_ADDRESS=localhost:7233
 export SKIP_VAULT=1
 
 npm ci
@@ -77,6 +78,7 @@ node dist/main.js
 - Postgres is reached through pgbouncer (`db-bouncer`), which is what `DBPORT` points at.
 - Name the services explicitly: the compose file also contains the Infisical stack, which needs credentials of its own.
 - `kafka` is a single KRaft node (broker and controller in one process) on `localhost:${KAFKA_PORT:-9092}`; containers reach it at `kafka:29092`. Add `kafka-ui` to the command for Kafka UI on `localhost:${KAFKA_UI_PORT:-8090}`. Automatic topic creation is off: the app creates the topics it owns at startup, like the RabbitMQ exchanges, so a typo in a topic name fails instead of creating a new topic.
+- `temporal` is the Temporal dev server (`temporal server start-dev`, SQLite in the `temporal_data` volume) on `localhost:${TEMPORAL_PORT:-7233}`, with its Web UI on `localhost:${TEMPORAL_UI_PORT:-8233}`: every placement workflow, its history, inputs, results and retries are visible there. The app doesn't start without it, like without Postgres, RabbitMQ or Kafka.
 - `npm run build` is required before `migrate`, `seed` and starting the app: they run the compiled `dist/`. The build compiles the contract packages first, then the app.
 
 ## Architecture
@@ -88,22 +90,45 @@ src/<domain>/
   controller/      HTTP controllers (input → service/handler, @ResponseDto)
   gateway/         RabbitMQ adapters: @RabbitRPC / @RabbitSubscribe, envelope + payload validation, ack/nack
   command-handler/ one operation each, execute(), uses repositories directly
+  workflow/        Temporal workflows (deterministic, no I/O) and their activity interface
+  activity/        the workflow's activities, Nest providers that do the I/O
+  worker/          the Temporal worker of the context's task queue
   service/         reusable domain logic and the <Domain>Topology service
   repository/      the only layer that touches TypeORM (TransactionHost per method)
   entity/          TypeORM entities; they implement contract interfaces
   enum/            names the module owns: queues, DLX, DLQ, inbox consumers
 ```
 
-### Placing an order (saga)
+### Placing an order (Temporal workflow)
 
-`OrderPlaceCommandHandler.execute` runs placement as a saga instead of one database transaction, because stock and money live in other services:
+Placement is a saga, because stock and money live in other contexts. It runs as a Temporal workflow, so its progress survives a crash or a deploy: every finished step is recorded in Temporal's event history, and after a restart the worker replays the history and carries on from the next step instead of leaving the order stuck in `pending_payment`.
 
-1. **Commit the order as `pending_payment`** in its own short transaction (recipient, phone, address, order, items).
-2. **Reserve stock**: RPC `seller-offer.stock.reserve`. Rejected → `422`, order `canceled`.
-3. **Charge**: RPC `account.customer.charge`. Rejected → release the stock, `422`, order `failed_payment`.
-4. **Mark `paid`.**
+`POST /order` only creates the order. `OrderPlaceCommandHandler.execute` writes, in one transaction, the order as `pending_payment` (recipient, phone, address, lines), its `order.created` row in `OrderOutbox` and a row in `OrderWorkflowOutbox` asking to start `orderPlaceWorkflow` with the workflow id `order-place-<publicId>`. It answers `202` with the pending order; the client follows the outcome on the SSE stream or with `GET /order/:id`. An unknown offer or an invalid body is still a synchronous `404`/`400`, and nothing is written.
 
-Any other failure after step 1 compensates whatever was already done: `account.customer.refund` if a charge was sent, `seller-offer.stock.release` if stock was reserved. The order is then marked `canceled` and the error is rethrown. No database connection is held while waiting for an RPC.
+`POST /order` takes an optional `Idempotency-Key` header (a uuid, `400` otherwise), so a client can retry after a timeout or a lost response without placing a second order. The key identifies the intent, not the body: two identical bodies with different keys (or without one) are two legitimate orders, which a hash of the body would collapse into one. The key is stored on the order with a unique constraint on `(userId, idempotencyKey)`, so it is scoped to the buyer. The transaction starts by taking a transaction-scoped advisory lock on `(userId, key)` and looking the key up: if an order already has it, that order is returned with `202`, in whatever status it has reached, and nothing is written. The lock makes two concurrent requests with the same key run one after the other, so the second sees the first one's committed order instead of both seeing nothing and inserting; the unique constraint stays as the last guard. so one key gives one order, one `order.created` and one workflow.
+
+The workflow is started through an outbox rather than by calling Temporal from the request, because the order and the start are writes to two systems: a call after the commit can fail (Temporal down, the pod killed by a deploy), leaving an order that nothing will ever pay or cancel. With the start in the same transaction as the order, there is never an order without its promise to be placed, and the API keeps accepting orders while Temporal is down. `OrderWorkflowOutboxRelayService` works like the other relays (every second, `FOR UPDATE SKIP LOCKED`, `attempts`/`lastError`, daily cleanup) and starts each row with a 10 s deadline. The workflow id is the idempotency key: the start uses `workflowIdConflictPolicy: USE_EXISTING` and `workflowIdReusePolicy: REJECT_DUPLICATE`, and an already-started error counts as started, so a start retried after a lost reply never runs a second workflow for the same order. Starting the workflow from the request with Update-With-Start (the workflow creating the order as its first step) was considered; it keeps order creation in the workflow's history, but makes `POST /order` fail whenever Temporal or the workers are down.
+
+`orderPlaceWorkflow` (`src/order/workflow/`) runs on the task queue `order-place`:
+
+1. **Reserve stock**: activity `reserveStock`, RPC `seller-offer.stock.reserve`. Rejected → order `canceled` (`insufficient_stock`).
+2. **Charge**: activity `chargeCustomer`, RPC `account.customer.charge`. Rejected → release the stock, order `failed_payment` (`payment_rejected`).
+3. **Mark `paid`**: activity `markPaid` writes the status and the `order.paid` outbox row in one transaction.
+
+Any other failure after the stock was reserved compensates what may already have happened: `refundCustomer` (RPC `account.customer.refund`) if the charge was sent, then `releaseStock` (RPC `seller-offer.stock.release`), then `markFailed` (`canceled`, reason `error`). The compensations run in a non-cancellable scope, so cancelling the workflow can't interrupt them. A business rejection completes the workflow with the final status as its result; a technical failure fails it after compensating, so it shows up red in the Web UI.
+
+The workflow only decides; every side effect is an activity (`OrderPlaceActivity`, `src/order/activity/`, a Nest provider with its dependencies). A step of the process is an activity; a fact about the order's own data is an outbox row written in the same transaction as the status. `OrderOutbox` therefore carries only Kafka events (`order.created`, `order.paid`, `order.failed`), sent by `OrderOutboxRelayService`, the same relay as identity's and user's. Activities are retried by Temporal, not by hand:
+
+- `reserveStock` and `chargeCustomer`: 10 s per attempt, backoff 1 s → 10 s, at most 1 minute in total, then the workflow compensates. A rejection is thrown as a non-retryable `ApplicationFailure` with a type (`InsufficientStock`, `PaymentRejected`) that the workflow maps to the status and reason.
+- `refundCustomer`, `releaseStock`, `markPaid`, `markFailed`: 10 s per attempt, retried until they succeed, because a compensation or a status must not be dropped.
+
+Every activity is idempotent, because a timed-out attempt may have done its work before the retry: reserve and release are keyed by the order's `publicId` in `StockReservation`, the charge and the refund carry `id` = the order's `publicId`, which account's inbox deduplicates, and `markPaid`/`markFailed` only move an order out of `pending_payment` (`UPDATE … WHERE status = 'pending_payment'`), writing their event only when the row changed.
+
+The compensations are request/reply like the forward steps, so an activity completes only when the receiver confirms. A fire-and-forget command would complete as soon as the broker took it, and a refund that then failed in account would end in a DLQ while the workflow reported success. A refund for a charge that never happened (the charge timed out before reaching account) answers `not_charged` instead of failing, so it is not retried forever. Every request is published with `expiration` equal to its 5 s RPC timeout: a request still queued when the caller has given up expires instead of running late (a reservation or a charge for an attempt nobody waits for). Expired requests are dead-lettered to the queue's DLQ with reason `expired` in `x-death`, so a backlog is visible there; a request already delivered to a consumer is processed regardless.
+
+The worker (`OrderPlaceWorker`) runs inside the Nest app: it connects at bootstrap, bundles the workflow file into Temporal's isolated sandbox, and drains on shutdown, letting in-flight activities finish. The workflow file imports no Nest, TypeORM or broker code, only types and plain enums, because workflow code is replayed and must be deterministic. `TemporalClientService` (`src/generic/temporal/`) is the one client connection, shared like the Kafka client.
+
+`order.paid` carries the main data of the order: `orderId`, `orderPublicId`, `userId`, `totalAmount`, `discountAmount`, `currency`, the `lines` (`offerId`, `quantity`, `unitPrice`, `unitDiscountPrice`) and `paidAt`. Its `id` is a fresh uuid written with the row, so it stays the same on every resend; the order's `publicId` is the subject, correlation id and Kafka key, so all events of one order stay ordered.
 
 ### Stock: on hand + reserved
 
@@ -122,7 +147,7 @@ Money is `numeric(12,2)` and stays a string in TypeScript (`moneyTransformer`): 
 Delivery over RabbitMQ is at-least-once, so every consumer makes its effect safe to repeat:
 
 - **Natural key where the effect has one**: stock reservations (`(orderPublicId, offerId)`).
-- **Per-service inbox where it doesn't**: account's `AccountInbox(consumer, messageId)`. `processOnce` inserts the row and runs the effect in the same transaction only if the row was new. A rejected charge rolls its row back, so a skipped duplicate is always a past success. A refund is applied only if the charge's inbox row exists. Inboxes are never shared between services.
+- **Per-service inbox where it doesn't**: account's `AccountInbox(consumer, messageId)`. `processOnce` inserts the row and runs the effect in the same transaction only if the row was new. A rejected charge rolls its row back, so a skipped duplicate is always a past success. A refund is applied only if the charge's inbox row exists. A refund that finds none inserts that row itself and answers `not_charged`: a charge that timed out on the order side can still be sitting in the queue, and without the row it would be applied after the order was already compensated. The insert also serializes the two: whichever commits first wins, and the other sees the row. Inboxes are never shared between services.
 
 ### Messaging
 
@@ -135,12 +160,13 @@ Delivery over RabbitMQ is at-least-once, so every consumer makes its effect safe
 
 ### Events (Kafka)
 
-RabbitMQ keeps the commands and request/reply of the saga: work for one receiver, acked or dead-lettered per message. Kafka carries domain events, facts that already happened, kept in a log that any number of consumers can read and replay at their own pace.
+RabbitMQ keeps the request/reply calls of the placement workflow: work for one receiver, acked or dead-lettered per message. Kafka carries domain events, facts that already happened, kept in a log that any number of consumers can read and replay at their own pace.
 
 | Topic | Producer | Events | Consumer groups |
 |---|---|---|---|
 | `identity.events` (3 partitions, kept forever) | identity | `identity.registered` after a registration commits | `user.profile` |
 | `user.events` (3 partitions, kept forever) | user | `user.created` after the user row commits | `account.provisioning` |
+| `order.events` (3 partitions, kept forever) | order | `order.created` (committed as `pending_payment`), `order.paid`, `order.failed` (`canceled` / `failed_payment` with a `reason`) | `order.notify` (broadcast) |
 
 Registration provisions the rest of the person asynchronously:
 
@@ -155,24 +181,43 @@ Each step is owned by its context: identity never writes users, user never write
 - **Key = `subject`**: all events about one identity land on the same partition and stay in order; different identities spread across partitions.
 - **Topics**: `TopicEnum` lists every topic name regardless of broker. `RabbitMqModule` declares only the command exchanges, and `KafkaProducerService` (`src/generic/kafka/`) creates the topics it owns at startup with the admin API (an existing topic is left as it is; replication factor `-1` takes the broker default).
 - **Producer**: `@confluentinc/kafka-javascript` (librdkafka) with idempotence on and `acks: all`, so a retried send never writes a duplicate and a send succeeds only once every in-sync replica has it.
-- **Publish after commit**: register commits the identity, then publishes. A failed publish is logged and registration still answers `201`, because the commit can't be undone. Until an outbox exists, an event can be lost if the process dies or Kafka is down between the commit and the send.
+- **Transactional outbox (identity and user)**: no producer calls Kafka directly. Register inserts an `IdentityOutbox` row in the same transaction as the `Identity`, and user inserts a `UserOutbox` row in the same transaction as the `User` (only when the user was actually inserted, so a redelivered `identity.registered` adds nothing). Each row has (`id` = the CloudEvent id, `topic`, `aggregateType`, `aggregateId` = the Kafka key, `type`, `payload` = the event's `data`). If the transaction rolls back, there is no event; if it commits, the event is guaranteed to be sent, even if Kafka is down or the process dies right after. Each context has its own copy of the table, repository and relay (`IdentityOutboxRelayService`, `UserOutboxRelayService`), like separate services. A relay runs every second: in one transaction it claims up to 100 unpublished rows oldest first with `FOR UPDATE SKIP LOCKED`, builds the CloudEvent from each row (`source` from `SourceEnum`, `time` = `createdAt`), sends them in order, and sets `publishedAt` on the sent rows. The first failure increments `attempts`, stores `lastError` and ends the batch, so later rows never overtake it; the next run retries. A send gives up after 10 s (`message.timeout.ms`), so an unreachable Kafka shows up as `lastError = Local: Message timed out` instead of a transaction held open. Delivery is at-least-once: a row sent but not yet marked published (crash, or a timed-out send that still arrived) is sent again with the same `id`, which consumers already deduplicate. A daily cron deletes published rows older than 7 days; Kafka keeps the events.
+- **Several app instances**: `SKIP LOCKED` lets every instance run the relay without sending a row twice, but two instances can send two events of the same identity out of order. With one event per identity (`identity.registered`) that can't happen; a second identity event type should come with a single active relay (a Postgres advisory lock taken per run).
 - **One topic per aggregate, not per event type**: Kafka orders messages only within a partition of one topic, so `identity.registered`, a later `identity.email-changed` and `identity.deleted` for the same identity must share a topic to reach consumers in that order. A stream gets its own topic only when its volume or retention differs (e.g. a per-login event).
 - **Replay instead of losing skipped events**: a consumer commits its offset past events it skips, so a handler added later never sees them in that group. Instead each use case is its own consumer group (`user.profile`, later `user.email-sync`): a new group starts from the earliest offset and replays the whole topic. An existing group can also be rewound (`kafka-consumer-groups.sh --group <group> --reset-offsets --to-earliest --execute --topic identity.events` while it is stopped) and relies on its idempotency for the events it already handled. Either works only while the events still exist, which is why `identity.events` has `retention.ms=-1`.
 - **Topic config is set at creation only**: the client can't read or alter configs, so a change to an existing topic (as for `retention.ms` on a Kafka created before it was added) is a one-off `kafka-configs.sh --entity-type topics --entity-name <topic> --alter --add-config <name>=<value>`.
 - **Consumers** (`KafkaConsumerService`, `src/generic/kafka/`): a context's gateway registers `{ groupId, topic, handle }` (`src/user/gateway/user-identity-events.gateway.ts`, `src/account/gateway/account-user-events.gateway.ts`), and all consumers start once the app has bootstrapped. The gateway skips types it doesn't handle and validates the rest with a zod schema of the fields it needs.
-- **Commit after the effect**: the offset is committed only after `handle` resolves. A thrown error redelivers the same message, so a transient failure (database restarting, Kafka down while user publishes `user.created`) retries until it succeeds. That makes the user → account step reliable without an outbox: if user commits the row but fails to publish, the event is redelivered, the insert is a no-op and the publish is repeated.
+- **Commit after the effect**: the offset is committed only after `handle` resolves. A thrown error redelivers the same message, so a transient failure (database restarting) retries until it succeeds. User's follow-up event goes through `UserOutbox` in the same transaction as the user, so once the user is committed `user.created` will be sent, and a redelivery neither inserts a second user nor writes a second event.
 - **Idempotent by natural key**: `User.identityId` is unique and `Account.customerId` is the primary key; both inserts are `ON CONFLICT DO NOTHING`, so a redelivered or replayed event changes nothing.
 - **Dead letters**: a message that can never succeed (not JSON, or failing the schema) is copied to `<group>.dlt` (`user.profile.dlt`, kept forever) with headers `dlt_reason` and `dlt_source` (`topic/partition@offset`), and the offset moves on, so one bad message doesn't block its partition.
-- **`KAFKA_CONSUMERS_ENABLED=false`** runs the app without consumers (an API-only instance). The tests use it everywhere except `registration-provisioning.e2e-spec.ts`, so background inserts can't land after a test truncates its tables.
+- **`KAFKA_CONSUMERS_ENABLED=false`** runs the app without the consumers that write state (an API-only instance); broadcast consumers like `order.notify` still run, because they only feed in-memory SSE listeners and an API instance needs them. The tests turn it off everywhere except `registration-provisioning.e2e-spec.ts`, so background inserts can't land after a test truncates its tables.
+- **Broadcast consumers** (`broadcast: true`): every app instance needs every event, so each instance joins its own group (`<group>.<random uuid>`), starts at the latest offset, commits nothing and has no dead-letter topic (a bad message is logged and skipped). A shared group would split the events between instances. Startup waits until the consumer has its partitions, so nothing published right after startup is missed.
+- **Topics are ready before anyone subscribes**: `createTopics` waits until every partition of the new topics has a leader. Otherwise a consumer subscribing right after creation can miss the topic until the client's next metadata refresh (5 minutes by default).
 
 ### Contract packages
 
 Two npm workspaces, transport-agnostic, with folders mirroring `src/<domain>/`:
 
 - `@marketplace/contracts-core`: HTTP request/response interfaces and the enums they use (`OrderStatusEnum`, `CurrencyEnum`, `CountryCodeEnum`, `LanguageEnum`). Inputs and DTOs `implement` these interfaces; ORM entities implement nothing shared.
-- `@marketplace/messaging-contracts`: `CloudEventInterface`, `TopicEnum` and one namespace per message (`TOPIC`, `TYPE`, `SOURCE`, `DataInterface`, `MessageType`, and for requests `RESPONSE_TYPE`, `ResponseMessageType`).
+- `@marketplace/messaging-contracts`: `CloudEventInterface`, `TopicEnum`, `SourceEnum` (the CloudEvents `source` of each service, so `'/identity-service'` is written once) and one namespace per message (`TOPIC`, `TYPE`, `SOURCE`, `DataInterface`, `MessageType`, and for requests `RESPONSE_TYPE`, `ResponseMessageType`).
 
 Packages export TypeScript sources for types (so `npx tsc --noEmit` works without building them) and `dist/` for Node. Mapping `TOPIC`/`TYPE` to an exchange and routing key happens only in the app's infrastructure.
+
+## Outbox та ідемпотентність
+
+The chain the three demos exercise: `POST /order` with an `Idempotency-Key` → `Order` and its `order.created` row in `OrderOutbox`, in one COMMIT → `OrderOutboxRelayService` (`FOR UPDATE SKIP LOCKED`) → Kafka `order.events` (a separate process from Postgres) → the `order.confirmation` consumer group → one `OrderConfirmation` per event, deduplicated through `OrderInbox` (`INSERT … ON CONFLICT DO NOTHING` on `(consumer, messageId)`, the CloudEvent id). The confirmation is a plain insert, so without the inbox a second delivery would write a second row; the inbox row and the confirmation are written in one transaction, so a crash between them can't leave one without the other. The confirmation consumer exists for these demos and is marked `TODO(hw-22)`.
+
+Each demo starts its own copy of the order module (HTTP, relay, consumer) in-process, with the scheduler off so the relay runs exactly when the demo calls it, and uses a fresh random buyer id and key, so earlier runs never leak into its counts. It prints `key=number` lines and exits non-zero if an invariant breaks. `deliveries` and `applied` are counted by wrapping the consumer's handler; the other numbers are read from the database. Stop a running API first: it would join the same consumer group and take some of the deliveries.
+
+| Run | Output | What it shows |
+|---|---|---|
+| `npm run demo:outbox` | `requests=2 accepted=2 orders=1 outbox=1 published=1 deliveries=1 effect=1 processed=1` | two concurrent requests with one `Idempotency-Key` give one order, one event, one effect |
+| `npm run demo:crash-write` | `write-failed=1 orders=0 outbox=0 published=0 deliveries=0 effect=0` | the request crashes right after the outbox row is inserted; the row is rolled back with the order, so nothing is ever published |
+| `npm run demo:crash-relay` | `relay-crashes=1 published-after-crash=0 published=1 deliveries=2 applied=1 effect=1 processed=1` | the relay sends the event, then fails before `UPDATE publishedAt`; the row stays unpublished, the next run sends it again, and the consumer applies it once |
+
+The crashes are simulated, not `kill -9`: `demo:crash-write` makes `OrderOutboxRepository.create` throw after its insert, inside the request's transaction, and `demo:crash-relay` makes `OrderOutboxRepository.markPublished` throw once, after the send and before the `UPDATE`, inside the relay's transaction. That is the exact point a killed process would stop at, and the rollback that follows is what Postgres does when the connection of a killed process goes away.
+
+**Why publish and `UPDATE publishedAt` can't swap places.** With the `UPDATE` first, a crash or a failed send after it leaves a row that says "published" for an event the broker never got: the relay never looks at it again and the event is lost for good, at-most-once delivery. With the send first, the worst a crash can do is send it twice: the row stays unpublished and is sent again, at-least-once delivery, and a duplicate is something the consumer can drop by the event id, while a lost event can't be recovered by anyone. Doing both in one transaction doesn't remove the choice: the broker isn't part of the Postgres transaction, so whatever order they run in, the commit and the send can still disagree, and the relay must pick which way they may disagree. It picks the one the inbox repairs.
 
 ## Auth (identity)
 
@@ -197,9 +242,9 @@ A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
 
 ## Realtime order status (SSE)
 
-`PATCH /orders/:id/status` with `{ "userId": <buyerId>, "status": "preparing" }` changes a status; `GET /orders/:id/events?userId=<buyerId>` streams `order.status` events as SSE and replays events after `Last-Event-ID` (the most recent 100 per order). The buyer id is an ownership hint, not authentication.
+`GET /orders/:id/events?userId=<buyerId>` streams the order's status as SSE `order.status` events: `pending_payment`, then `paid`, or `canceled` / `failed_payment`. The buyer id is an ownership hint, not authentication.
 
-SSE fits one-way notifications: the browser's `EventSource` reconnects by itself and sends `Last-Event-ID`. The history is process-local, so several app instances would need a shared pub/sub or event store behind the stream.
+The stream is fed from Kafka, not from the code that changes the status. Order writes `order.created`, `order.paid` and `order.failed` through `OrderOutbox` in the same transaction as each status change; `OrderNotifyEventsGateway` consumes `order.events` as a broadcast consumer on every instance and records each event in `OrderNotifyService`, which pushes it to that order's SSE listeners and keeps the last 100 per order. The SSE `id` is the Kafka offset + 1: all events of one order are on one partition (key = `publicId`), so ids only grow per order and are the same on every instance, and a reconnect with `Last-Event-ID` resumes correctly on any instance. Offset + 1 because the first message of a partition has offset 0, which `Last-Event-ID` would treat as "nothing seen yet". The history is in memory: it is rebuilt from new events after a restart, not from the past. A status reaches the stream about a second after the change (the outbox relay's poll interval). SSE fits one-way notifications: the browser's `EventSource` reconnects by itself and sends `Last-Event-ID`.
 
 ## Secrets
 
@@ -224,6 +269,36 @@ npm run test:e2e          # the full app over HTTP (testcontainers: Postgres, Ra
 
 Integration and e2e tests start their containers once per run and truncate all tables after every test (`test/support/isolation.ts`), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with.
 
+## Grading
+
+The broker for the outbox demos is Kafka (`KAFKA_BROKERS`, `host:9092`). The app also needs Postgres, RabbitMQ and Temporal running. Values below are the dev credentials from `docker-compose.yml` and `secrets/*.example`; the grader has no secret store, hence `SKIP_VAULT=1`.
+
+```bash
+cp .env.example .env
+cp secrets/db_password.txt.example secrets/db_password.txt
+cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
+docker compose up -d --wait db db-bouncer rabbitmq kafka temporal
+
+export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
+export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
+export KAFKA_BROKERS=127.0.0.1:9092
+export TEMPORAL_ADDRESS=127.0.0.1:7233
+export SKIP_VAULT=1
+
+npm ci
+npm run build
+npm run migrate
+npm run seed
+
+npm run demo:outbox
+npm run demo:crash-write
+npm run demo:crash-relay
+```
+
+- `--wait` matters: without it the scripts start before Postgres accepts connections and fail with `ECONNREFUSED`.
+- Name the services: the compose file also has the Infisical stack, which needs credentials of its own.
+- `npm run build` is required: the demos, `migrate` and `seed` run the compiled `dist/`. `seed` provides the offer the demos order.
+
 ## Configuration
 
 Validated at startup with zod (`src/generic/environment/environment.schema.ts`); `npm run check:env` fails if `.env.example` drifts from the schema.
@@ -239,6 +314,8 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `RABBITMQ_PORT` | no | `5672` | AMQP port (`15672` is the management UI) |
 | `KAFKA_BROKERS` | no | `kafka:29092` | comma-separated Kafka bootstrap servers (`localhost:9092` when the app runs outside Docker) |
 | `KAFKA_CONSUMERS_ENABLED` | no | `true` | `false` starts the app without Kafka consumers |
+| `TEMPORAL_ADDRESS` | no | `temporal:7233` | Temporal frontend (`localhost:7233` when the app runs outside Docker) |
+| `TEMPORAL_NAMESPACE` | no | `default` | Temporal namespace of the order workflows |
 | `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
 
 Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`) come from Infisical, or from the environment with `SKIP_VAULT=1`.

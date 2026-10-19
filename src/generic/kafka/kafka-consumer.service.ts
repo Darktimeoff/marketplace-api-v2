@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { EnvironmentService } from '../environment/environment.module.js';
@@ -11,6 +12,7 @@ export class KafkaConsumerService implements OnApplicationBootstrap, OnModuleDes
   private readonly logger = new Logger(KafkaConsumerService.name);
   private readonly subscriptions: KafkaSubscriptionInterface[] = [];
   private readonly consumers: KafkaJS.Consumer[] = [];
+  private readonly assignmentTimeoutMs = 30000;
 
   constructor(
     private readonly environment: EnvironmentService,
@@ -23,13 +25,16 @@ export class KafkaConsumerService implements OnApplicationBootstrap, OnModuleDes
   }
 
   async onApplicationBootstrap(): Promise<void> {
-    if (!this.environment.get('KAFKA_CONSUMERS_ENABLED')) {
-      this.logger.warn('KAFKA_CONSUMERS_ENABLED=false, consumers are not started');
-      return;
+    const consumersEnabled = this.environment.get('KAFKA_CONSUMERS_ENABLED');
+
+    if (!consumersEnabled) {
+      this.logger.warn('KAFKA_CONSUMERS_ENABLED=false, only broadcast consumers are started');
     }
 
     for (const subscription of this.subscriptions) {
-      await this.start(subscription);
+      if (subscription.broadcast || consumersEnabled) {
+        await this.start(subscription);
+      }
     }
   }
 
@@ -39,11 +44,15 @@ export class KafkaConsumerService implements OnApplicationBootstrap, OnModuleDes
     }
   }
 
-  private async start({ groupId, topic, handle }: KafkaSubscriptionInterface): Promise<void> {
-    const deadLetterTopic = `${groupId}.dlt`;
-    await this.client.createTopics([{ topic: deadLetterTopic, numPartitions: 1, configEntries: [{ name: 'retention.ms', value: '-1' }] }]);
+  private async start({ groupId, topic, broadcast = false, handle }: KafkaSubscriptionInterface): Promise<void> {
+    const consumerGroupId = broadcast ? `${groupId}.${randomUUID()}` : groupId;
+    const deadLetterTopic = broadcast ? null : `${groupId}.dlt`;
 
-    const consumer = this.client.kafka.consumer({ kafkaJS: { groupId, fromBeginning: true } });
+    if (deadLetterTopic) {
+      await this.client.createTopics([{ topic: deadLetterTopic, numPartitions: 1, configEntries: [{ name: 'retention.ms', value: '-1' }] }]);
+    }
+
+    const consumer = this.client.kafka.consumer({ kafkaJS: { groupId: consumerGroupId, fromBeginning: !broadcast, autoCommit: !broadcast } });
     await consumer.connect();
     await consumer.subscribe({ topic });
     await consumer.run({
@@ -51,24 +60,46 @@ export class KafkaConsumerService implements OnApplicationBootstrap, OnModuleDes
         const position = `${topic}/${partition}@${message.offset}`;
 
         try {
-          await handle(JSON.parse(message.value?.toString() ?? ''));
+          await handle(JSON.parse(message.value?.toString() ?? ''), { partition, offset: message.offset });
         } catch (error) {
           if (error instanceof SyntaxError || error instanceof KafkaRejectedMessageException) {
-            this.logger.warn(`${groupId} rejected ${position}: ${error.message}`);
-            await this.producer.send(deadLetterTopic, {
-              key: message.key,
-              value: message.value,
-              headers: { ...message.headers, dlt_reason: error.message, dlt_source: position },
-            });
+            this.logger.warn(`${consumerGroupId} rejected ${position}: ${error.message}`);
+
+            if (deadLetterTopic) {
+              await this.producer.send(deadLetterTopic, {
+                key: message.key,
+                value: message.value,
+                headers: { ...message.headers, dlt_reason: error.message, dlt_source: position },
+              });
+            }
+
             return;
           }
 
-          this.logger.error(`${groupId} failed ${position}, retrying`, error instanceof Error ? error.stack : String(error));
+          this.logger.error(`${consumerGroupId} failed ${position}, retrying`, error instanceof Error ? error.stack : String(error));
           throw error;
         }
       },
     });
     this.consumers.push(consumer);
-    this.logger.log(`${groupId} consuming ${topic}`);
+
+    if (broadcast) {
+      await this.waitForAssignment(consumer, consumerGroupId);
+    }
+
+    this.logger.log(`${consumerGroupId} consuming ${topic}`);
+  }
+
+  private async waitForAssignment(consumer: KafkaJS.Consumer, groupId: string): Promise<void> {
+    const deadline = Date.now() + this.assignmentTimeoutMs;
+
+    while (consumer.assignment().length === 0) {
+      if (Date.now() > deadline) {
+        this.logger.warn(`${groupId} has no partitions after ${this.assignmentTimeoutMs} ms, continuing`);
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
   }
 }

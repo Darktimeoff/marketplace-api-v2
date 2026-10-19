@@ -26,16 +26,18 @@ export interface TestDbConnection {
   broker?: TestBrokerConnection;
   kafkaBrokers?: string;
   kafkaContainerId?: string;
+  temporalAddress?: string;
 }
 
 export function stateFilePath(suite: string): string {
   return join(tmpdir(), `marketplace-api-v2-test-db.${suite}.json`);
 }
 
-export function createDbLifecycle(suite: string, { withBroker = false, withKafka = false }: { withBroker?: boolean; withKafka?: boolean } = {}) {
+export function createDbLifecycle(suite: string, { withBroker = false, withKafka = false, withTemporal = false }: { withBroker?: boolean; withKafka?: boolean; withTemporal?: boolean } = {}) {
   let container: StartedPostgreSqlContainer | undefined;
   let broker: StartedTestContainer | undefined;
   let kafka: StartedTestContainer | undefined;
+  let temporal: StartedTestContainer | undefined;
 
   async function setup(): Promise<void> {
     container = await new PostgreSqlContainer('postgres:16-alpine')
@@ -88,6 +90,15 @@ export function createDbLifecycle(suite: string, { withBroker = false, withKafka
       connection.kafkaContainerId = kafka.getId();
     }
 
+    if (withTemporal) {
+      temporal = await new GenericContainer('temporalio/temporal:1.9.1')
+        .withCommand(['server', 'start-dev', '--ip=0.0.0.0', '--headless'])
+        .withExposedPorts(7233)
+        .withWaitStrategy(Wait.forLogMessage(/Temporal Server:/))
+        .start();
+      connection.temporalAddress = `${temporal.getHost()}:${temporal.getMappedPort(7233)}`;
+    }
+
     await writeFile(stateFilePath(suite), JSON.stringify(connection), 'utf-8');
   }
 
@@ -95,6 +106,7 @@ export function createDbLifecycle(suite: string, { withBroker = false, withKafka
     await unlink(stateFilePath(suite)).catch(() => undefined);
     await broker?.stop();
     await kafka?.stop();
+    await temporal?.stop();
     await container?.stop();
   }
 

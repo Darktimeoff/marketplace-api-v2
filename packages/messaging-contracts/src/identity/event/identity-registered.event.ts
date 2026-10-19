@@ -1,11 +1,12 @@
 import { TopicEnum } from "../../generic/enum/topic.enum.js";
+import { SourceEnum } from "../../generic/enum/source.enum.js";
 import { CloudEventInterface } from "../../generic/interface/cloud-event.interface.js";
 import type { MessageContractInterface } from "../../generic/interface/message-contract.interface.js";
 
 export namespace IdentityRegisteredEvent {
   export const TOPIC = TopicEnum.IDENTITY_EVENTS;
   export const TYPE = 'identity.registered';
-  export const SOURCE = '/identity-service';
+  export const SOURCE = SourceEnum.IDENTITY;
 
   export interface DataInterface {
     identityId: number;

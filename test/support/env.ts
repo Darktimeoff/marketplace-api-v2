@@ -43,3 +43,7 @@ if (connection.broker) {
   process.env.RABBITMQ_USER = connection.broker.username;
   process.env.RABBITMQ_PASSWORD = connection.broker.password;
 }
+
+if (connection.temporalAddress) {
+  process.env.TEMPORAL_ADDRESS = connection.temporalAddress;
+}

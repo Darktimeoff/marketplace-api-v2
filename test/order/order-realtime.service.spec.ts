@@ -3,16 +3,29 @@ import { OrderNotifyService, ORDER_EVENT_HISTORY_LIMIT } from '../../src/order/s
 import { OrderStatusEnum } from '@marketplace/contracts-core';
 
 describe('OrderNotifyService', () => {
-  it('assigns increasing IDs and replays only events after the requested ID', () => {
+  it('replays only events after the requested id', () => {
     const service = new OrderNotifyService();
-    const first = service.notifyStatusChanged(11, OrderStatusEnum.paid);
-    const second = service.notifyStatusChanged(11, OrderStatusEnum.shipped);
-    service.notifyStatusChanged(12, OrderStatusEnum.paid);
+    const created = { id: 4, orderId: 11, status: OrderStatusEnum.pending_payment };
+    const paid = { id: 9, orderId: 11, status: OrderStatusEnum.paid };
+    service.record(created);
+    service.record(paid);
+    service.record({ id: 5, orderId: 12, status: OrderStatusEnum.pending_payment });
 
-    expect(first.id).toBe(1);
-    expect(second.id).toBe(2);
-    expect(service.getAfter(11, 1)).toEqual([second]);
-    expect(service.getAfter(11, 0)).toEqual([first, second]);
+    expect(service.getAfter(11, 4)).toEqual([paid]);
+    expect(service.getAfter(11, 0)).toEqual([created, paid]);
+  });
+
+  it('ignores an event that is not newer than the last one for its order', () => {
+    const service = new OrderNotifyService();
+    const listener = vi.fn();
+    service.subscribe(11, listener);
+
+    service.record({ id: 7, orderId: 11, status: OrderStatusEnum.paid });
+    service.record({ id: 7, orderId: 11, status: OrderStatusEnum.paid });
+    service.record({ id: 3, orderId: 11, status: OrderStatusEnum.pending_payment });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(service.getAfter(11, 0)).toHaveLength(1);
   });
 
   it('notifies only listeners for the matching order and stops after unsubscribe', () => {
@@ -20,22 +33,23 @@ describe('OrderNotifyService', () => {
     const listener = vi.fn();
     const unsubscribe = service.subscribe(11, listener);
 
-    service.notifyStatusChanged(12, OrderStatusEnum.paid);
-    service.notifyStatusChanged(11, OrderStatusEnum.paid);
+    service.record({ id: 1, orderId: 12, status: OrderStatusEnum.paid });
+    service.record({ id: 2, orderId: 11, status: OrderStatusEnum.paid });
     unsubscribe();
     unsubscribe();
-    service.notifyStatusChanged(11, OrderStatusEnum.shipped);
+    service.record({ id: 3, orderId: 11, status: OrderStatusEnum.canceled });
 
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it('retains only the configured number of recent events per order', () => {
     const service = new OrderNotifyService();
-    const published = Array.from({ length: ORDER_EVENT_HISTORY_LIMIT + 1 }, () =>
-      service.notifyStatusChanged(11, OrderStatusEnum.paid),
-    );
+    for (let id = 1; id <= ORDER_EVENT_HISTORY_LIMIT + 1; id++) {
+      service.record({ id, orderId: 11, status: OrderStatusEnum.paid });
+    }
 
-    expect(service.getAfter(11, 0)).toHaveLength(ORDER_EVENT_HISTORY_LIMIT);
-    expect(service.getAfter(11, published[1].id)).toHaveLength(ORDER_EVENT_HISTORY_LIMIT - 1);
+    const events = service.getAfter(11, 0);
+    expect(events).toHaveLength(ORDER_EVENT_HISTORY_LIMIT);
+    expect(events[0].id).toBe(2);
   });
 });

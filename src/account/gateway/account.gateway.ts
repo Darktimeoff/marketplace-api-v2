@@ -1,5 +1,5 @@
-import { Nack, RabbitRPC, RabbitSubscribe } from "@golevelup/nestjs-rabbitmq";
-import { AccountCustomerChargeRequest, AccountCustomerRefundCommand } from "@marketplace/messaging-contracts";
+import { Nack, RabbitRPC } from "@golevelup/nestjs-rabbitmq";
+import { AccountCustomerChargeRequest, AccountCustomerRefundRequest } from "@marketplace/messaging-contracts";
 import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { isUUID } from "class-validator";
@@ -9,7 +9,6 @@ import { AccountCustomerRefundCommandHandler } from "../command-handler/account-
 import { AccountCustomerRefundTopologyEnum } from "../enum/account-customer-refund-topology.enum.js";
 import { AccountInboxConsumerEnum } from "../enum/account-inbox-consumer.enum.js";
 import { AccountInboxService } from "../service/account-inbox.service.js";
-import { AccountCustomerRefundWithoutChargeException } from "../exception/account-customer-refund-without-charge.exception.js";
 import { AccountCustomerChargeRejectedException } from "../exception/insufficient-stock.exception.js";
 
 
@@ -58,9 +57,9 @@ export class AccountGateway {
     }
   }
 
-  @RabbitSubscribe({
-    exchange: AccountCustomerRefundCommand.TOPIC,
-    routingKey: AccountCustomerRefundCommand.TYPE,
+  @RabbitRPC({
+    exchange: AccountCustomerRefundRequest.TOPIC,
+    routingKey: AccountCustomerRefundRequest.TYPE,
     queue: AccountCustomerRefundTopologyEnum.QUEUE,
     queueOptions: {
       durable: true,
@@ -74,24 +73,18 @@ export class AccountGateway {
       }
     }
   })
-  async handleCustomerRefund(msg: AccountCustomerRefundCommand.MessageType): Promise<Nack | void> {
-    if (msg?.specversion !== '1.0' || msg.type !== AccountCustomerRefundCommand.TYPE || !isUUID(msg.id) || !isUUID(msg.data?.chargeId) || !this.isValidMovement(msg.data)) {
+  async handleCustomerRefund(msg: AccountCustomerRefundRequest.MessageType): Promise<AccountCustomerRefundRequest.ResponseMessageType | Nack> {
+    if (msg?.specversion !== '1.0' || msg.type !== AccountCustomerRefundRequest.TYPE || !isUUID(msg.id) || !isUUID(msg.data?.chargeId) || !this.isValidMovement(msg.data)) {
       this.logger.warn(`rejected id=${msg?.id}`)
       return new Nack(false)
     }
 
-    try {
-      const applied = await this.inbox.processOnce(AccountInboxConsumerEnum.CUSTOMER_REFUND, msg.id, () => this.refund.execute(msg.data))
-      this.logger.log(`${applied ? 'refunded' : 'skipped refund'} id=${msg.id}`)
-    } catch (e) {
-      if (e instanceof AccountCustomerRefundWithoutChargeException) {
-        this.logger.warn(`skipped refund id=${msg.id}: no charge ${e.chargeId}`)
-        return
-      }
-
-      this.logger.error(`failed refund id=${msg.id}`, e instanceof Error ? e.stack : String(e))
-      return new Nack(true)
-    }
+    let refunded = true
+    const applied = await this.inbox.processOnce(AccountInboxConsumerEnum.CUSTOMER_REFUND, msg.id, async () => {
+      refunded = await this.refund.execute(msg.data)
+    })
+    this.logger.log(`${applied ? (refunded ? 'refunded' : 'fenced uncharged') : 'skipped refund'} id=${msg.id}`)
+    return this.toRefundResponse(msg, { status: refunded ? 'refunded' : 'not_charged' })
   }
 
   private isValidMovement(data: Partial<AccountCustomerChargeRequest.DataInterface> | undefined): boolean {
@@ -111,6 +104,23 @@ export class AccountGateway {
       id: randomUUID(),
       source: AccountCustomerChargeRequest.RESPONSE_SOURCE,
       type: AccountCustomerChargeRequest.RESPONSE_TYPE,
+      time: new Date().toISOString(),
+      datacontenttype: 'application/json',
+      subject: request.subject,
+      correlationid: request.id,
+      data,
+    }
+  }
+
+  private toRefundResponse(
+    request: AccountCustomerRefundRequest.MessageType,
+    data: AccountCustomerRefundRequest.ResponseDataType,
+  ): AccountCustomerRefundRequest.ResponseMessageType {
+    return {
+      specversion: '1.0',
+      id: randomUUID(),
+      source: AccountCustomerRefundRequest.RESPONSE_SOURCE,
+      type: AccountCustomerRefundRequest.RESPONSE_TYPE,
       time: new Date().toISOString(),
       datacontenttype: 'application/json',
       subject: request.subject,

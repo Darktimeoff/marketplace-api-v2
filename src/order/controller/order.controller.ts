@@ -2,8 +2,11 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
+  ParseUUIDPipe,
   Post,
 } from '@nestjs/common';
 import { OrderService } from '../service/order.service.js';
@@ -11,6 +14,7 @@ import { OrderPlaceCommandHandler } from '../command-handler/order-place.command
 import { OrderCreateInput } from '../input/order-create.input.js';
 import { OrderDto } from '../dto/order.dto.js';
 import { ResponseDto } from '../../generic/validation/response-dto.decorator.js';
+import { IdempotencyKey } from '../decorator/idempotency-key.decorator.js';
 
 @Controller('order')
 export class OrderController {
@@ -20,9 +24,13 @@ export class OrderController {
   ) {}
 
   @ResponseDto(OrderDto)
+  @HttpCode(HttpStatus.ACCEPTED)
   @Post()
-  create(@Body() input: OrderCreateInput): Promise<OrderDto> {
-    return this.orderPlace.execute(input);
+  create(
+    @Body() input: OrderCreateInput,
+    @IdempotencyKey(new ParseUUIDPipe({ optional: true })) idempotencyKey?: string,
+  ): Promise<OrderDto> {
+    return this.orderPlace.execute(input, idempotencyKey ?? null);
   }
 
   @ResponseDto(OrderDto)

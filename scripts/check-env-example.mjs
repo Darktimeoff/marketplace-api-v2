@@ -5,7 +5,7 @@ import path from 'node:path';
 const rootDir = path.resolve(fileURLToPath(import.meta.url), '../..');
 const schemaPath = path.join(rootDir, 'src/generic/environment/environment.schema.ts');
 const envExamplePath = path.join(rootDir, '.env.example');
-const composeOnlyKeys = new Set(['RABBITMQ_UI_PORT', 'KAFKA_PORT', 'KAFKA_UI_PORT']);
+const composeOnlyKeys = new Set(['RABBITMQ_UI_PORT', 'KAFKA_PORT', 'KAFKA_UI_PORT', 'TEMPORAL_PORT', 'TEMPORAL_UI_PORT']);
 
 function extractSchemaKeys(source) {
   const objectStart = source.indexOf('z.object({');

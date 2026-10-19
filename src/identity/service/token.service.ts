@@ -4,6 +4,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { SecretManagerService } from '../../generic/secret-manager/secret-manager.service.js';
 import { ACCESS_TOKEN_ALGORITHM, ACCESS_TOKEN_ISSUER, ACCESS_TOKEN_TTL_SECONDS } from '../../generic/auth/constant/access-token.constant.js';
 import { IdentitySessionRepository } from '../repository/identity-session.repository.js';
+import { AccessSessionService } from '../../generic/auth/access-session.service.js';
 import type { Identity } from '../entity/identity.entity.js';
 import type { IdentityTokenResponseInterface } from '@marketplace/contracts-core';
 
@@ -17,6 +18,7 @@ export class TokenService implements OnModuleInit {
   constructor(
     private readonly secrets: SecretManagerService,
     private readonly sessions: IdentitySessionRepository,
+    private readonly accessSessions: AccessSessionService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -31,6 +33,7 @@ export class TokenService implements OnModuleInit {
 
   async createTokenPair(identity: Pick<Identity, 'id' | 'publicId' | 'role' | 'email' | 'loginPhone'>, familyId: string = randomUUID()): Promise<IdentityTokenResponseInterface> {
     const refreshToken = randomBytes(32).toString('base64url');
+    const tokenId = randomUUID();
 
     await this.sessions.create({
       identityId: identity.id,
@@ -46,10 +49,13 @@ export class TokenService implements OnModuleInit {
     })
       .setProtectedHeader({ alg: ACCESS_TOKEN_ALGORITHM, kid: this.keyId, typ: 'JWT' })
       .setSubject(identity.publicId)
+      .setJti(tokenId)
       .setIssuer(ACCESS_TOKEN_ISSUER)
       .setIssuedAt()
       .setExpirationTime(`${ACCESS_TOKEN_TTL_SECONDS}s`)
       .sign(this.privateKey);
+
+    await this.accessSessions.open(tokenId, familyId);
 
     return { accessToken, refreshToken, tokenType: 'Bearer', expiresIn: ACCESS_TOKEN_TTL_SECONDS };
   }

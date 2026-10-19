@@ -138,6 +138,52 @@ services:
       retries: 10
       start_period: 10s
 
+  redis-cache:
+    image: redis:8.2.2-alpine
+    container_name: redis-cache
+    command:
+      - redis-server
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    ports:
+      - "${REDIS_CACHE_PORT:-6380}:6379"
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis-queue:
+    image: redis:8.2.2-alpine
+    container_name: redis-queue
+    command:
+      - redis-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+    ports:
+      - "${REDIS_QUEUE_PORT:-6381}:6379"
+    volumes:
+      - redis_queue_data:/data
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   infisical-backend:
     container_name: infisical-backend
     restart: unless-stopped
@@ -198,6 +244,7 @@ volumes:
     driver: local
   redis_data:
     driver: local
+  redis_queue_data:
 
 networks:
   infisical:

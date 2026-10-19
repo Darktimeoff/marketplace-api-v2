@@ -1,4 +1,4 @@
-import { Expose } from 'class-transformer';
+import { Expose, Type } from 'class-transformer';
 import { IsDate, IsEnum, IsInt, IsPositive, IsString, IsUUID } from 'class-validator';
 import { CurrencyEnum, OrderStatusEnum, type OrderResponseInterface } from '@marketplace/contracts-core';
 
@@ -29,10 +29,12 @@ export class OrderDto implements OrderResponseInterface {
   currency: CurrencyEnum;
 
   @Expose()
+  @Type(() => Date)
   @IsDate()
   createdAt: Date;
 
   @Expose()
+  @Type(() => Date)
   @IsDate()
   updatedAt: Date;
 }

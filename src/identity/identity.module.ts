@@ -8,6 +8,7 @@ import { IdentityOutboxRelayService } from './service/identity-outbox-relay.serv
 import { IdentityMessageService } from './service/identity-message.service.js';
 import { SecretManagerModule } from '../generic/secret-manager/secret-manager.module.js';
 import { AuthModule } from '../generic/auth/auth.module.js';
+import { RateLimitModule } from '../generic/rate-limit/rate-limit.module.js';
 import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { AuthController } from './controller/auth.controller.js';
 import { IdentityRepository } from './repository/identity.repository.js';
@@ -20,7 +21,7 @@ import { IdentityRefreshCommandHandler } from './command-handler/identity-refres
 import { IdentityLogoutCommandHandler } from './command-handler/identity-logout.command-handler.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox]), SecretManagerModule, KafkaModule, AuthModule],
+  imports: [TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox]), SecretManagerModule, KafkaModule, AuthModule, RateLimitModule],
   controllers: [AuthController],
   providers: [
     IdentityRepository,

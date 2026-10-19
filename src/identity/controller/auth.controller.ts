@@ -1,4 +1,5 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ResponseDto } from '../../generic/validation/response-dto.decorator.js';
 import { IdentityTokenDto } from '../dto/identity-token.dto.js';
 import { IdentityRegisterInput } from '../input/identity-register.input.js';
@@ -8,6 +9,7 @@ import { IdentityRegisterCommandHandler } from '../command-handler/identity-regi
 import { IdentityLoginCommandHandler } from '../command-handler/identity-login.command-handler.js';
 import { IdentityRefreshCommandHandler } from '../command-handler/identity-refresh.command-handler.js';
 import { IdentityLogoutCommandHandler } from '../command-handler/identity-logout.command-handler.js';
+import { IDENTITY_LOGIN_THROTTLE_LIMIT, IDENTITY_LOGIN_THROTTLE_TTL_MS, identityLoginTracker } from '../constant/identity-login-throttle.constant.js';
 
 @Controller('auth')
 export class AuthController {
@@ -26,6 +28,8 @@ export class AuthController {
 
   @ResponseDto(IdentityTokenDto)
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: IDENTITY_LOGIN_THROTTLE_LIMIT, ttl: IDENTITY_LOGIN_THROTTLE_TTL_MS, getTracker: identityLoginTracker } })
   @Post('login')
   loginIdentity(@Body() input: IdentityLoginInput): Promise<IdentityTokenDto> {
     return this.login.execute(input);

@@ -341,4 +341,37 @@ describe('Auth (e2e)', () => {
       await expect(verify(other.accessToken)).resolves.toMatchObject({ identityPublicId: expect.any(String) });
     });
   });
+
+  describe('login rate limit', () => {
+    it('answers 429 with Retry-After after 5 attempts for one login and ip in a minute', async () => {
+      await register();
+      const statuses = [];
+      for (let i = 0; i < 5; i += 1) {
+        statuses.push((await post('login', { login: 'jane@example.com', password: 'wrong-password' })).status);
+      }
+
+      const blocked = await post('login', { login: 'JANE@example.com', password: 'correct-horse' });
+
+      expect(statuses).toEqual([401, 401, 401, 401, 401]);
+      expect(blocked.status).toBe(429);
+      expect(Number(blocked.headers['retry-after'])).toBeGreaterThanOrEqual(59);
+      expect(Number(blocked.headers['retry-after'])).toBeLessThanOrEqual(60);
+    });
+
+    it('counts each login separately', async () => {
+      await register();
+      for (let i = 0; i < 5; i += 1) {
+        await post('login', { login: 'attacker-target@example.com', password: 'wrong-password' });
+      }
+
+      await post('login', { login: 'jane@example.com', password: 'correct-horse' }).expect(200);
+    });
+
+    it('reports the remaining attempts', async () => {
+      const response = await post('login', { login: 'jane@example.com', password: 'wrong-password' });
+
+      expect(response.headers['x-ratelimit-limit']).toBe('5');
+      expect(response.headers['x-ratelimit-remaining']).toBe('4');
+    });
+  });
 });

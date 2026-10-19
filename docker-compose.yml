@@ -141,21 +141,16 @@ services:
   redis-cache:
     image: redis:8.2.2-alpine
     container_name: redis-cache
-    command:
-      - redis-server
-      - --maxmemory
-      - 64mb
-      - --maxmemory-policy
-      - allkeys-lru
-      - --save
-      - ""
-      - --appendonly
-      - "no"
+    entrypoint: >
+      sh -c '
+      exec redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru --save "" --appendonly no --requirepass "$$(cat /run/secrets/redis_password)"'
+    secrets:
+      - redis_password
     ports:
       - "${REDIS_CACHE_PORT:-6380}:6379"
     restart: always
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -163,23 +158,18 @@ services:
   redis-queue:
     image: redis:8.2.2-alpine
     container_name: redis-queue
-    command:
-      - redis-server
-      - --maxmemory
-      - 256mb
-      - --maxmemory-policy
-      - noeviction
-      - --appendonly
-      - "yes"
-      - --appendfsync
-      - everysec
+    entrypoint: >
+      sh -c '
+      exec redis-server --maxmemory 256mb --maxmemory-policy noeviction --appendonly yes --appendfsync everysec --requirepass "$$(cat /run/secrets/redis_password)"'
+    secrets:
+      - redis_password
     ports:
       - "${REDIS_QUEUE_PORT:-6381}:6379"
     volumes:
       - redis_queue_data:/data
     restart: always
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -254,3 +244,5 @@ secrets:
     file: ./secrets/rabbitmq_password.txt
   db_password:
     file: ./secrets/db_password.txt
+  redis_password:
+    file: ./secrets/redis_password.txt

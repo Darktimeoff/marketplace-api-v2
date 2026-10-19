@@ -30,8 +30,7 @@ async function main() {
   await writeFileAtomic(dbPasswordPath, secretsMap.DBPASSWORD, { mode: 0o600 });
   await writeFileAtomic(rabbitmqPasswordPath, secretsMap.RABBITMQ_PASSWORD, { mode: 0o600 });
 
-  await writeFileAtomic(envPath, upsertEnvVar(envSource, 'DBUSER', secretsMap.DBUSER));
-  await writeFileAtomic(envPath, upsertEnvVar(envSource, 'RABBITMQ_USER', secretsMap.RABBITMQ_USER));
+  await writeFileAtomic(envPath, upsertEnvVar(upsertEnvVar(envSource, 'DBUSER', secretsMap.DBUSER), 'RABBITMQ_USER', secretsMap.RABBITMQ_USER));
 
   console.log(
     `Pulled DBUSER and DBPASSWORD from Infisical (${env.INFISICAL_ENVIRONMENT}) into ${path.relative(rootDir, envPath)} and ${path.relative(rootDir, dbPasswordPath)}.`,

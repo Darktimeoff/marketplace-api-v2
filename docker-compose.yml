@@ -143,14 +143,17 @@ services:
     container_name: redis-cache
     entrypoint: >
       sh -c '
-      exec redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru --save "" --appendonly no --requirepass "$$(cat /run/secrets/redis_password)"'
+      umask 077 &&
+      printf "requirepass %s\n" "$$(cat /run/secrets/redis_password)" > /tmp/redis.conf &&
+      chown redis:redis /tmp/redis.conf &&
+      exec docker-entrypoint.sh redis-server /tmp/redis.conf --maxmemory 64mb --maxmemory-policy allkeys-lru --save "" --appendonly no'
     secrets:
       - redis_password
     ports:
       - "${REDIS_CACHE_PORT:-6380}:6379"
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping | grep -q PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -160,7 +163,10 @@ services:
     container_name: redis-queue
     entrypoint: >
       sh -c '
-      exec redis-server --maxmemory 256mb --maxmemory-policy noeviction --appendonly yes --appendfsync everysec --requirepass "$$(cat /run/secrets/redis_password)"'
+      umask 077 &&
+      printf "requirepass %s\n" "$$(cat /run/secrets/redis_password)" > /tmp/redis.conf &&
+      chown redis:redis /tmp/redis.conf &&
+      exec docker-entrypoint.sh redis-server /tmp/redis.conf --maxmemory 256mb --maxmemory-policy noeviction --appendonly yes --appendfsync everysec'
     secrets:
       - redis_password
     ports:
@@ -169,7 +175,7 @@ services:
       - redis_queue_data:/data
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping | grep -q PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10

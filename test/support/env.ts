@@ -47,3 +47,8 @@ if (connection.broker) {
 if (connection.temporalAddress) {
   process.env.TEMPORAL_ADDRESS = connection.temporalAddress;
 }
+
+if (connection.redisCacheUrl && connection.redisQueueUrl) {
+  process.env.REDIS_CACHE_URL = connection.redisCacheUrl;
+  process.env.REDIS_QUEUE_URL = connection.redisQueueUrl;
+}

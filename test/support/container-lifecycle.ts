@@ -27,17 +27,21 @@ export interface TestDbConnection {
   kafkaBrokers?: string;
   kafkaContainerId?: string;
   temporalAddress?: string;
+  redisCacheUrl?: string;
+  redisQueueUrl?: string;
 }
 
 export function stateFilePath(suite: string): string {
   return join(tmpdir(), `marketplace-api-v2-test-db.${suite}.json`);
 }
 
-export function createDbLifecycle(suite: string, { withBroker = false, withKafka = false, withTemporal = false }: { withBroker?: boolean; withKafka?: boolean; withTemporal?: boolean } = {}) {
+export function createDbLifecycle(suite: string, { withBroker = false, withKafka = false, withTemporal = false, withRedis = false }: { withBroker?: boolean; withKafka?: boolean; withTemporal?: boolean; withRedis?: boolean } = {}) {
   let container: StartedPostgreSqlContainer | undefined;
   let broker: StartedTestContainer | undefined;
   let kafka: StartedTestContainer | undefined;
   let temporal: StartedTestContainer | undefined;
+  let redisCache: StartedTestContainer | undefined;
+  let redisQueue: StartedTestContainer | undefined;
 
   async function setup(): Promise<void> {
     container = await new PostgreSqlContainer('postgres:16-alpine')
@@ -99,6 +103,13 @@ export function createDbLifecycle(suite: string, { withBroker = false, withKafka
       connection.temporalAddress = `${temporal.getHost()}:${temporal.getMappedPort(7233)}`;
     }
 
+    if (withRedis) {
+      redisCache = await startRedis(['--maxmemory', '64mb', '--maxmemory-policy', 'allkeys-lru', '--save', '', '--appendonly', 'no']);
+      redisQueue = await startRedis(['--maxmemory', '256mb', '--maxmemory-policy', 'noeviction', '--appendonly', 'yes', '--appendfsync', 'everysec']);
+      connection.redisCacheUrl = redisUrl(redisCache);
+      connection.redisQueueUrl = redisUrl(redisQueue);
+    }
+
     await writeFile(stateFilePath(suite), JSON.stringify(connection), 'utf-8');
   }
 
@@ -107,10 +118,26 @@ export function createDbLifecycle(suite: string, { withBroker = false, withKafka
     await broker?.stop();
     await kafka?.stop();
     await temporal?.stop();
+    await redisCache?.stop();
+    await redisQueue?.stop();
     await container?.stop();
   }
 
   return { setup, teardown };
+}
+
+const REDIS_TEST_PASSWORD = 'test';
+
+function startRedis(args: string[]): Promise<StartedTestContainer> {
+  return new GenericContainer('redis:8.2.2-alpine')
+    .withCommand(['redis-server', ...args, '--requirepass', REDIS_TEST_PASSWORD])
+    .withExposedPorts(6379)
+    .withWaitStrategy(Wait.forLogMessage(/Ready to accept connections/))
+    .start();
+}
+
+function redisUrl(container: StartedTestContainer): string {
+  return `redis://default:${REDIS_TEST_PASSWORD}@${container.getHost()}:${container.getMappedPort(6379)}`;
 }
 
 function freePort(): Promise<number> {

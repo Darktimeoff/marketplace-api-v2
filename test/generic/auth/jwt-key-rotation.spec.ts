@@ -33,6 +33,7 @@ describe('JWT key rotation without downtime', () => {
     vi.restoreAllMocks();
     vault.JWT_PUBLIC_KEY = k1.publicKey;
     vault.JWT_PRIVATE_KEY = k1.privateKey;
+    vault.REFRESH_TOKEN_PEPPER = 'test-pepper';
     keys = new JwtVerificationKeysService(secrets);
     await keys.onModuleInit();
     verifier = new AccessTokenVerifierService(keys, denylist);

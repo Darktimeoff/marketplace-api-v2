@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { calculateJwkThumbprint, exportJWK, importPKCS8, SignJWT, type CryptoKey } from 'jose';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { SecretManagerService } from '../../generic/secret-manager/secret-manager.service.js';
 import { ACCESS_TOKEN_ALGORITHM, ACCESS_TOKEN_ISSUER, ACCESS_TOKEN_TTL_SECONDS } from '../../generic/auth/constant/access-token.constant.js';
 import { IdentitySessionRepository } from '../repository/identity-session.repository.js';
@@ -17,6 +17,7 @@ export class TokenService implements OnModuleInit {
   private readonly logger = new Logger(TokenService.name);
   private privateKey: CryptoKey;
   private keyId: string;
+  private refreshTokenPepper: string;
 
   constructor(
     private readonly secrets: SecretManagerService,
@@ -25,6 +26,7 @@ export class TokenService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    this.refreshTokenPepper = await this.secrets.get('REFRESH_TOKEN_PEPPER');
     await this.loadSigningKey();
   }
 
@@ -38,7 +40,7 @@ export class TokenService implements OnModuleInit {
   }
 
   hashRefreshToken(refreshToken: string): string {
-    return createHash('sha256').update(refreshToken).digest('hex');
+    return createHmac('sha256', this.refreshTokenPepper).update(refreshToken).digest('hex');
   }
 
   async createTokenPair(identity: Pick<Identity, 'id' | 'publicId' | 'role' | 'email' | 'loginPhone'>, familyId: string = randomUUID()): Promise<IdentityTokenResponseInterface> {

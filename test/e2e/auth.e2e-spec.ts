@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { decodeProtectedHeader, importSPKI, jwtVerify } from 'jose';
 import { AppModule } from '../../src/app.module.js';
@@ -204,6 +204,8 @@ describe('Auth (e2e)', () => {
       const [session] = await dataSource.getRepository(IdentitySession).find();
       expect(session.tokenHash).toMatch(/^[0-9a-f]{64}$/);
       expect(session.tokenHash).not.toContain(refreshToken);
+      expect(session.tokenHash).toBe(createHmac('sha256', process.env.REFRESH_TOKEN_PEPPER as string).update(refreshToken).digest('hex'));
+      expect(session.tokenHash).not.toBe(createHash('sha256').update(refreshToken).digest('hex'));
     });
 
     it('revokes the whole family when a used token is presented again', async () => {
@@ -270,7 +272,7 @@ describe('Auth (e2e)', () => {
 
     it('revokes a refresh token issued by a rotation that commits while the logout runs', async () => {
       const { refreshToken } = await register();
-      const hash = (token: string) => createHash('sha256').update(token).digest('hex');
+      const hash = (token: string) => createHmac('sha256', process.env.REFRESH_TOKEN_PEPPER as string).update(token).digest('hex');
       const [presented] = await dataSource.query(`SELECT "identityId", "familyId" FROM "IdentitySession" WHERE "tokenHash" = $1`, [hash(refreshToken)]);
       const rotatedToken = randomBytes(32).toString('base64url');
       const rotation = dataSource.createQueryRunner();

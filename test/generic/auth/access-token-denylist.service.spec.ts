@@ -31,10 +31,14 @@ describe('AccessTokenDenylistService', () => {
     const startedAt = Date.now();
 
     expect(await aDenylist({ exists: () => new Promise(() => undefined) }).isFamilyDenied('family')).toBe(false);
-    expect(Date.now() - startedAt).toBeLessThan(300);
+    expect(Date.now() - startedAt).toBeLessThan(600);
   });
 
-  it('lets logout succeed when the denylist cannot be written', async () => {
+  it('fails the revocation with 503 when the denylist cannot be written and fail-open is off', async () => {
+    await expect(aDenylist({ status: 'reconnecting' }, false).denyFamily('family')).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('lets logout succeed when the denylist cannot be written and fail-open is on', async () => {
     await expect(aDenylist({ status: 'reconnecting' }).denyFamily('family')).resolves.toBeUndefined();
     await expect(aDenylist({ set: async () => { throw new Error('connection lost'); } }).denyFamily('family')).resolves.toBeUndefined();
   });

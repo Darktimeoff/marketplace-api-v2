@@ -7,7 +7,7 @@ import { ACCESS_TOKEN_CLOCK_TOLERANCE_SECONDS, ACCESS_TOKEN_TTL_SECONDS } from '
 export class AccessTokenDenylistService {
   private readonly logger = new Logger(AccessTokenDenylistService.name);
   private readonly deniedTtlSeconds = ACCESS_TOKEN_TTL_SECONDS + ACCESS_TOKEN_CLOCK_TOLERANCE_SECONDS;
-  private readonly timeoutMs = 100;
+  private readonly timeoutMs = 300;
   private readonly failOpen: boolean;
 
   constructor(
@@ -21,6 +21,10 @@ export class AccessTokenDenylistService {
     try {
       await this.withTimeout(() => this.redis.queue.set(this.toDeniedFamilyKey(familyId), '1', 'EX', this.deniedTtlSeconds));
     } catch (error) {
+      if (!this.failOpen) {
+        throw new ServiceUnavailableException('Access token revocation could not be recorded');
+      }
+
       this.logger.error(`denylist unavailable, family=${familyId} stays usable until its access tokens expire: ${this.toMessage(error)}`);
     }
   }

@@ -16,6 +16,7 @@ const environmentSchema = z.object({
   KAFKA_CONSUMERS_ENABLED: z.stringbool().default(true),
   TEMPORAL_ADDRESS: z.string().min(1).default('temporal:7233'),
   TEMPORAL_NAMESPACE: z.string().min(1).default('default'),
+  ACCESS_DENYLIST_FAIL_OPEN: z.stringbool().default(true),
 })
 
 export type EnvironmentType = z.infer<typeof environmentSchema>

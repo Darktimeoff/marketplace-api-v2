@@ -223,33 +223,85 @@ Redis makes the system faster, not more correct: everything below is an optimiza
 
 ## Auth (identity)
 
-| Endpoint | Body | Result |
+| Endpoint | Auth | Body | Result |
+|---|---|---|---|
+| `POST /auth/register` | public | `{ email?, phone?, password }`, at least one of email or phone | `201` token pair, `409` if the email or phone is taken |
+| `POST /auth/login` | public, 5 attempts per minute per ip+login | `{ login, password }`; a `login` starting with `+` is an E.164 phone, anything else an email | `200` token pair, `401`, `429` |
+| `POST /auth/refresh` | public | `{ refreshToken }` | `200` new token pair, `401` |
+| `POST /auth/logout` | public | `{ refreshToken }` | `204`, also for an unknown or already revoked token |
+| `GET /auth/me` | token | — | `200 { identityPublicId, role, email, phoneNumber }`, `401` |
+| `POST /order` | token, `create Order` | order body (the buyer comes from the token) | `202`, `401`, `409` while the buyer is being provisioned |
+| `GET /order/:id` | token, `read Order` + ownership | — | `200` own order (admin/owner: any), `403` someone else's, `401` |
+| `POST /product` | token, `create Product` (seller, admin, owner) | `{ categoryId, brandId, translations: [{ language, title, description? }] }` | `201`, `403` for a buyer, `401`, `404` unknown category or brand |
+
+A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`. In the homework's terms, orders are the "resource with an owner" and products the "resource only a privileged role writes".
+
+### Variables
+
+| Змінна | Джерело | Навіщо |
 |---|---|---|
-| `POST /auth/register` | `{ email?, phone?, password }`, at least one of email or phone | `201` token pair, `409` if the email or phone is taken |
-| `POST /auth/login` | `{ login, password }`; a `login` starting with `+` is an E.164 phone, anything else an email | `200` token pair, `401` |
-| `POST /auth/refresh` | `{ refreshToken }` | `200` new token pair, `401` |
-| `POST /auth/logout` | `{ refreshToken }` | `204`, also for an unknown or already revoked token |
+| `JWT_PRIVATE_KEY` | сховище (#11, Infisical) | ES256 private key, PEM or base64 of a PEM; signs access tokens, only identity reads it |
+| `JWT_PUBLIC_KEY` | сховище (#11, Infisical) | ES256 public key(s), one or several PEM blocks or base64 of them; verifies access tokens by `kid` |
+| `REFRESH_TOKEN_PEPPER` | сховище (#11, Infisical) | HMAC key of the stored refresh-token hashes |
+| `DBPASSWORD` | сховище (#11, Infisical) | Postgres password |
+| `DBUSER` | сховище (#11, Infisical) | Postgres user |
+| `RABBITMQ_USER` | сховище (#11, Infisical) | RabbitMQ user |
+| `RABBITMQ_PASSWORD` | сховище (#11, Infisical) | RabbitMQ password |
+| `REDIS_CACHE_URL` | сховище (#11, Infisical) | cache Redis URL with its password |
+| `REDIS_QUEUE_URL` | сховище (#11, Infisical) | queue Redis URL with its password (denylist, rate limit, BullMQ) |
+| `DBHOST`, `DBPORT`, `DBNAME`, `KAFKA_BROKERS`, `TEMPORAL_ADDRESS`, `RABBITMQ_HOST` | compose / оточення | where the dev services are; not secrets |
+| `ACCESS_DENYLIST_FAIL_OPEN` | compose / оточення | `true` (default) or `false`, outage policy of the denylist |
+| `SKIP_VAULT` | оточення | `1` skips the vault and takes the secrets above from the environment |
 
-A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
+`npm run start` is a bare start: it reads nothing from the vault on its own behalf, and with `SKIP_VAULT=1` and a secret missing it exits with `1` before touching the database, naming every missing variable (`Missing secrets: JWT_PRIVATE_KEY, …`). There are no defaults for secrets: a default key would be a key compiled into the code. `npm run start:vault` (and every demo) goes through `scripts/with-secrets.sh dev`, as `migrate` and `seed` do. A leaked `DATABASE_URL` gives access to the database from the network; a leaked signing key lets anyone mint a token for anyone without any access at all, which is why the keys and the pepper live in the vault and the app refuses to run without them.
 
-- **Access token**: a 15-minute JWT signed with ES256. Claims: `sub` (the identity's `publicId`, a uuid; the integer id never leaves identity), `role`, `email`, `phone_number` (E.164), `iss: identity-service`, and a `kid` header (the public key's JWK thumbprint). Email and phone are in the token so other contexts don't have to ask identity for them on every request. A JWT is signed, not encrypted: anyone holding it can read these claims.
-- **Asymmetric keys**: only identity reads `JWT_PRIVATE_KEY` and signs. Verifying needs only `JWT_PUBLIC_KEY`, so any service can check a token without being able to mint one. `AccessTokenGuard` (`src/generic/auth/`) accepts only ES256 from `identity-service`, which rules out `alg: none` and HS/RS key confusion, validates the payload with a zod schema, rejects a token whose session family is on the denylist (see Redis), and puts `{ identityPublicId, tokenId, familyId, role, email, phoneNumber }` on the request (`tokenId` = `jti`, `familyId` = `sid`). Today the public key comes from configuration; the next step towards zero trust is identity publishing it at `/.well-known/jwks.json` and verifiers fetching it from there.
-- **`@Identity()`** (`src/generic/auth/decorator/`) reads those claims in a handler: `@UseGuards(AccessTokenGuard) @Get() me(@Identity() identity: AccessTokenClaimsInterface)`, or `@Identity('identityPublicId') identityPublicId: string` for one field. Without the guard on the route it fails with 500 instead of silently returning `undefined`.
-- **Refresh token**: 32 random bytes, valid for 30 days, stored only as a SHA-256 hash in `IdentitySession`. Every refresh marks the token used and issues a new one in the same session family. The "not used yet" check is an `UPDATE … WHERE "usedAt" IS NULL RETURNING`, so two parallel refreshes can't both win. Presenting a used token again means it was copied, so the whole family is revoked. Logout revokes the family too. Each login starts a new family, so sessions on other devices are unaffected. A refresh and a revocation of the same family are serialized by a transaction-scoped advisory lock on the `familyId`: without it, a logout running while a refresh commits would revoke the old row but not the new one, which its snapshot can't see, and the rotated token would stay valid for 30 days.
-- **Passwords**: argon2id, 8–128 characters, no composition rules (NIST 800-63B). Login answers an unknown login, a wrong password and a deleted identity with the same `401 Invalid login or password`, and hashes a dummy password when the login doesn't exist, so timing doesn't reveal which accounts exist.
-- **Registration** creates the `Identity` (role `user`; a `role` in the body is ignored), and the User and its account follow asynchronously through Kafka (see Events). The user starts with the identity's `email` and `phoneNumber` as contact details. `activatedAt` stays `NULL` until a verification flow exists.
-- **Keys** live in Infisical (`JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, PEM). Generate a pair with `openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt` and `openssl ec -pubout`. Tests generate a fresh pair per run (`test/support/env.ts`).
-- **Key rotation without downtime.** Every token names its signing key in the `kid` header, the RFC 7638 thumbprint of the public key. `JWT_PUBLIC_KEY` may hold several PEM blocks one after another; `JwtVerificationKeysService` computes each block's `kid` and verifies a token with the key its `kid` names (an unknown `kid` is a `401`). `TokenService` signs with `JWT_PRIVATE_KEY` and derives the `kid` from it, so the signing and verifying sides can't disagree. Both re-read the vault every 60 s without a restart and log once per change (`jwt verification keys: [...]`, `jwt signing key: ...`); a signing key whose `kid` isn't among the pod's verification keys logs a warning, and a vault read that fails keeps the current keys. To replace k1 with k2:
-  1. Generate k2, then set `JWT_PUBLIC_KEY` to k1's PEM followed by k2's. Keep `JWT_PRIVATE_KEY` = k1.
+Key fingerprints (the `kid`, RFC 7638 thumbprint of the public key; public data) prove the environments use different keys:
+
+| Environment | `kid` |
+|---|---|
+| dev | `_VZEet1Vx932lxQckAZZJhRJiwIY1woEYhsR9Zl-N0s` |
+| prod | `OVwlBCIW4WaBT_5ffXve5p0zxkP6XawsAIYdwOc7Fj4` |
+
+### Tokens
+
+- **Access token**: a 15-minute JWT signed with **ES256**. Claims: `sub` (the identity's `publicId`; the integer id never leaves identity), `role`, `email`, `phone_number`, `jti` (token id), `sid` (the session family), `iss: identity-service`, and a `kid` header. A JWT is signed, not encrypted: anyone holding it can read the claims, so nothing secret goes in.
+- **Why ES256**: OWASP lists RS256 as not recommended (PKCS#1 v1.5 padding) and suggests ES256, PS256 or EdDSA; ES256 gives small keys and signatures and is supported everywhere. It is asymmetric: only identity holds the private key, every other context verifies with the public one and can't mint tokens. HS256 would make every verifier a signer.
+- **Verification** (`AccessTokenVerifierService`) runs `jwtVerify` with an explicit `algorithms: ['ES256']` (RFC 8725 §3.1: this is what stops `alg: none` and RS/HS key confusion), the key chosen by `kid`, `iss`, `exp` with 5 s of tolerance and required `sub`, `exp`, `iat`, `jti`, `sid`; then the denylist. A token whose payload was edited (`role` → `admin`) keeps the old signature and fails with `401`: the token is verified, never just decoded.
+- **Refresh token**: 32 random bytes, opaque (not a JWT), valid for 30 days. The database stores only `HMAC-SHA256(REFRESH_TOKEN_PEPPER, token)` in `IdentitySession` (created by migration), so a dump of the table is not a list of live sessions, and write access to the database alone can't plant a session: computing a valid hash needs the pepper from the vault. Changing the pepper invalidates every refresh session, so it is rotated only on compromise.
+- **Rotation and reuse detection**: every refresh marks the token used (`UPDATE … WHERE "usedAt" IS NULL AND "revokedAt" IS NULL RETURNING`, so two parallel refreshes can't both win) and issues a new pair in the same family (`familyId`, one per login). A token that was already used coming back is a theft signal: the whole family is revoked in Postgres and on the denylist, and `refresh token reuse detected: revoking family=…` is logged; the honest client's newer token dies with it. A refresh and a revocation of the same family are serialized by an advisory lock on the `familyId`.
+- **Logout is two actions**: `revokedAt` on the whole family in Postgres kills the refresh tokens, and `denied-family:<sid>` in Redis (TTL 15 min + 5 s, the longest an access token of the family can still live) kills the access tokens now instead of at `exp`. The denylist works by family rather than by `jti`, so it needs no index of issued tokens and also catches a token a racing refresh issued just before. The two writes go to two stores and are not atomic, the same dual write as in the outbox homework: Postgres is written first, Redis second. If Redis fails, the refresh token is already dead; with `ACCESS_DENYLIST_FAIL_OPEN=true` logout still answers `204` and the access tokens live until `exp` (at most 15 min), with `false` it answers `503` so the client retries (the Postgres part is idempotent).
+- **Passwords**: argon2id, 8–128 characters. An unknown login, a wrong password and a deleted identity get the same `401 Invalid login or password`, and a dummy hash is checked for an unknown login, so timing doesn't reveal which accounts exist.
+- **Key rotation without downtime and the role of `kid`**: every token names its signing key in the `kid` header. `JWT_PUBLIC_KEY` may hold several keys; the verifier picks the one the `kid` names (an unknown `kid` is a `401`). `TokenService` derives its `kid` from `JWT_PRIVATE_KEY`, and both sides re-read the vault every 60 s without a restart, logging once per change. That is what lets the keys overlap. To replace k1 with k2:
+  1. Generate k2, set `JWT_PUBLIC_KEY` to k1 followed by k2. Keep `JWT_PRIVATE_KEY` = k1.
   2. Wait until every pod has logged `jwt verification keys: [<k1>, <k2>]` (at most a minute).
-  3. Set `JWT_PRIVATE_KEY` = k2. New tokens carry k2's `kid`; tokens signed by k1 still verify.
-  4. Wait for the longest-lived k1 token to expire: 15 min + 5 s of clock tolerance after the last pod logged `jwt signing key: <k2>`.
+  3. Set `JWT_PRIVATE_KEY` = k2. New tokens carry k2's `kid`; k1 tokens still verify. A pod whose signing `kid` isn't among its verification keys logs a warning.
+  4. Wait 15 min + 5 s after the last pod logged `jwt signing key: <k2>`, the longest a k1 token lives.
   5. Set `JWT_PUBLIC_KEY` = k2 only.
 
-  If k1 leaked, skip the waiting: tokens forged with it would verify for as long as it stays in `JWT_PUBLIC_KEY`. Put k2 in both secrets at once (k2's public key alone, k2's private key); within a minute every k1 token is rejected, clients get a `401`, refresh (the refresh tokens are in Postgres, not signed) and receive k2 tokens.
-  With `SKIP_VAULT=1` the keys come from the environment and only change on restart.
+  If k1 leaked, skip the waiting: tokens forged with it would verify for as long as it stays in `JWT_PUBLIC_KEY`. Put k2 in both secrets at once; within a minute every k1 token is rejected, clients get a `401`, refresh (refresh tokens are in Postgres, not signed) and receive k2 tokens.
+
+### Authorization
+
+- **Default deny**: `AccessTokenGuard` and `AbilityGuard` are global (`APP_GUARD`); every route needs a token unless it is marked `@Public()`. Both guards skip non-HTTP handlers (RabbitMQ RPC).
+- **401 vs 403**: no token, a broken, expired, revoked or forged one is `401` (`WWW-Authenticate: Bearer`, or `error="invalid_token"`): the client refreshes. A valid token without the right is `403` (`error="insufficient_scope"`), logged with who, what and which route: the client shows an error. Mixing them up makes a client loop on refresh or log the user out on every page it may not see.
+- **Rules (CASL)**: `AbilityFactory` builds the abilities from the token's role in one place. Everyone can `create Order`; a buyer and a seller can `read Order` only where `ownerIdentityPublicId` is theirs, admin and owner any order; seller, admin and owner can `create Product`. `@CheckAbility(action, subject)` on a route checks the action at the type level in the guard (a buyer on `POST /product` gets `403` there).
+- **Ownership is not checked in a guard**: a guard has the token, not the order. `OrderService.findReadableById` loads the order (from the cache when it's there) and asks `ability.can('read', subject('Order', { ownerIdentityPublicId }))`; someone else's order is `403`. The owner is copied from the token's `sub` when the order is created, and `POST /order` takes the buyer from the token too: `OrderBuyer` (`identityPublicId → userId`, copied from `user.created`) gives the `userId` the charge needs, and a `userId` in the body is ignored.
+- **The role in the token is a cache, not the source of truth**: an admin demoted in the database stays an admin for every request until his access token expires, up to 15 minutes, and can refresh into a new token only with the new role. To make a demotion instant, deny his session families (the same `denied-family` keys logout writes) or check the role in the database for critical actions.
+
+### Demos
+
+`npm run demo:auth`, `demo:reuse`, `demo:rbac` (temporary, `TODO(hw-24)`) start the whole app, register fresh users over HTTP and print `key=status` lines; each exits non-zero if an invariant breaks. Own runs:
+
+| Demo | Output |
+|---|---|
+| `demo:auth` | `login=200 no-token=401 with-token=200 refresh=200 logout=204 after-logout=401 refresh-after-logout=401` |
+| `demo:reuse` | `login=200 r1-refresh=200 r1-reuse=401 r2-after-reuse=401` |
+| `demo:rbac` | `anon=401 own=200 foreign=403 role-denied=403 role-allowed=201 tampered=401` |
+
+`demo:rbac` logs in as the seeded seller, waits until the freshly registered buyer is provisioned through Kafka (`POST /order` answers `409` until then) and deletes the product it created.
+
 - **Seeded logins**: `seller1@example.com`, `buyer1@example.com`, … with the password `marketplace-dev`.
-- **Not done yet**: rate limiting on `/auth/*`, email/phone verification, the JWKS endpoint, cleanup of expired sessions, and a grace window for a client that refreshes twice in parallel (today the second request revokes the session).
+- **Not done yet**: refresh token in an `HttpOnly` cookie, an absolute session limit counted from login, a grace window for a client that refreshes twice in parallel, email/phone verification, the JWKS endpoint, cleanup of expired sessions, and a token instead of `?userId=` on the SSE stream.
 
 ## Realtime order status (SSE)
 
@@ -259,7 +311,7 @@ The stream is fed from Kafka, not from the code that changes the status. Order w
 
 ## Secrets
 
-Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL` (see `SecretsInterface`). The Redis URLs carry the password (`redis://default:<password>@host:port`), so they are secrets rather than settings; `npm run bootstrap:secrets` writes that password to `secrets/redis_password.txt` for compose, taking it from the URLs so it lives in one place. Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.
+Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`, `REFRESH_TOKEN_PEPPER` (see `SecretsInterface`). The Redis URLs carry the password (`redis://default:<password>@host:port`), so they are secrets rather than settings; `npm run bootstrap:secrets` writes that password to `secrets/redis_password.txt` for compose, taking it from the URLs so it lives in one place. Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.
 
 `npm run rotate:db-password` rotates the database password: it changes it in Postgres, writes `secrets/db_password.txt`, syncs Infisical and terminates the old sessions. With `SKIP_VAULT=1`, re-export `DBPASSWORD` afterwards.
 
@@ -279,6 +331,53 @@ npm run test:e2e          # the full app over HTTP (testcontainers)
 ```
 
 Integration and e2e tests start their containers once per run (Postgres, RabbitMQ, Kafka, Temporal and two Redis instances with the same eviction settings as compose, so nothing depends on a running dev stack) and reset state after every test (`test/support/isolation.ts`: truncate all tables and `FLUSHALL` both Redis instances, since restarted identities would otherwise hit cache entries of the previous test), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with.
+
+## Grading
+
+The demos need the whole stack (Postgres, RabbitMQ, Kafka, Temporal, both Redis instances). The values are the dev credentials from `docker-compose.yml` and `secrets/*.example`; the grader has no vault, hence `SKIP_VAULT=1`. The signing pair is generated on the spot (ES256, PEM in base64 so the multi-line key survives `export`); the real keys stay in the vault.
+
+```bash
+cp .env.example .env
+cp secrets/db_password.txt.example secrets/db_password.txt
+cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
+cp secrets/redis_password.txt.example secrets/redis_password.txt
+docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue
+
+export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
+export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
+export KAFKA_BROKERS=127.0.0.1:9092
+export TEMPORAL_ADDRESS=127.0.0.1:7233
+export REDIS_CACHE_URL=redis://default:changeme@127.0.0.1:6380
+export REDIS_QUEUE_URL=redis://default:changeme@127.0.0.1:6381
+export SKIP_VAULT=1
+
+# one-off ES256 pair for this run; the PEM goes in base64
+node -e 'const {generateKeyPairSync}=require("node:crypto");
+const k=generateKeyPairSync("ec",{namedCurve:"P-256",
+  privateKeyEncoding:{type:"pkcs8",format:"pem"},
+  publicKeyEncoding:{type:"spki",format:"pem"}});
+const fs=require("node:fs");
+fs.writeFileSync("/tmp/priv.b64",Buffer.from(k.privateKey).toString("base64"));
+fs.writeFileSync("/tmp/pub.b64",Buffer.from(k.publicKey).toString("base64"));'
+export JWT_PRIVATE_KEY="$(cat /tmp/priv.b64)"
+export JWT_PUBLIC_KEY="$(cat /tmp/pub.b64)"
+export REFRESH_TOKEN_PEPPER=grader-pepper
+
+npm ci
+npm run build
+npm run migrate
+npm run seed
+
+npm run demo:auth
+npm run demo:reuse
+npm run demo:rbac
+```
+
+- `--wait` matters: without it the scripts start before Postgres accepts connections.
+- Name the services: the compose file also has the Infisical stack, which needs credentials of its own.
+- `npm run build` is required: the demos, `migrate` and `seed` run the compiled `dist/`. `seed` provides the seller `demo:rbac` logs in as, the offers, categories and brands.
+- No `kid` variable is needed: the `kid` is the thumbprint of the public key, computed by the app.
+- Free the app port (`3000`) before checking that a bare `npm run start` without the keys fails: it exits `1` and names the missing variables before it binds the port or touches the database.
 
 ## Configuration
 
@@ -300,4 +399,4 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `TEMPORAL_NAMESPACE` | no | `default` | Temporal namespace of the order workflows |
 | `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
 
-Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`) come from Infisical, or from the environment with `SKIP_VAULT=1`.
+Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`, `REFRESH_TOKEN_PEPPER`) come from Infisical, or from the environment with `SKIP_VAULT=1`.

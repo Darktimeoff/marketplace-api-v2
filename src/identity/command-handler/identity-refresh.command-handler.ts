@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import type { IdentityTokenResponseInterface } from '@marketplace/contracts-core';
 import { IdentityRepository } from '../repository/identity.repository.js';
@@ -9,6 +9,8 @@ import { AccessTokenDenylistService } from '../../generic/auth/access-token-deny
 
 @Injectable()
 export class IdentityRefreshCommandHandler {
+  private readonly logger = new Logger(IdentityRefreshCommandHandler.name);
+
   constructor(
     private readonly identities: IdentityRepository,
     private readonly sessions: IdentitySessionRepository,
@@ -24,6 +26,7 @@ export class IdentityRefreshCommandHandler {
       const session = await this.sessions.findByTokenHash(tokenHash);
 
       if (session?.usedAt) {
+        this.logger.warn(`refresh token reuse detected: revoking family=${session.familyId} identity=${session.identityId}`);
         await this.revokeFamily(session.familyId);
         await this.denylist.denyFamily(session.familyId);
       }

@@ -1,6 +1,6 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
-import type { INestApplication } from '@nestjs/common';
+import { Logger, type INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { DataSource } from 'typeorm';
@@ -206,6 +206,18 @@ describe('Auth (e2e)', () => {
       expect(session.tokenHash).not.toContain(refreshToken);
       expect(session.tokenHash).toBe(createHmac('sha256', process.env.REFRESH_TOKEN_PEPPER as string).update(refreshToken).digest('hex'));
       expect(session.tokenHash).not.toBe(createHash('sha256').update(refreshToken).digest('hex'));
+    });
+
+    it('logs the reuse with the revoked family', async () => {
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const first = await register();
+      await post('refresh', { refreshToken: first.refreshToken }).expect(200);
+      const [session] = await dataSource.query(`SELECT "familyId" FROM "IdentitySession" LIMIT 1`);
+
+      await post('refresh', { refreshToken: first.refreshToken }).expect(401);
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`refresh token reuse detected: revoking family=${session.familyId}`));
+      warn.mockRestore();
     });
 
     it('revokes the whole family when a used token is presented again', async () => {

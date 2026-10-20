@@ -8,3 +8,6 @@ export * from './identity/request/identity-register.request.js';
 export * from './identity/request/identity-login.request.js';
 export * from './identity/request/identity-refresh-token.request.js';
 export * from './identity/response/identity-token.response.js';
+export * from './product/request/product-create.request.js';
+export * from './product/response/product.response.js';
+export * from './identity/response/identity-me.response.js';

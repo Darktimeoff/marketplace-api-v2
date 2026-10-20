@@ -6,6 +6,7 @@ export const accessTokenPayloadSchema = z
   .object({
     sub: z.uuid(),
     jti: z.uuid(),
+    sid: z.uuid(),
     role: z.enum(RoleEnum),
     email: z.string().optional(),
     phone_number: z.string().optional(),
@@ -13,6 +14,7 @@ export const accessTokenPayloadSchema = z
   .transform((payload): AccessTokenClaimsInterface => ({
     identityPublicId: payload.sub,
     tokenId: payload.jti,
+    familyId: payload.sid,
     role: payload.role,
     email: payload.email ?? null,
     phoneNumber: payload.phone_number ?? null,

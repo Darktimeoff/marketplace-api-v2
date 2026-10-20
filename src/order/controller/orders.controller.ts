@@ -3,7 +3,9 @@ import { Observable } from 'rxjs';
 import { OrderAccessGuard } from '../guard/order-access.guard.js';
 import { OrderStatusEvent } from '../interface/order-status-event.interface.js';
 import { OrderNotifyService } from '../service/order-notify.service.js';
+import { Public } from '../../generic/auth/decorator/public.decorator.js';
 
+@Public()
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly orderNotify: OrderNotifyService) {}

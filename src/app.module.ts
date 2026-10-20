@@ -1,5 +1,5 @@
 import { Module, ValidationPipe } from '@nestjs/common';
-import { APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { EnvironmentModule } from './generic/environment/environment.module.js';
 import { DBModule } from './generic/db/db.module.js';
@@ -13,12 +13,16 @@ import { CategoryModule } from './category/category.module.js';
 import { SellerModule } from './seller/seller.module.js';
 import { ProductVariantModule } from './product-variant/product-variant.module.js';
 import { ValidationResponseInterceptor } from './generic/validation/validation-response.interceptor.js';
+import { AuthModule } from './generic/auth/auth.module.js';
+import { AccessTokenGuard } from './generic/auth/access-token.guard.js';
+import { AbilityGuard } from './generic/auth/ability.guard.js';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
     EnvironmentModule,
     DBModule,
+    AuthModule,
     HealthModule,
     OrderModule,
     ProductModule,
@@ -36,6 +40,8 @@ import { ValidationResponseInterceptor } from './generic/validation/validation-r
       useFactory: () => new ValidationPipe({ transform: true, whitelist: true }),
     },
     { provide: APP_INTERCEPTOR, useClass: ValidationResponseInterceptor },
+    { provide: APP_GUARD, useExisting: AccessTokenGuard },
+    { provide: APP_GUARD, useExisting: AbilityGuard },
   ],
 })
 export class AppModule {}

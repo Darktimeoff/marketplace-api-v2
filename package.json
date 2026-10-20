@@ -12,7 +12,8 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "npm run bootstrap:secrets && nest start",
+    "start": "nest start",
+    "start:vault": "npm run bootstrap:secrets && bash scripts/with-secrets.sh dev nest start",
     "start:dev": "npm run bootstrap:secrets && nest start --watch",
     "lint": "oxlint src/ test/ packages/",
     "check:env": "node scripts/check-env-example.mjs",
@@ -29,12 +30,12 @@
     "migrate:revert": "bash scripts/with-secrets.sh dev npx typeorm migration:revert -d dist/data-source.js",
     "migrate:generate": "bash scripts/with-secrets.sh dev npx typeorm migration:generate -d dist/data-source.js",
     "seed": "bash scripts/with-secrets.sh dev node dist/seed.js",
-    "demo:cache": "bash scripts/with-secrets.sh dev node dist/demo/demo-cache.js",
-    "demo:session": "bash scripts/with-secrets.sh dev node dist/demo/demo-session.js",
-    "demo:ratelimit": "bash scripts/with-secrets.sh dev node dist/demo/demo-ratelimit.js",
-    "demo:queue": "bash scripts/with-secrets.sh dev node dist/demo/demo-queue.js"
+    "demo:auth": "bash scripts/with-secrets.sh dev node dist/demo/demo-auth.js",
+    "demo:reuse": "bash scripts/with-secrets.sh dev node dist/demo/demo-reuse.js",
+    "demo:rbac": "bash scripts/with-secrets.sh dev node dist/demo/demo-rbac.js"
   },
   "dependencies": {
+    "@casl/ability": "~7.0.1",
     "@confluentinc/kafka-javascript": "^1.10.1",
     "@golevelup/nestjs-rabbitmq": "^9.1.0",
     "@infisical/sdk": "^5.0.2",

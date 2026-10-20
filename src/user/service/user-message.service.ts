@@ -17,6 +17,7 @@ export class UserMessageService {
         userId: user.id,
         userPublicId: user.publicId,
         identityId: user.identityId,
+        identityPublicId: user.identityPublicId,
         email: user.email,
         phoneNumber: user.phoneNumber,
         firstName: user.firstName,

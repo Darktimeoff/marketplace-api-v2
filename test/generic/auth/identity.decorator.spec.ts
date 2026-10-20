@@ -7,6 +7,7 @@ import { importPKCS8, SignJWT } from 'jose';
 import request from 'supertest';
 import { AccessTokenGuard } from '../../../src/generic/auth/access-token.guard.js';
 import { AccessTokenVerifierService } from '../../../src/generic/auth/access-token-verifier.service.js';
+import { JwtVerificationKeysService } from '../../../src/generic/auth/jwt-verification-keys.service.js';
 import { SecretManagerService } from '../../../src/generic/secret-manager/secret-manager.service.js';
 import { AccessTokenDenylistService } from '../../../src/generic/auth/access-token-denylist.service.js';
 import { Identity } from '../../../src/generic/auth/decorator/identity.decorator.js';
@@ -73,6 +74,7 @@ describe('@Identity() on a guarded route', () => {
       providers: [
         AccessTokenGuard,
         AccessTokenVerifierService,
+        JwtVerificationKeysService,
         { provide: SecretManagerService, useValue: { get: async () => keys.publicKey } },
         { provide: AccessTokenDenylistService, useValue: { isFamilyDenied: async () => false } },
       ],

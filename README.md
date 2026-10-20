@@ -239,6 +239,15 @@ A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
 - **Passwords**: argon2id, 8–128 characters, no composition rules (NIST 800-63B). Login answers an unknown login, a wrong password and a deleted identity with the same `401 Invalid login or password`, and hashes a dummy password when the login doesn't exist, so timing doesn't reveal which accounts exist.
 - **Registration** creates the `Identity` (role `user`; a `role` in the body is ignored), and the User and its account follow asynchronously through Kafka (see Events). The user starts with the identity's `email` and `phoneNumber` as contact details. `activatedAt` stays `NULL` until a verification flow exists.
 - **Keys** live in Infisical (`JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, PEM). Generate a pair with `openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt` and `openssl ec -pubout`. Tests generate a fresh pair per run (`test/support/env.ts`).
+- **Key rotation without downtime.** Every token names its signing key in the `kid` header, the RFC 7638 thumbprint of the public key. `JWT_PUBLIC_KEY` may hold several PEM blocks one after another; `JwtVerificationKeysService` computes each block's `kid` and verifies a token with the key its `kid` names (an unknown `kid` is a `401`). `TokenService` signs with `JWT_PRIVATE_KEY` and derives the `kid` from it, so the signing and verifying sides can't disagree. Both re-read the vault every 60 s without a restart and log once per change (`jwt verification keys: [...]`, `jwt signing key: ...`); a signing key whose `kid` isn't among the pod's verification keys logs a warning, and a vault read that fails keeps the current keys. To replace k1 with k2:
+  1. Generate k2, then set `JWT_PUBLIC_KEY` to k1's PEM followed by k2's. Keep `JWT_PRIVATE_KEY` = k1.
+  2. Wait until every pod has logged `jwt verification keys: [<k1>, <k2>]` (at most a minute).
+  3. Set `JWT_PRIVATE_KEY` = k2. New tokens carry k2's `kid`; tokens signed by k1 still verify.
+  4. Wait for the longest-lived k1 token to expire: 15 min + 5 s of clock tolerance after the last pod logged `jwt signing key: <k2>`.
+  5. Set `JWT_PUBLIC_KEY` = k2 only.
+
+  If k1 leaked, skip the waiting: tokens forged with it would verify for as long as it stays in `JWT_PUBLIC_KEY`. Put k2 in both secrets at once (k2's public key alone, k2's private key); within a minute every k1 token is rejected, clients get a `401`, refresh (the refresh tokens are in Postgres, not signed) and receive k2 tokens.
+  With `SKIP_VAULT=1` the keys come from the environment and only change on restart.
 - **Seeded logins**: `seller1@example.com`, `buyer1@example.com`, … with the password `marketplace-dev`.
 - **Not done yet**: rate limiting on `/auth/*`, email/phone verification, the JWKS endpoint, cleanup of expired sessions, and a grace window for a client that refreshes twice in parallel (today the second request revokes the session).
 

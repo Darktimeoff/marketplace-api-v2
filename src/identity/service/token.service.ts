@@ -1,9 +1,11 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { calculateJwkThumbprint, exportJWK, importPKCS8, importSPKI, SignJWT, type CryptoKey } from 'jose';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Interval } from '@nestjs/schedule';
+import { calculateJwkThumbprint, exportJWK, importPKCS8, SignJWT, type CryptoKey } from 'jose';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { SecretManagerService } from '../../generic/secret-manager/secret-manager.service.js';
 import { ACCESS_TOKEN_ALGORITHM, ACCESS_TOKEN_ISSUER, ACCESS_TOKEN_TTL_SECONDS } from '../../generic/auth/constant/access-token.constant.js';
 import { IdentitySessionRepository } from '../repository/identity-session.repository.js';
+import { JwtVerificationKeysService } from '../../generic/auth/jwt-verification-keys.service.js';
 import type { Identity } from '../entity/identity.entity.js';
 import type { IdentityTokenResponseInterface } from '@marketplace/contracts-core';
 
@@ -11,18 +13,27 @@ const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class TokenService implements OnModuleInit {
+  private readonly logger = new Logger(TokenService.name);
   private privateKey: CryptoKey;
   private keyId: string;
 
   constructor(
     private readonly secrets: SecretManagerService,
     private readonly sessions: IdentitySessionRepository,
+    private readonly verificationKeys: JwtVerificationKeysService,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    this.privateKey = await importPKCS8(await this.secrets.get('JWT_PRIVATE_KEY'), ACCESS_TOKEN_ALGORITHM);
-    const publicKey = await importSPKI(await this.secrets.get('JWT_PUBLIC_KEY'), ACCESS_TOKEN_ALGORITHM, { extractable: true });
-    this.keyId = await calculateJwkThumbprint(await exportJWK(publicKey));
+    await this.loadSigningKey();
+  }
+
+  @Interval(60_000)
+  async refreshSigningKey(): Promise<void> {
+    try {
+      await this.loadSigningKey();
+    } catch (error) {
+      this.logger.error(`jwt signing key not refreshed, keeping kid=${this.keyId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   hashRefreshToken(refreshToken: string): string {
@@ -55,5 +66,21 @@ export class TokenService implements OnModuleInit {
       .sign(this.privateKey);
 
     return { accessToken, refreshToken, tokenType: 'Bearer', expiresIn: ACCESS_TOKEN_TTL_SECONDS };
+  }
+
+  private async loadSigningKey(): Promise<void> {
+    const privateKey = await importPKCS8(await this.secrets.get('JWT_PRIVATE_KEY'), ACCESS_TOKEN_ALGORITHM, { extractable: true });
+    const keyId = await calculateJwkThumbprint(await exportJWK(privateKey));
+
+    if (!this.verificationKeys.kids.includes(keyId)) {
+      this.logger.warn(`jwt signing kid=${keyId} is not among this pod's verification keys [${this.verificationKeys.kids.join(', ')}]: add its public key to JWT_PUBLIC_KEY before signing with it`);
+    }
+
+    if (keyId !== this.keyId) {
+      this.logger.log(`jwt signing key: ${keyId}`);
+    }
+
+    this.privateKey = privateKey;
+    this.keyId = keyId;
   }
 }

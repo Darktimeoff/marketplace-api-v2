@@ -4,6 +4,7 @@ import { UnauthorizedException, type ExecutionContext } from '@nestjs/common';
 import { importPKCS8, SignJWT, type CryptoKey } from 'jose';
 import { AccessTokenGuard } from '../../../src/generic/auth/access-token.guard.js';
 import { AccessTokenVerifierService } from '../../../src/generic/auth/access-token-verifier.service.js';
+import { JwtVerificationKeysService } from '../../../src/generic/auth/jwt-verification-keys.service.js';
 import type { SecretManagerService } from '../../../src/generic/secret-manager/secret-manager.service.js';
 import type { AccessTokenDenylistService } from '../../../src/generic/auth/access-token-denylist.service.js';
 import type { AuthenticatedRequestInterface } from '../../../src/generic/auth/interface/authenticated-request.interface.js';
@@ -35,8 +36,9 @@ describe('AccessTokenGuard', () => {
   beforeAll(async () => {
     const secrets = { get: async () => keys.publicKey } as unknown as SecretManagerService;
     const denylist = { isFamilyDenied: async (id: string) => deniedFamilies.has(id) } as unknown as AccessTokenDenylistService;
-    const verifier = new AccessTokenVerifierService(secrets, denylist);
-    await verifier.onModuleInit();
+    const verificationKeys = new JwtVerificationKeysService(secrets);
+    await verificationKeys.onModuleInit();
+    const verifier = new AccessTokenVerifierService(verificationKeys, denylist);
     guard = new AccessTokenGuard(verifier);
     signingKey = await importPKCS8(keys.privateKey, 'ES256');
   });

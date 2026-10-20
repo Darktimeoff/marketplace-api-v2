@@ -64,3 +64,5 @@ export class Product {
   @OneToMany('ProductVariant', (variant: ProductVariant) => variant.product)
   variants: ProductVariant[];
 }
+
+export interface ProductCreateEntityInterface extends Pick<Product, 'categoryId' | 'brandId'> {}

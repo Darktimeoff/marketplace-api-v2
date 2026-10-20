@@ -4,6 +4,7 @@ import { RedisModule } from '../redis/redis.module.js';
 import { RedisClientService } from '../redis/redis-client.service.js';
 import { MaintenanceQueueService } from './maintenance-queue.service.js';
 import { MaintenanceProcessor } from './maintenance.processor.js';
+import { MaintenanceJobRegistryService } from './maintenance-job-registry.service.js';
 import { MAINTENANCE_QUEUE } from './maintenance-queue.constant.js';
 
 @Module({
@@ -23,7 +24,7 @@ import { MAINTENANCE_QUEUE } from './maintenance-queue.constant.js';
     }),
     BullModule.registerQueue({ name: MAINTENANCE_QUEUE }),
   ],
-  providers: [MaintenanceQueueService, MaintenanceProcessor],
-  exports: [MaintenanceQueueService],
+  providers: [MaintenanceJobRegistryService, MaintenanceQueueService, MaintenanceProcessor],
+  exports: [MaintenanceJobRegistryService, MaintenanceQueueService],
 })
 export class QueueModule {}

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
 import { OrderRepository } from '../repository/order.repository.js';
@@ -20,6 +20,8 @@ import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
 import { OrderPlaceMessageService } from '../service/order-place-message.service.js';
 import { OrderWorkflowOutboxRepository } from '../repository/order-workflow-outbox.repository.js';
+import { OrderBuyerRepository } from '../repository/order-buyer.repository.js';
+import type { OrderBuyer } from '../entity/order-buyer.entity.js';
 
 interface PricedOrderLine {
   item: Omit<OrderLineCreateEntityInterface, 'orderId'>;
@@ -36,18 +38,25 @@ export class OrderPlaceCommandHandler {
     private readonly offers: SellerOfferService,
     private readonly outbox: OrderOutboxRepository,
     private readonly workflowOutbox: OrderWorkflowOutboxRepository,
+    private readonly buyers: OrderBuyerRepository,
     private readonly messages: OrderPlaceMessageService,
   ) {}
 
-  execute(input: OrderCreateInput, idempotencyKey: string | null = null): Promise<Order> {
-    return this.createPending(input, idempotencyKey);
+  async execute(input: OrderCreateInput, identityPublicId: string, idempotencyKey: string | null = null): Promise<Order> {
+    const buyer = await this.buyers.findByIdentityPublicId(identityPublicId);
+
+    if (!buyer) {
+      throw new ConflictException('Buyer account is still being set up, try again shortly');
+    }
+
+    return this.createPending(input, buyer, idempotencyKey);
   }
 
   @Transactional()
-  private async createPending(input: OrderCreateInput, idempotencyKey: string | null): Promise<Order> {
+  private async createPending(input: OrderCreateInput, buyer: OrderBuyer, idempotencyKey: string | null): Promise<Order> {
     if (idempotencyKey) {
-      await this.orderRepository.lockIdempotencyKey(input.userId, idempotencyKey);
-      const placed = await this.orderRepository.findByIdempotencyKey(input.userId, idempotencyKey);
+      await this.orderRepository.lockIdempotencyKey(buyer.userId, idempotencyKey);
+      const placed = await this.orderRepository.findByIdempotencyKey(buyer.userId, idempotencyKey);
 
       if (placed) {
         return placed;
@@ -68,7 +77,7 @@ export class OrderPlaceCommandHandler {
     );
 
     const order = await this.createOrder(
-      input.userId,
+      buyer,
       recipient.id,
       pricedItems,
       input.currency,
@@ -95,7 +104,7 @@ export class OrderPlaceCommandHandler {
   }
 
   private createOrder(
-    userId: Order['userId'],
+    buyer: OrderBuyer,
     orderRecipientId: number,
     items: PricedOrderLine[],
     currency: CurrencyEnum,
@@ -108,7 +117,8 @@ export class OrderPlaceCommandHandler {
     );
 
     return this.orderRepository.create({
-      userId,
+      userId: buyer.userId,
+      ownerIdentityPublicId: buyer.identityPublicId,
       orderRecipientId,
       totalAmount: totalAmount.toFixed(2),
       discountAmount: discountAmount.toFixed(2),

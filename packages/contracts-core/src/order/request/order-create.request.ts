@@ -26,7 +26,6 @@ export interface OrderCreateItemRequestInterface {
 }
 
 export interface OrderCreateRequestInterface {
-  userId: number;
   recipient: OrderCreateRecipientRequestInterface;
   items: OrderCreateItemRequestInterface[];
   currency: CurrencyEnum;

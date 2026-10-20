@@ -1,4 +1,6 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { subject } from '@casl/ability';
+import type { AppAbilityType } from '../../generic/auth/app-ability.type.js';
 import { EntityNotFoundError } from 'typeorm';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ConfirmChannel, ConsumeMessage } from 'amqplib';
@@ -22,6 +24,17 @@ export class OrderService implements OnModuleInit {
           this.logger.error(`unroutable ${msg.fields.exchange}/${msg.fields.routingKey}`);
         });
       });
+  }
+
+  async findReadableById(id: Order['id'], ability: AppAbilityType): Promise<Order> {
+    const order = await this.findById(id);
+
+    if (!ability.can('read', subject('Order', { ownerIdentityPublicId: order.ownerIdentityPublicId }))) {
+      this.logger.warn(`forbidden read of order=${order.publicId}`);
+      throw new ForbiddenException('This order belongs to someone else');
+    }
+
+    return order;
   }
 
   @Cacheable({ key: orderCacheKey, ttlSeconds: ORDER_CACHE_TTL_SECONDS, jitterSeconds: ORDER_CACHE_JITTER_SECONDS })

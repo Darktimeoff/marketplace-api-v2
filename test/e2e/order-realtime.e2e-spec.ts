@@ -8,6 +8,7 @@ import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module.js';
 import { CountryCodeEnum, CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
 import { aSellerOffer, aUser } from '../support/builders.js';
+import { aBuyer } from '../support/buyer.js';
 import { truncateAllTables } from '../support/isolation.js';
 
 interface StreamedEventInterface {
@@ -40,14 +41,14 @@ describe('Order realtime over Kafka (e2e)', () => {
   });
 
   async function placeOrder(balance: string): Promise<{ orderId: number; userId: number }> {
-    const buyer = await aUser(dataSource.manager);
+    const buyer = await aBuyer(app, dataSource);
     await dataSource.query(`INSERT INTO "Account" ("customerId", "balance") VALUES ($1, $2)`, [buyer.id, balance]);
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
     const response = await request(app.getHttpServer())
       .post('/order')
+      .set('Authorization', `Bearer ${buyer.token}`)
       .send({
-        userId: buyer.id,
         recipient: {
           fullName: 'Jane Doe',
           phone: { countryCode: CountryCodeEnum.UA, rawNumber: '+380501234567', fullNumber: '+380501234567', nationalNumber: '0501234567' },

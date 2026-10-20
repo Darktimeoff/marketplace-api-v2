@@ -76,10 +76,6 @@ export class OrderCreateItemInput implements OrderCreateItemRequestInterface {
 }
 
 export class OrderCreateInput implements OrderCreateRequestInterface {
-  @IsInt()
-  @IsPositive()
-  userId: number;
-
   @IsDefined()
   @ValidateNested()
   @Type(() => OrderCreateRecipientInput)

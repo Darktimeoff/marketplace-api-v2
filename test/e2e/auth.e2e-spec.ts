@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { createHash, randomBytes } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { decodeProtectedHeader, importSPKI, jwtVerify } from 'jose';
 import { AppModule } from '../../src/app.module.js';
@@ -265,6 +266,36 @@ describe('Auth (e2e)', () => {
       await post('logout', { refreshToken: second.refreshToken }).expect(204);
 
       await post('refresh', { refreshToken: second.refreshToken }).expect(401);
+    });
+
+    it('revokes a refresh token issued by a rotation that commits while the logout runs', async () => {
+      const { refreshToken } = await register();
+      const hash = (token: string) => createHash('sha256').update(token).digest('hex');
+      const [presented] = await dataSource.query(`SELECT "identityId", "familyId" FROM "IdentitySession" WHERE "tokenHash" = $1`, [hash(refreshToken)]);
+      const rotatedToken = randomBytes(32).toString('base64url');
+      const rotation = dataSource.createQueryRunner();
+      await rotation.connect();
+      await rotation.startTransaction();
+
+      try {
+        await rotation.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`identity-session-family:${presented.familyId}`]);
+        await rotation.query(`UPDATE "IdentitySession" SET "usedAt" = now() WHERE "tokenHash" = $1`, [hash(refreshToken)]);
+        await rotation.query(
+          `INSERT INTO "IdentitySession" ("identityId", "familyId", "tokenHash", "expiresAt") VALUES ($1, $2, $3, now() + interval '30 days')`,
+          [presented.identityId, presented.familyId, hash(rotatedToken)],
+        );
+
+        const logout = post('logout', { refreshToken }).expect(204).then(() => undefined);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await rotation.commitTransaction();
+        await logout;
+      } finally {
+        await rotation.release();
+      }
+
+      const [rotated] = await dataSource.query(`SELECT "revokedAt" FROM "IdentitySession" WHERE "tokenHash" = $1`, [hash(rotatedToken)]);
+      expect(rotated.revokedAt).not.toBeNull();
+      await post('refresh', { refreshToken: rotatedToken }).expect(401);
     });
 
     it('answers 204 again for an already revoked or unknown token', async () => {

@@ -35,6 +35,10 @@ export class IdentitySessionRepository {
     return this.txHost.tx.getRepository(IdentitySession).findOne({ where: { tokenHash } });
   }
 
+  async lockFamily(familyId: IdentitySession['familyId']): Promise<void> {
+    await this.txHost.tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`identity-session-family:${familyId}`]);
+  }
+
   async revokeFamily(familyId: IdentitySession['familyId']): Promise<void> {
     await this.txHost.tx.getRepository(IdentitySession).update({ familyId, revokedAt: IsNull() }, { revokedAt: () => 'now()' });
   }

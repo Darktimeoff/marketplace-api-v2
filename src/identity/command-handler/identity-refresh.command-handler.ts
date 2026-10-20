@@ -24,7 +24,7 @@ export class IdentityRefreshCommandHandler {
       const session = await this.sessions.findByTokenHash(tokenHash);
 
       if (session?.usedAt) {
-        await this.sessions.revokeFamily(session.familyId);
+        await this.revokeFamily(session.familyId);
         await this.accessSessions.revokeFamily(session.familyId);
       }
 
@@ -36,6 +36,13 @@ export class IdentityRefreshCommandHandler {
 
   @Transactional()
   private async rotate(tokenHash: string): Promise<IdentityTokenResponseInterface | null> {
+    const presented = await this.sessions.findByTokenHash(tokenHash);
+
+    if (!presented) {
+      return null;
+    }
+
+    await this.sessions.lockFamily(presented.familyId);
     const session = await this.sessions.consume(tokenHash);
     const identity = session ? await this.identities.findById(session.identityId) : null;
 
@@ -44,5 +51,11 @@ export class IdentityRefreshCommandHandler {
     }
 
     return this.tokens.createTokenPair(identity, session.familyId);
+  }
+
+  @Transactional()
+  private async revokeFamily(familyId: string): Promise<void> {
+    await this.sessions.lockFamily(familyId);
+    await this.sessions.revokeFamily(familyId);
   }
 }

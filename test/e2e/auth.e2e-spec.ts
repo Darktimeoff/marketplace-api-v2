@@ -321,6 +321,17 @@ describe('Auth (e2e)', () => {
     });
   });
 
+  describe('me', () => {
+    it('answers 401 without a token and the token owner with one', async () => {
+      const { accessToken } = await register();
+      const { sub } = await claimsOf(accessToken);
+
+      await request(app.getHttpServer()).get('/auth/me').expect(401);
+      const response = await request(app.getHttpServer()).get('/auth/me').set('Authorization', `Bearer ${accessToken}`).expect(200);
+      expect(response.body).toEqual({ identityPublicId: sub, role: 'user', email: 'jane@example.com', phoneNumber: null });
+    });
+  });
+
   describe('access token denylist', () => {
     function verify(accessToken: string) {
       return app.get(AccessTokenVerifierService).verify(accessToken);

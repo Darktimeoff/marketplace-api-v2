@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ResponseDto } from '../../generic/validation/response-dto.decorator.js';
 import { IdentityTokenDto } from '../dto/identity-token.dto.js';
@@ -11,8 +11,10 @@ import { IdentityRefreshCommandHandler } from '../command-handler/identity-refre
 import { IdentityLogoutCommandHandler } from '../command-handler/identity-logout.command-handler.js';
 import { IDENTITY_LOGIN_THROTTLE_LIMIT, IDENTITY_LOGIN_THROTTLE_TTL_MS, identityLoginTracker } from '../constant/identity-login-throttle.constant.js';
 import { Public } from '../../generic/auth/decorator/public.decorator.js';
+import { Identity } from '../../generic/auth/decorator/identity.decorator.js';
+import type { AccessTokenClaimsInterface } from '../../generic/auth/interface/access-token-claims.interface.js';
+import { IdentityMeDto } from '../dto/identity-me.dto.js';
 
-@Public()
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -22,12 +24,14 @@ export class AuthController {
     private readonly logout: IdentityLogoutCommandHandler,
   ) {}
 
+  @Public()
   @ResponseDto(IdentityTokenDto)
   @Post('register')
   registerIdentity(@Body() input: IdentityRegisterInput): Promise<IdentityTokenDto> {
     return this.register.execute(input);
   }
 
+  @Public()
   @ResponseDto(IdentityTokenDto)
   @HttpCode(HttpStatus.OK)
   @UseGuards(ThrottlerGuard)
@@ -37,6 +41,7 @@ export class AuthController {
     return this.login.execute(input);
   }
 
+  @Public()
   @ResponseDto(IdentityTokenDto)
   @HttpCode(HttpStatus.OK)
   @Post('refresh')
@@ -44,9 +49,16 @@ export class AuthController {
     return this.refresh.execute(input);
   }
 
+  @Public()
   @HttpCode(HttpStatus.NO_CONTENT)
   @Post('logout')
   logoutIdentity(@Body() input: IdentityRefreshTokenInput): Promise<void> {
     return this.logout.execute(input);
+  }
+
+  @ResponseDto(IdentityMeDto)
+  @Get('me')
+  me(@Identity() identity: AccessTokenClaimsInterface): IdentityMeDto {
+    return identity;
   }
 }

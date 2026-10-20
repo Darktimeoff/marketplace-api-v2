@@ -138,6 +138,50 @@ services:
       retries: 10
       start_period: 10s
 
+  redis-cache:
+    image: redis:8.4.1-alpine
+    container_name: redis-cache
+    entrypoint: >
+      sh -c '
+      rm -f /tmp/redis.conf &&
+      umask 077 &&
+      printf "requirepass %s\n" "$$(cat /run/secrets/redis_password)" > /tmp/redis.conf &&
+      chown redis:redis /tmp/redis.conf &&
+      exec docker-entrypoint.sh redis-server /tmp/redis.conf --maxmemory 64mb --maxmemory-policy allkeys-lru --save "" --appendonly no'
+    secrets:
+      - redis_password
+    ports:
+      - "${REDIS_CACHE_PORT:-6380}:6379"
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis-queue:
+    image: redis:8.4.1-alpine
+    container_name: redis-queue
+    entrypoint: >
+      sh -c '
+      rm -f /tmp/redis.conf &&
+      umask 077 &&
+      printf "requirepass %s\n" "$$(cat /run/secrets/redis_password)" > /tmp/redis.conf &&
+      chown redis:redis /tmp/redis.conf &&
+      exec docker-entrypoint.sh redis-server /tmp/redis.conf --maxmemory 256mb --maxmemory-policy noeviction --appendonly yes --appendfsync everysec'
+    secrets:
+      - redis_password
+    ports:
+      - "${REDIS_QUEUE_PORT:-6381}:6379"
+    volumes:
+      - redis_queue_data:/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   infisical-backend:
     container_name: infisical-backend
     restart: unless-stopped
@@ -198,6 +242,7 @@ volumes:
     driver: local
   redis_data:
     driver: local
+  redis_queue_data:
 
 networks:
   infisical:
@@ -207,3 +252,5 @@ secrets:
     file: ./secrets/rabbitmq_password.txt
   db_password:
     file: ./secrets/db_password.txt
+  redis_password:
+    file: ./secrets/redis_password.txt

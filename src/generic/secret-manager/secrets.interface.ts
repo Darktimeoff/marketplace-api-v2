@@ -5,4 +5,6 @@ export interface SecretsInterface {
   RABBITMQ_PASSWORD: string
   JWT_PRIVATE_KEY: string
   JWT_PUBLIC_KEY: string
+  REDIS_CACHE_URL: string
+  REDIS_QUEUE_URL: string
 }

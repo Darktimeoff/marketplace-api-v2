@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression, Interval } from '@nestjs/schedule';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { CronExpression, Interval } from '@nestjs/schedule';
+import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-job-registry.service.js';
 import { subDays } from 'date-fns';
 import { Transactional } from '@nestjs-cls/transactional';
 import { WorkflowExecutionAlreadyStartedError } from '@temporalio/client';
@@ -8,8 +9,9 @@ import { OrderWorkflowOutbox } from '../entity/order-workflow-outbox.entity.js';
 import { TemporalClientService } from '../../generic/temporal/temporal-client.service.js';
 
 @Injectable()
-export class OrderWorkflowOutboxRelayService {
+export class OrderWorkflowOutboxRelayService implements OnModuleInit {
   private readonly logger = new Logger(OrderWorkflowOutboxRelayService.name);
+  private readonly cleanupJobName = 'order-workflow-outbox-cleanup';
   private readonly batchSize = 100;
   private readonly startedRetentionDays = 7;
   private readonly startTimeoutMs = 10000;
@@ -18,7 +20,16 @@ export class OrderWorkflowOutboxRelayService {
   constructor(
     private readonly outbox: OrderWorkflowOutboxRepository,
     private readonly temporal: TemporalClientService,
+    private readonly maintenance: MaintenanceJobRegistryService,
   ) {}
+
+  onModuleInit(): void {
+    this.maintenance.register({
+      name: this.cleanupJobName,
+      repeat: { pattern: CronExpression.EVERY_DAY_AT_3AM },
+      handle: () => this.deleteStarted(),
+    });
+  }
 
   @Interval(1000)
   async relay(): Promise<void> {
@@ -37,7 +48,6 @@ export class OrderWorkflowOutboxRelayService {
     }
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async deleteStarted(): Promise<void> {
     const deleted = await this.outbox.deleteStartedBefore(subDays(new Date(), this.startedRetentionDays));
     this.logger.log(`deleted ${deleted} started workflow outbox rows`);

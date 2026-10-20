@@ -8,6 +8,7 @@ const rootDir = path.resolve(fileURLToPath(import.meta.url), '../..');
 const envPath = path.join(rootDir, '.env');
 const dbPasswordPath = path.join(rootDir, 'secrets', 'db_password.txt');
 const rabbitmqPasswordPath = path.join(rootDir, 'secrets', 'rabbitmq_password.txt');
+const redisPasswordPath = path.join(rootDir, 'secrets', 'redis_password.txt');
 
 async function main() {
   const envSource = await readFile(envPath, 'utf8');
@@ -21,7 +22,7 @@ async function main() {
   });
   const secretsMap = Object.fromEntries(secrets.map((secret) => [secret.secretKey, secret.secretValue]));
 
-  for (const key of ['DBUSER', 'DBPASSWORD', 'RABBITMQ_PASSWORD', 'RABBITMQ_USER']) {
+  for (const key of ['DBUSER', 'DBPASSWORD', 'RABBITMQ_PASSWORD', 'RABBITMQ_USER', 'REDIS_CACHE_URL', 'REDIS_QUEUE_URL']) {
     if (!secretsMap[key]) {
       throw new Error(`Infisical project/environment is missing the "${key}" secret`);
     }
@@ -29,13 +30,23 @@ async function main() {
 
   await writeFileAtomic(dbPasswordPath, secretsMap.DBPASSWORD, { mode: 0o600 });
   await writeFileAtomic(rabbitmqPasswordPath, secretsMap.RABBITMQ_PASSWORD, { mode: 0o600 });
+  await writeFileAtomic(redisPasswordPath, redisPassword(secretsMap.REDIS_CACHE_URL, secretsMap.REDIS_QUEUE_URL), { mode: 0o600 });
 
-  await writeFileAtomic(envPath, upsertEnvVar(envSource, 'DBUSER', secretsMap.DBUSER));
-  await writeFileAtomic(envPath, upsertEnvVar(envSource, 'RABBITMQ_USER', secretsMap.RABBITMQ_USER));
+  await writeFileAtomic(envPath, upsertEnvVar(upsertEnvVar(envSource, 'DBUSER', secretsMap.DBUSER), 'RABBITMQ_USER', secretsMap.RABBITMQ_USER));
 
   console.log(
     `Pulled DBUSER and DBPASSWORD from Infisical (${env.INFISICAL_ENVIRONMENT}) into ${path.relative(rootDir, envPath)} and ${path.relative(rootDir, dbPasswordPath)}.`,
   );
+}
+
+function redisPassword(...urls) {
+  const passwords = new Set(urls.map((url) => decodeURIComponent(new URL(url).password)));
+
+  if (passwords.size !== 1 || passwords.has('')) {
+    throw new Error('REDIS_CACHE_URL and REDIS_QUEUE_URL must carry the same non-empty password');
+  }
+
+  return [...passwords][0];
 }
 
 function upsertEnvVar(envSource, key, value) {

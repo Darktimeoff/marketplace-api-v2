@@ -4,6 +4,8 @@ import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ConfirmChannel, ConsumeMessage } from 'amqplib';
 import { OrderRepository } from '../repository/order.repository.js';
 import { Order } from '../entity/order.entity.js';
+import { Cacheable } from '../../generic/cache/decorator/cacheable.decorator.js';
+import { ORDER_CACHE_JITTER_SECONDS, ORDER_CACHE_TTL_SECONDS, orderCacheKey } from '../constant/order-cache.constant.js';
 
 @Injectable()
 export class OrderService implements OnModuleInit {
@@ -22,6 +24,7 @@ export class OrderService implements OnModuleInit {
       });
   }
 
+  @Cacheable({ key: orderCacheKey, ttlSeconds: ORDER_CACHE_TTL_SECONDS, jitterSeconds: ORDER_CACHE_JITTER_SECONDS })
   async findById(id: Order['id']): Promise<Order> {
     try {
       return await this.orderRepository.findByIdOrFail(id);

@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression, Interval } from '@nestjs/schedule';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { CronExpression, Interval } from '@nestjs/schedule';
+import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-job-registry.service.js';
 import { subDays } from 'date-fns';
 import { Transactional } from '@nestjs-cls/transactional';
 import { SourceEnum, type CloudEventInterface } from '@marketplace/messaging-contracts';
@@ -8,8 +9,9 @@ import { IdentityOutboxRepository } from '../repository/identity-outbox.reposito
 import { IdentityOutbox } from '../entity/identity-outbox.entity.js';
 
 @Injectable()
-export class IdentityOutboxRelayService {
+export class IdentityOutboxRelayService implements OnModuleInit {
   private readonly logger = new Logger(IdentityOutboxRelayService.name);
+  private readonly cleanupJobName = 'identity-outbox-cleanup';
   private readonly batchSize = 100;
   private readonly publishedRetentionDays = 7;
   private relaying = false;
@@ -17,7 +19,16 @@ export class IdentityOutboxRelayService {
   constructor(
     private readonly outbox: IdentityOutboxRepository,
     private readonly kafka: KafkaProducerService,
+    private readonly maintenance: MaintenanceJobRegistryService,
   ) {}
+
+  onModuleInit(): void {
+    this.maintenance.register({
+      name: this.cleanupJobName,
+      repeat: { pattern: CronExpression.EVERY_DAY_AT_3AM },
+      handle: () => this.deletePublished(),
+    });
+  }
 
   @Interval(1000)
   async relay(): Promise<void> {
@@ -36,7 +47,6 @@ export class IdentityOutboxRelayService {
     }
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async deletePublished(): Promise<void> {
     const deleted = await this.outbox.deletePublishedBefore(subDays(new Date(), this.publishedRetentionDays));
     this.logger.log(`deleted ${deleted} published outbox rows`);

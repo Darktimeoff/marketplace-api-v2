@@ -1,3 +1,4 @@
+import { QueueModule } from '../generic/queue/queue.module.js';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Identity } from './entity/identity.entity.js';
@@ -21,7 +22,7 @@ import { IdentityRefreshCommandHandler } from './command-handler/identity-refres
 import { IdentityLogoutCommandHandler } from './command-handler/identity-logout.command-handler.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox]), SecretManagerModule, KafkaModule, AuthModule, RateLimitModule],
+  imports: [QueueModule, TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox]), SecretManagerModule, KafkaModule, AuthModule, RateLimitModule],
   controllers: [AuthController],
   providers: [
     IdentityRepository,

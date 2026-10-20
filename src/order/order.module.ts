@@ -1,3 +1,4 @@
+import { QueueModule } from "../generic/queue/queue.module.js";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { Order } from "./entity/order.entity.js";
@@ -32,6 +33,7 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
 
 @Module({
   imports: [
+    QueueModule,
     RabbitMqModule,
     KafkaModule,
     TemporalModule,

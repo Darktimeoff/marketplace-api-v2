@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import { calculateJwkThumbprint, exportJWK, importPKCS8, importSPKI, SignJWT, type CryptoKey } from 'jose';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { SecretManagerService } from '../../generic/secret-manager/secret-manager.service.js';
@@ -55,7 +55,9 @@ export class TokenService implements OnModuleInit {
       .setExpirationTime(`${ACCESS_TOKEN_TTL_SECONDS}s`)
       .sign(this.privateKey);
 
-    await this.accessSessions.open(tokenId, familyId);
+    if (!(await this.accessSessions.open(tokenId, familyId))) {
+      throw new UnauthorizedException('Session revoked');
+    }
 
     return { accessToken, refreshToken, tokenType: 'Bearer', expiresIn: ACCESS_TOKEN_TTL_SECONDS };
   }

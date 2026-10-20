@@ -219,17 +219,6 @@ Redis makes the system faster, not more correct: everything below is an optimiza
 - **Login rate limit** (`redis-queue`). `POST /auth/login` allows 5 attempts per 60 s per `ip:login` (login trimmed and lowercased), through `@nestjs/throttler` with `RedisThrottlerStorage`: a sliding window in one Lua script (`ZREMRANGEBYSCORE` + `ZCARD` + `ZADD` + `PEXPIRE`, time from Redis `TIME` so pods agree). Login allows no burst, so the window is sliding rather than a token bucket, which would let up to 10 attempts through in the worst minute. Over the limit: `429` with `Retry-After` = seconds until the oldest attempt leaves the window. The counter lives in Redis, so every pod shares one limit; throttler's default storage is per process.
 - **Queue** (`redis-queue`, `@nestjs/bullmq`). One queue, `maintenance`: `MaintenanceJobRegistryService` holds the handlers contexts register, `MaintenanceQueueService` only touches the queue (`upsertJobScheduler` on bootstrap, `enqueue(name, jobId)`), and `MaintenanceProcessor extends WorkerHost` only runs jobs (`concurrency: 1`, started after every context registered, `@OnWorkerEvent('failed' | 'stalled')`). Jobs get `attempts: 3`, `backoff: { type: 'exponential', delay: 1000, jitter: 0.5 }`, and `removeOnComplete` as an age/count limit, never `true`, which would turn `jobId` dedup off. The four outbox cleanups (identity, user, order, order workflow) moved here from `@Cron`: `upsertJobScheduler` keeps one scheduler per name across restarts and pods, and each daily run is processed by one worker instead of every pod. A job with no handler fails at once with `UnrecoverableError`.
 
-Own runs (`npm run demo:*`, local compose stack, `SKIP_VAULT=1`; the demo scripts are temporary and will be removed after grading):
-
-| Demo | Output |
-|---|---|
-| `demo:cache` | `cache-lru=1 cache-maxmemory=1 warmed=50 ttl-distinct=34 concurrent=20 db-calls=1 db-calls-warm=0` |
-| `demo:session` | `requests=8 sessions=1 in-redis=1 ttl-before=298 ttl-after=300 ttl-renewed=1 survives-restart=1 revoked-on-logout=1` |
-| `demo:ratelimit` | `instances=2 limit=5 requests=8 allowed=5 blocked=3 status=429 retry-after=1 retry-after-seconds=60` |
-| `demo:queue` | `queue-noeviction=1 attempts=3 completed=1 added=2 queued=1 schedulers=1 scheduled-runs=4` |
-
-`demo:cache` reads 50 orders it inserts for a dedicated buyer through the real `OrderService.findById` and counts database reads by wrapping `OrderRepository.findByIdOrFail`; `demo:session` logs in as the seeded `buyer1@example.com`, checks the session before and after activity, restarts the app and logs out; `demo:ratelimit` starts two app instances and alternates 8 attempts for a fresh login between them; `demo:queue` registers three demo jobs in the real `maintenance` queue and removes them and their schedulers afterwards. Each demo cleans up what it created and exits non-zero if an invariant breaks.
-
 **If the stampede lock breaks.** If Redis loses the lock, the owner dies before releasing it or the 5 s wait runs out, several requests miss at once and each reads Postgres: N identical `SELECT`s instead of one, and the last `SET` wins with the same value. That costs a few database reads on one hot key for one moment; nothing is written, so nothing can end up inconsistent. That is why a lock is acceptable here: it protects a read that may be repeated, and every path where it fails degrades to the behaviour we had without it. The same `SET NX PX` guarding a write (one charge per order, one reservation per offer) would be wrong: a lock can expire under a slow owner, and two writers would both proceed. Those invariants are enforced in Postgres (`UPDATE … WHERE balance >= $n`, natural keys with `ON CONFLICT`), never with a Redis lock.
 
 ## Auth (identity)
@@ -281,42 +270,6 @@ npm run test:e2e          # the full app over HTTP (testcontainers)
 ```
 
 Integration and e2e tests start their containers once per run (Postgres, RabbitMQ, Kafka, Temporal and two Redis instances with the same eviction settings as compose, so nothing depends on a running dev stack) and reset state after every test (`test/support/isolation.ts`: truncate all tables and `FLUSHALL` both Redis instances, since restarted identities would otherwise hit cache entries of the previous test), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with.
-
-## Grading
-
-The demos need the whole stack: Postgres, RabbitMQ, Kafka, Temporal and both Redis instances. Values are the dev credentials from `docker-compose.yml` and `secrets/*.example`; the grader has no secret store, hence `SKIP_VAULT=1`, and the JWT pair is generated on the spot. Stop a running API first.
-
-```bash
-cp .env.example .env
-cp secrets/db_password.txt.example secrets/db_password.txt
-cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
-cp secrets/redis_password.txt.example secrets/redis_password.txt
-docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue
-
-export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
-export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
-export KAFKA_BROKERS=127.0.0.1:9092
-export TEMPORAL_ADDRESS=127.0.0.1:7233
-export REDIS_CACHE_URL=redis://default:changeme@127.0.0.1:6380
-export REDIS_QUEUE_URL=redis://default:changeme@127.0.0.1:6381
-export JWT_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
-export JWT_PUBLIC_KEY="$(printf '%s' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
-export SKIP_VAULT=1
-
-npm ci
-npm run build
-npm run migrate
-npm run seed
-
-npm run demo:cache
-npm run demo:session
-npm run demo:ratelimit
-npm run demo:queue
-```
-
-- `--wait` matters: without it the scripts start before Postgres and Redis accept connections and fail with `ECONNREFUSED`.
-- Name the services: the compose file also has the Infisical stack, which needs credentials of its own.
-- `npm run build` is required: the demos, `migrate` and `seed` run the compiled `dist/`. `seed` provides the buyer `demo:session` logs in as and the offers.
 
 ## Configuration
 

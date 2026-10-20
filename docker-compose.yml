@@ -143,6 +143,7 @@ services:
     container_name: redis-cache
     entrypoint: >
       sh -c '
+      rm -f /tmp/redis.conf &&
       umask 077 &&
       printf "requirepass %s\n" "$$(cat /run/secrets/redis_password)" > /tmp/redis.conf &&
       chown redis:redis /tmp/redis.conf &&
@@ -163,6 +164,7 @@ services:
     container_name: redis-queue
     entrypoint: >
       sh -c '
+      rm -f /tmp/redis.conf &&
       umask 077 &&
       printf "requirepass %s\n" "$$(cat /run/secrets/redis_password)" > /tmp/redis.conf &&
       chown redis:redis /tmp/redis.conf &&

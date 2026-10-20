@@ -8,6 +8,10 @@ import { OrderOutbox } from "./entity/order-outbox.entity.js";
 import { OrderOutboxRepository } from "./repository/order-outbox.repository.js";
 import { OrderOutboxRelayService } from "./service/order-outbox-relay.service.js";
 import { OrderWorkflowOutbox } from "./entity/order-workflow-outbox.entity.js";
+import { OrderBuyer } from "./entity/order-buyer.entity.js";
+import { OrderBuyerRepository } from "./repository/order-buyer.repository.js";
+import { OrderBuyerRegisterCommandHandler } from "./command-handler/order-buyer-register.command-handler.js";
+import { OrderUserEventsGateway } from "./gateway/order-user-events.gateway.js";
 import { OrderWorkflowOutboxRepository } from "./repository/order-workflow-outbox.repository.js";
 import { OrderWorkflowOutboxRelayService } from "./service/order-workflow-outbox-relay.service.js";
 import { OrderNotifyEventsGateway } from "./gateway/order-notify-events.gateway.js";
@@ -38,7 +42,7 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
     KafkaModule,
     TemporalModule,
     CacheModule,
-    TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient, OrderOutbox, OrderWorkflowOutbox]),
+    TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient, OrderOutbox, OrderWorkflowOutbox, OrderBuyer]),
     SellerOfferModule,
     AccountModule,
   ],
@@ -51,6 +55,9 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
     OrderOutboxRelayService,
     OrderWorkflowOutboxRepository,
     OrderWorkflowOutboxRelayService,
+    OrderBuyerRepository,
+    OrderBuyerRegisterCommandHandler,
+    OrderUserEventsGateway,
     OrderNotifyEventsGateway,
     OrderPlaceMessageService,
     OrderService,

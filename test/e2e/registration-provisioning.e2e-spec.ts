@@ -9,6 +9,7 @@ import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { User } from '../../src/user/entity/user.entity.js';
 import { Account } from '../../src/account/entity/account.entity.js';
 import { UserOutbox } from '../../src/user/entity/user-outbox.entity.js';
+import { OrderBuyer } from '../../src/order/entity/order-buyer.entity.js';
 import { truncateAllTables } from '../support/isolation.js';
 
 process.env.KAFKA_CONSUMERS_ENABLED = 'true';
@@ -126,8 +127,10 @@ describe('Registration provisioning over Kafka (e2e)', () => {
   it('creates the user and a zero-balance account after a registration', async () => {
     const { identity, user, account } = await registerAndProvision();
 
-    expect(user).toMatchObject({ identityId: identity.id, email: identity.email, phoneNumber: null, firstName: null, lastName: null });
+    expect(user).toMatchObject({ identityId: identity.id, identityPublicId: identity.publicId, email: identity.email, phoneNumber: null, firstName: null, lastName: null });
     expect(account.balance).toBe('0.00');
+    const buyer = await waitFor(async () => (await dataSource.getRepository(OrderBuyer).findOneBy({ identityPublicId: identity.publicId })) ?? undefined, 'the order buyer');
+    expect(buyer.userId).toBe(user.id);
 
     const received = await waitFor(() => userEvents.find(({ key }) => key === user.publicId), 'user.created');
     const outboxRow = await waitFor(async () => {

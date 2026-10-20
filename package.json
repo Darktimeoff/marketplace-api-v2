@@ -12,7 +12,8 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "npm run bootstrap:secrets && nest start",
+    "start": "nest start",
+    "start:vault": "npm run bootstrap:secrets && bash scripts/with-secrets.sh dev nest start",
     "start:dev": "npm run bootstrap:secrets && nest start --watch",
     "lint": "oxlint src/ test/ packages/",
     "check:env": "node scripts/check-env-example.mjs",

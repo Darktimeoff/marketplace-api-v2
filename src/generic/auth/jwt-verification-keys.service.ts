@@ -3,6 +3,7 @@ import { Interval } from '@nestjs/schedule';
 import { calculateJwkThumbprint, createLocalJWKSet, exportJWK, importSPKI, type JWK, type JWTVerifyGetKey } from 'jose';
 import { SecretManagerService } from '../secret-manager/secret-manager.service.js';
 import { ACCESS_TOKEN_ALGORITHM } from './constant/access-token.constant.js';
+import { decodePem } from './decode-pem.js';
 
 @Injectable()
 export class JwtVerificationKeysService implements OnModuleInit {
@@ -35,7 +36,7 @@ export class JwtVerificationKeysService implements OnModuleInit {
   }
 
   private async load(): Promise<void> {
-    const blocks = (await this.secrets.get('JWT_PUBLIC_KEY')).match(this.pemBlockPattern) ?? [];
+    const blocks = decodePem(await this.secrets.get('JWT_PUBLIC_KEY')).match(this.pemBlockPattern) ?? [];
 
     if (blocks.length === 0) {
       throw new Error('JWT_PUBLIC_KEY holds no PEM public key');

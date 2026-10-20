@@ -6,6 +6,7 @@ import { SecretManagerService } from '../../generic/secret-manager/secret-manage
 import { ACCESS_TOKEN_ALGORITHM, ACCESS_TOKEN_ISSUER, ACCESS_TOKEN_TTL_SECONDS } from '../../generic/auth/constant/access-token.constant.js';
 import { IdentitySessionRepository } from '../repository/identity-session.repository.js';
 import { JwtVerificationKeysService } from '../../generic/auth/jwt-verification-keys.service.js';
+import { decodePem } from '../../generic/auth/decode-pem.js';
 import type { Identity } from '../entity/identity.entity.js';
 import type { IdentityTokenResponseInterface } from '@marketplace/contracts-core';
 
@@ -69,7 +70,7 @@ export class TokenService implements OnModuleInit {
   }
 
   private async loadSigningKey(): Promise<void> {
-    const privateKey = await importPKCS8(await this.secrets.get('JWT_PRIVATE_KEY'), ACCESS_TOKEN_ALGORITHM, { extractable: true });
+    const privateKey = await importPKCS8(decodePem(await this.secrets.get('JWT_PRIVATE_KEY')), ACCESS_TOKEN_ALGORITHM, { extractable: true });
     const keyId = await calculateJwkThumbprint(await exportJWK(privateKey));
 
     if (!this.verificationKeys.kids.includes(keyId)) {

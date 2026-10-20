@@ -29,6 +29,7 @@ import { DropOrderOutboxBroker1791000000130 } from '../../src/migrations/1791000
 import { AddOrderIdempotencyKey1791000000140 } from '../../src/migrations/1791000000140-AddOrderIdempotencyKey.js';
 import { AddOrderConfirmation1791000000150 } from '../../src/migrations/1791000000150-AddOrderConfirmation.js';
 import { DropOrderConfirmation1791000000160 } from '../../src/migrations/1791000000160-DropOrderConfirmation.js';
+import { AddUserIdentityPublicId1791000000170 } from '../../src/migrations/1791000000170-AddUserIdentityPublicId.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
@@ -85,6 +86,7 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   AddOrderIdempotencyKey1791000000140,
   AddOrderConfirmation1791000000150,
   DropOrderConfirmation1791000000160,
+  AddUserIdentityPublicId1791000000170,
 ];
 
 export const testEntities = [

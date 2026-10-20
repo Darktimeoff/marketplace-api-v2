@@ -149,6 +149,7 @@ describe('Registration provisioning over Kafka (e2e)', () => {
         userId: user.id,
         userPublicId: user.publicId,
         identityId: identity.id,
+        identityPublicId: identity.publicId,
         email: identity.email,
         phoneNumber: null,
         firstName: null,

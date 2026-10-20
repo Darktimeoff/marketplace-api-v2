@@ -13,6 +13,7 @@ export namespace UserCreatedEvent {
     userId: number;
     userPublicId: string;
     identityId: number;
+    identityPublicId: string;
     email: string | null;
     phoneNumber: string | null;
     firstName: string | null;

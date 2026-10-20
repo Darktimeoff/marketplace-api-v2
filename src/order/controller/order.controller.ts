@@ -15,7 +15,9 @@ import { OrderCreateInput } from '../input/order-create.input.js';
 import { OrderDto } from '../dto/order.dto.js';
 import { ResponseDto } from '../../generic/validation/response-dto.decorator.js';
 import { IdempotencyKey } from '../decorator/idempotency-key.decorator.js';
+import { Public } from '../../generic/auth/decorator/public.decorator.js';
 
+@Public()
 @Controller('order')
 export class OrderController {
   constructor(

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { generateKeyPairSync, createSecretKey } from 'node:crypto';
 import { UnauthorizedException, type ExecutionContext } from '@nestjs/common';
+import type { Reflector } from '@nestjs/core';
 import { importPKCS8, SignJWT, type CryptoKey } from 'jose';
 import { AccessTokenGuard } from '../../../src/generic/auth/access-token.guard.js';
 import { AccessTokenVerifierService } from '../../../src/generic/auth/access-token-verifier.service.js';
@@ -17,8 +18,15 @@ function aKeyPair() {
   });
 }
 
+const responseHeaders: Record<string, string> = {};
+
 function contextFor(request: AuthenticatedRequestInterface): ExecutionContext {
-  return { switchToHttp: () => ({ getRequest: () => request }) } as unknown as ExecutionContext;
+  return {
+    switchToHttp: () => ({ getRequest: () => request, getResponse: () => ({ setHeader: (name: string, value: string) => { responseHeaders[name] = value; } }) }),
+    getType: () => 'http',
+    getHandler: () => undefined,
+    getClass: () => undefined,
+  } as unknown as ExecutionContext;
 }
 
 function base64url(value: object): string {
@@ -39,7 +47,7 @@ describe('AccessTokenGuard', () => {
     const verificationKeys = new JwtVerificationKeysService(secrets);
     await verificationKeys.onModuleInit();
     const verifier = new AccessTokenVerifierService(verificationKeys, denylist);
-    guard = new AccessTokenGuard(verifier);
+    guard = new AccessTokenGuard(verifier, { getAllAndOverride: () => false } as unknown as Reflector);
     signingKey = await importPKCS8(keys.privateKey, 'ES256');
   });
 
@@ -93,6 +101,14 @@ describe('AccessTokenGuard', () => {
     ['garbage', 'Bearer not-a-jwt'],
   ])('rejects %s', async (_, authorization) => {
     await expect(activate(authorization)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('answers a missing token with a bare Bearer challenge and a bad one with invalid_token', async () => {
+    await expect(activate(undefined)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(responseHeaders['WWW-Authenticate']).toBe('Bearer');
+
+    await expect(activate('Bearer not-a-jwt')).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(responseHeaders['WWW-Authenticate']).toBe('Bearer error="invalid_token"');
   });
 
   it('rejects an expired token', async () => {

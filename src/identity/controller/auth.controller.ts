@@ -10,7 +10,9 @@ import { IdentityLoginCommandHandler } from '../command-handler/identity-login.c
 import { IdentityRefreshCommandHandler } from '../command-handler/identity-refresh.command-handler.js';
 import { IdentityLogoutCommandHandler } from '../command-handler/identity-logout.command-handler.js';
 import { IDENTITY_LOGIN_THROTTLE_LIMIT, IDENTITY_LOGIN_THROTTLE_TTL_MS, identityLoginTracker } from '../constant/identity-login-throttle.constant.js';
+import { Public } from '../../generic/auth/decorator/public.decorator.js';
 
+@Public()
 @Controller('auth')
 export class AuthController {
   constructor(

@@ -5,7 +5,7 @@ import { IdentityRepository } from '../repository/identity.repository.js';
 import { IdentitySessionRepository } from '../repository/identity-session.repository.js';
 import { TokenService } from '../service/token.service.js';
 import { IdentityRefreshTokenInput } from '../input/identity-refresh-token.input.js';
-import { AccessSessionService } from '../../generic/auth/access-session.service.js';
+import { AccessTokenDenylistService } from '../../generic/auth/access-token-denylist.service.js';
 
 @Injectable()
 export class IdentityRefreshCommandHandler {
@@ -13,7 +13,7 @@ export class IdentityRefreshCommandHandler {
     private readonly identities: IdentityRepository,
     private readonly sessions: IdentitySessionRepository,
     private readonly tokens: TokenService,
-    private readonly accessSessions: AccessSessionService,
+    private readonly denylist: AccessTokenDenylistService,
   ) {}
 
   async execute(input: IdentityRefreshTokenInput): Promise<IdentityTokenResponseInterface> {
@@ -25,7 +25,7 @@ export class IdentityRefreshCommandHandler {
 
       if (session?.usedAt) {
         await this.revokeFamily(session.familyId);
-        await this.accessSessions.revokeFamily(session.familyId);
+        await this.denylist.denyFamily(session.familyId);
       }
 
       throw new UnauthorizedException('Invalid refresh token');

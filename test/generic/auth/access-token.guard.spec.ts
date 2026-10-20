@@ -5,7 +5,7 @@ import { importPKCS8, SignJWT, type CryptoKey } from 'jose';
 import { AccessTokenGuard } from '../../../src/generic/auth/access-token.guard.js';
 import { AccessTokenVerifierService } from '../../../src/generic/auth/access-token-verifier.service.js';
 import type { SecretManagerService } from '../../../src/generic/secret-manager/secret-manager.service.js';
-import type { AccessSessionService } from '../../../src/generic/auth/access-session.service.js';
+import type { AccessTokenDenylistService } from '../../../src/generic/auth/access-token-denylist.service.js';
 import type { AuthenticatedRequestInterface } from '../../../src/generic/auth/interface/authenticated-request.interface.js';
 
 function aKeyPair() {
@@ -27,21 +27,22 @@ function base64url(value: object): string {
 describe('AccessTokenGuard', () => {
   const keys = aKeyPair();
   const tokenId = '0b7f3a2c-6d1e-4f8a-9c5b-2e4d6f8a0b1c';
-  const liveSessions = new Set([tokenId]);
+  const familyId = '3e9a1c7b-5d2f-4b8e-a6c0-1f4d7b9e2a5c';
+  const deniedFamilies = new Set(['7c1d9e4a-3b2f-4a6e-8d0c-5f9b1a2e3c4d']);
   let signingKey: CryptoKey;
   let guard: AccessTokenGuard;
 
   beforeAll(async () => {
     const secrets = { get: async () => keys.publicKey } as unknown as SecretManagerService;
-    const sessions = { touch: async (id: string) => liveSessions.has(id) } as unknown as AccessSessionService;
-    const verifier = new AccessTokenVerifierService(secrets, sessions);
+    const denylist = { isFamilyDenied: async (id: string) => deniedFamilies.has(id) } as unknown as AccessTokenDenylistService;
+    const verifier = new AccessTokenVerifierService(secrets, denylist);
     await verifier.onModuleInit();
     guard = new AccessTokenGuard(verifier);
     signingKey = await importPKCS8(keys.privateKey, 'ES256');
   });
 
   function aToken(overrides: { issuer?: string; expiresAt?: number | string; key?: CryptoKey; claims?: Record<string, unknown> } = {}) {
-    return new SignJWT({ role: 'user', email: 'jane@example.com', phone_number: '+380501234567', jti: tokenId, ...overrides.claims })
+    return new SignJWT({ role: 'user', email: 'jane@example.com', phone_number: '+380501234567', jti: tokenId, sid: familyId, ...overrides.claims })
       .setProtectedHeader({ alg: 'ES256' })
       .setSubject('5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d')
       .setIssuer(overrides.issuer ?? 'identity-service')
@@ -59,17 +60,21 @@ describe('AccessTokenGuard', () => {
   it('accepts a valid token and exposes the claims on the request', async () => {
     const request = await activate(`Bearer ${await aToken()}`);
 
-    expect(request.identity).toEqual({ identityPublicId: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d', tokenId, role: 'user', email: 'jane@example.com', phoneNumber: '+380501234567' });
+    expect(request.identity).toEqual({ identityPublicId: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d', tokenId, familyId, role: 'user', email: 'jane@example.com', phoneNumber: '+380501234567' });
   });
 
   it('rejects a token without a jti', async () => {
     await expect(activate(`Bearer ${await aToken({ claims: { jti: undefined } })}`)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
-  it('rejects a valid token whose session was revoked or went idle', async () => {
-    const token = await aToken({ claims: { jti: '7c1d9e4a-3b2f-4a6e-8d0c-5f9b1a2e3c4d' } });
+  it('rejects a token without a sid', async () => {
+    await expect(activate(`Bearer ${await aToken({ claims: { sid: undefined } })}`)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
 
-    await expect(activate(`Bearer ${token}`)).rejects.toThrow('Access token revoked or expired');
+  it('rejects a valid token whose family was revoked', async () => {
+    const token = await aToken({ claims: { sid: '7c1d9e4a-3b2f-4a6e-8d0c-5f9b1a2e3c4d' } });
+
+    await expect(activate(`Bearer ${token}`)).rejects.toThrow('Access token revoked');
   });
 
   it('exposes null for missing email and phone claims', async () => {

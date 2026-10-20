@@ -8,7 +8,7 @@ import request from 'supertest';
 import { AccessTokenGuard } from '../../../src/generic/auth/access-token.guard.js';
 import { AccessTokenVerifierService } from '../../../src/generic/auth/access-token-verifier.service.js';
 import { SecretManagerService } from '../../../src/generic/secret-manager/secret-manager.service.js';
-import { AccessSessionService } from '../../../src/generic/auth/access-session.service.js';
+import { AccessTokenDenylistService } from '../../../src/generic/auth/access-token-denylist.service.js';
 import { Identity } from '../../../src/generic/auth/decorator/identity.decorator.js';
 import { RoleEnum } from '../../../src/identity/enum/role.enum.js';
 import type { AccessTokenClaimsInterface } from '../../../src/generic/auth/interface/access-token-claims.interface.js';
@@ -32,6 +32,7 @@ describe('@Identity()', () => {
   const claims: AccessTokenClaimsInterface = {
     identityPublicId: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d',
     tokenId: '0b7f3a2c-6d1e-4f8a-9c5b-2e4d6f8a0b1c',
+    familyId: '3e9a1c7b-5d2f-4b8e-a6c0-1f4d7b9e2a5c',
     role: RoleEnum.user,
     email: 'jane@example.com',
     phoneNumber: '+380501234567',
@@ -73,13 +74,13 @@ describe('@Identity() on a guarded route', () => {
         AccessTokenGuard,
         AccessTokenVerifierService,
         { provide: SecretManagerService, useValue: { get: async () => keys.publicKey } },
-        { provide: AccessSessionService, useValue: { touch: async () => true } },
+        { provide: AccessTokenDenylistService, useValue: { isFamilyDenied: async () => false } },
       ],
     }).compile();
     const app = moduleRef.createNestApplication();
     await app.init();
 
-    const token = await new SignJWT({ role: 'user', email: 'jane@example.com' })
+    const token = await new SignJWT({ role: 'user', email: 'jane@example.com', sid: '3e9a1c7b-5d2f-4b8e-a6c0-1f4d7b9e2a5c' })
       .setProtectedHeader({ alg: 'ES256' })
       .setSubject('5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d')
       .setJti('0b7f3a2c-6d1e-4f8a-9c5b-2e4d6f8a0b1c')
@@ -91,7 +92,7 @@ describe('@Identity() on a guarded route', () => {
     try {
       const response = await request(app.getHttpServer()).get('/me').set('Authorization', `Bearer ${token}`).expect(200);
       expect(response.body).toEqual({
-        identity: { identityPublicId: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d', tokenId: '0b7f3a2c-6d1e-4f8a-9c5b-2e4d6f8a0b1c', role: 'user', email: 'jane@example.com', phoneNumber: null },
+        identity: { identityPublicId: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d', tokenId: '0b7f3a2c-6d1e-4f8a-9c5b-2e4d6f8a0b1c', familyId: '3e9a1c7b-5d2f-4b8e-a6c0-1f4d7b9e2a5c', role: 'user', email: 'jane@example.com', phoneNumber: null },
         identityPublicId: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d',
       });
 

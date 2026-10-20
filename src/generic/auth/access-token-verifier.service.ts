@@ -4,7 +4,7 @@ import { SecretManagerService } from '../secret-manager/secret-manager.service.j
 import { ACCESS_TOKEN_ALGORITHM, ACCESS_TOKEN_CLOCK_TOLERANCE_SECONDS, ACCESS_TOKEN_ISSUER } from './constant/access-token.constant.js';
 import type { AccessTokenClaimsInterface } from './interface/access-token-claims.interface.js';
 import { accessTokenPayloadSchema } from './schema/access-token-payload.schema.js';
-import { AccessSessionService } from './access-session.service.js';
+import { AccessTokenDenylistService } from './access-token-denylist.service.js';
 
 @Injectable()
 export class AccessTokenVerifierService implements OnModuleInit {
@@ -12,7 +12,7 @@ export class AccessTokenVerifierService implements OnModuleInit {
 
   constructor(
     private readonly secrets: SecretManagerService,
-    private readonly sessions: AccessSessionService,
+    private readonly denylist: AccessTokenDenylistService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -22,8 +22,8 @@ export class AccessTokenVerifierService implements OnModuleInit {
   async verify(token: string): Promise<AccessTokenClaimsInterface> {
     const claims = await this.verifySignature(token);
 
-    if (!(await this.sessions.touch(claims.tokenId))) {
-      throw new UnauthorizedException('Access token revoked or expired');
+    if (await this.denylist.isFamilyDenied(claims.familyId)) {
+      throw new UnauthorizedException('Access token revoked');
     }
 
     return claims;
@@ -35,7 +35,7 @@ export class AccessTokenVerifierService implements OnModuleInit {
         algorithms: [ACCESS_TOKEN_ALGORITHM],
         issuer: ACCESS_TOKEN_ISSUER,
         clockTolerance: ACCESS_TOKEN_CLOCK_TOLERANCE_SECONDS,
-        requiredClaims: ['sub', 'exp', 'iat', 'jti'],
+        requiredClaims: ['sub', 'exp', 'iat', 'jti', 'sid'],
       });
       return accessTokenPayloadSchema.parse(payload);
     } catch {

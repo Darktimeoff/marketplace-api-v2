@@ -307,51 +307,30 @@ describe('Auth (e2e)', () => {
     });
   });
 
-  describe('access session', () => {
+  describe('access token denylist', () => {
     function verify(accessToken: string) {
       return app.get(AccessTokenVerifierService).verify(accessToken);
     }
 
-    function sessionKey(jti: unknown) {
-      return `session:${jti}`;
-    }
-
-    it('opens a session in redis for the token jti with an idle ttl', async () => {
+    it('carries the session family in the token and stores nothing for a live one', async () => {
       const { accessToken } = await register();
-      const { jti } = await claimsOf(accessToken);
+      const { sid } = await claimsOf(accessToken);
       const redis = app.get(RedisClientService).queue;
 
-      expect(await redis.exists(sessionKey(jti))).toBe(1);
-      expect(await redis.ttl(sessionKey(jti))).toBeGreaterThan(290);
-      expect(await verify(accessToken)).toMatchObject({ tokenId: jti });
+      expect(await verify(accessToken)).toMatchObject({ familyId: sid });
+      expect([...(await redis.keys('denied-family:*')), ...(await redis.keys('session*'))]).toEqual([]);
     });
 
-    it('extends the idle ttl on every verified request', async () => {
-      const { accessToken } = await register();
-      const { jti } = await claimsOf(accessToken);
-      const redis = app.get(RedisClientService).queue;
-      await redis.expire(sessionKey(jti), 10);
-
-      await verify(accessToken);
-
-      expect(await redis.ttl(sessionKey(jti))).toBeGreaterThan(290);
-    });
-
-    it('rejects a token whose session went idle', async () => {
-      const { accessToken } = await register();
-      await app.get(RedisClientService).queue.del(sessionKey((await claimsOf(accessToken)).jti));
-
-      await expect(verify(accessToken)).rejects.toThrow('Access token revoked or expired');
-    });
-
-    it('kills every access token of the family on logout', async () => {
+    it('kills every access token of the family on logout until it would expire anyway', async () => {
       const first = await register();
       const second = (await post('refresh', { refreshToken: first.refreshToken }).expect(200)).body;
+      const { sid } = await claimsOf(first.accessToken);
 
       await post('logout', { refreshToken: second.refreshToken }).expect(204);
 
-      await expect(verify(first.accessToken)).rejects.toThrow('Access token revoked or expired');
-      await expect(verify(second.accessToken)).rejects.toThrow('Access token revoked or expired');
+      await expect(verify(first.accessToken)).rejects.toThrow('Access token revoked');
+      await expect(verify(second.accessToken)).rejects.toThrow('Access token revoked');
+      expect(await app.get(RedisClientService).queue.ttl(`denied-family:${sid}`)).toBeGreaterThanOrEqual(900);
     });
 
     it('kills the family access tokens when a used refresh token is replayed', async () => {
@@ -360,10 +339,10 @@ describe('Auth (e2e)', () => {
 
       await post('refresh', { refreshToken: first.refreshToken }).expect(401);
 
-      await expect(verify(second.accessToken)).rejects.toThrow('Access token revoked or expired');
+      await expect(verify(second.accessToken)).rejects.toThrow('Access token revoked');
     });
 
-    it('leaves the sessions of another login alive on logout', async () => {
+    it('leaves the tokens of another login alive on logout', async () => {
       const first = await register();
       const other = (await post('login', { login: 'jane@example.com', password: 'correct-horse' }).expect(200)).body;
 

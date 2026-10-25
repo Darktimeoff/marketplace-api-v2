@@ -1,5 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { OrderModule } from '../../src/order/order.module.js';
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Order } from '../../src/order/entity/order.entity.js';
+import { OrderLine } from '../../src/order/entity/order-line.entity.js';
+import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
 import { OrderRepository } from '../../src/order/repository/order.repository.js';
 import { OrderLineRepository } from '../../src/order/repository/order-line.repository.js';
 import { CurrencyEnum } from '@marketplace/contracts-core';
@@ -7,13 +11,19 @@ import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
 import { anOrderRecipient, aSellerOffer } from '../support/builders.js';
 
+@Module({
+  imports: [TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient])],
+  providers: [OrderRepository, OrderLineRepository],
+})
+class OrderTestModule {}
+
 describe('OrderRepository', () => {
   let testModule: TestModule;
   let repository: OrderRepository;
   let orderLines: OrderLineRepository;
 
   beforeAll(async () => {
-    testModule = await createTestModule([OrderModule]);
+    testModule = await createTestModule([OrderTestModule]);
     repository = testModule.app.get(OrderRepository);
     orderLines = testModule.app.get(OrderLineRepository);
   });

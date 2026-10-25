@@ -17,6 +17,7 @@ const environmentSchema = z.object({
   TEMPORAL_ADDRESS: z.string().min(1).default('temporal:7233'),
   TEMPORAL_NAMESPACE: z.string().min(1).default('default'),
   ACCESS_DENYLIST_FAIL_OPEN: z.stringbool().default(true),
+  OUTBOX_RELAY_INTERVAL_MS: z.coerce.number().int().min(10).default(1000),
   GOOGLE_ISSUER: z.url().default('https://accounts.google.com'),
   GOOGLE_CLIENT_ID: z.string().min(1),
   OIDC_REDIRECT_BASE_URL: z.url().default('http://localhost:3000'),

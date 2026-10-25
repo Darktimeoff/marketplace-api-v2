@@ -372,6 +372,7 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `KAFKA_BROKERS` | no | `kafka:29092` | comma-separated Kafka bootstrap servers (`localhost:9092` when the app runs outside Docker) |
 | `KAFKA_CONSUMERS_ENABLED` | no | `true` | `false` starts the app without Kafka consumers |
 | `ACCESS_DENYLIST_FAIL_OPEN` | no | `true` | when the access-token denylist (Redis) is unavailable: `true` accepts tokens on their signature, `false` answers `503` |
+| `OUTBOX_RELAY_INTERVAL_MS` | no | `1000` | how often each outbox relay (identity, user, order events, order workflow starts) polls for unpublished rows; the tests use `100` |
 | `TEMPORAL_ADDRESS` | no | `temporal:7233` | Temporal frontend (`localhost:7233` when the app runs outside Docker) |
 | `TEMPORAL_NAMESPACE` | no | `default` | Temporal namespace of the order workflows |
 | `GOOGLE_CLIENT_ID` | yes | — | Google OAuth client id |

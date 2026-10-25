@@ -14,6 +14,7 @@ import { RateLimitModule } from '../generic/rate-limit/rate-limit.module.js';
 import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { RedisModule } from '../generic/redis/redis.module.js';
 import { AuthController } from './controller/auth.controller.js';
+import { JwksController } from './controller/jwks.controller.js';
 import { IdentityRepository } from './repository/identity.repository.js';
 import { IdentitySessionRepository } from './repository/identity-session.repository.js';
 import { PasswordService } from './service/password.service.js';
@@ -31,7 +32,7 @@ import { IdentityGoogleLinkCommandHandler } from './command-handler/identity-goo
 
 @Module({
   imports: [QueueModule, TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox, IdentityExternalAccount]), SecretManagerModule, KafkaModule, AuthModule, RateLimitModule, RedisModule],
-  controllers: [AuthController],
+  controllers: [AuthController, JwksController],
   providers: [
     IdentityRepository,
     IdentitySessionRepository,

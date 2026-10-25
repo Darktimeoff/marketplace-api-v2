@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { calculateJwkThumbprint, createLocalJWKSet, exportJWK, importSPKI, type JWK, type JWTVerifyGetKey } from 'jose';
+import type { IdentityJwkResponseInterface } from '@marketplace/contracts-core';
 import { SecretManagerService } from '../secret-manager/secret-manager.service.js';
 import { ACCESS_TOKEN_ALGORITHM } from './constant/access-token.constant.js';
 import { decodePem } from './decode-pem.js';
@@ -11,6 +12,7 @@ export class JwtVerificationKeysService implements OnModuleInit {
   private readonly pemBlockPattern = /-----BEGIN PUBLIC KEY-----[\s\S]+?-----END PUBLIC KEY-----/g;
   private keySet: JWTVerifyGetKey;
   private loadedKids: string[] = [];
+  private loadedPublicKeys: IdentityJwkResponseInterface[] = [];
 
   constructor(private readonly secrets: SecretManagerService) {}
 
@@ -35,6 +37,10 @@ export class JwtVerificationKeysService implements OnModuleInit {
     return this.loadedKids;
   }
 
+  get publicKeys(): IdentityJwkResponseInterface[] {
+    return this.loadedPublicKeys;
+  }
+
   private async load(): Promise<void> {
     const blocks = decodePem(await this.secrets.get('JWT_PUBLIC_KEY')).match(this.pemBlockPattern) ?? [];
 
@@ -50,6 +56,7 @@ export class JwtVerificationKeysService implements OnModuleInit {
 
     const kids = keys.map(({ kid }) => kid as string);
     this.keySet = createLocalJWKSet({ keys });
+    this.loadedPublicKeys = keys as IdentityJwkResponseInterface[];
 
     if (kids.join() !== this.loadedKids.join()) {
       this.loadedKids = kids;

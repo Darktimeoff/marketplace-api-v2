@@ -13,3 +13,4 @@ export * from './product/request/product-create.request.js';
 export * from './product/response/product.response.js';
 export * from './identity/response/identity-me.response.js';
 export * from './identity/response/identity-google-link.response.js';
+export * from './identity/response/identity-jwks.response.js';

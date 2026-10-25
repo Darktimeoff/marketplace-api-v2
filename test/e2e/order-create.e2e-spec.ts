@@ -19,6 +19,8 @@ import { OrderOutbox } from '../../src/order/entity/order-outbox.entity.js';
 import { CountryCodeEnum, CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
 import { aSellerOffer, aUser } from '../support/builders.js';
 import { truncateAllTables } from '../support/isolation.js';
+import { aBuyer, type TestBuyerInterface } from '../support/buyer.js';
+import { OrderBuyer } from '../../src/order/entity/order-buyer.entity.js';
 import { StockReservationStatusEnum } from '../../src/seller-offer/enum/stock-reservation-status.enum.js';
 import { TransactionStatusEnum } from '../../src/account/enum/transaction-status.enum.js';
 import { TransactionTypeEnum } from '../../src/account/enum/transaction-type.enum.js';
@@ -47,9 +49,8 @@ describe('Order create (e2e)', () => {
     await dataSource.query(`INSERT INTO "Account" ("customerId", "balance") VALUES ($1, $2)`, [customerId, balance]);
   }
 
-  function aBody(userId: number, items: { offerId: number; quantity: number }[]) {
+  function aBody(items: { offerId: number; quantity: number }[]) {
     return {
-      userId,
       recipient: {
         fullName: 'Jane Doe',
         phone: {
@@ -65,8 +66,12 @@ describe('Order create (e2e)', () => {
     };
   }
 
-  function placeOrder(body: object, idempotencyKey?: string) {
-    const post = request(app.getHttpServer()).post('/order');
+  function newBuyer(): Promise<TestBuyerInterface> {
+    return aBuyer(app, dataSource);
+  }
+
+  function placeOrder(as: TestBuyerInterface, body: object, idempotencyKey?: string) {
+    const post = request(app.getHttpServer()).post('/order').set('Authorization', `Bearer ${as.token}`);
     return (idempotencyKey ? post.set('Idempotency-Key', idempotencyKey) : post).send(body);
   }
 
@@ -135,11 +140,11 @@ describe('Order create (e2e)', () => {
   }
 
   it('pays the order, snapshots the recipient, reserves stock and charges the user', async () => {
-    const buyer = await aUser(dataSource.manager);
+    const buyer = await newBuyer();
     await fund(buyer.id, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', discountPrice: '80.00', onHandQuantity: 5 });
 
-    const response = await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 2 }])).expect(202);
+    const response = await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 2 }])).expect(202);
 
     expect(response.body).toMatchObject({
       status: OrderStatusEnum.pending_payment,
@@ -211,14 +216,14 @@ describe('Order create (e2e)', () => {
   });
 
   it('sums several lines and stores a missing building as null', async () => {
-    const buyer = await aUser(dataSource.manager);
+    const buyer = await newBuyer();
     await fund(buyer.id, '1000.00');
     const first = await aSellerOffer(dataSource.manager, { price: '50.00', onHandQuantity: 5 });
     const second = await aSellerOffer(dataSource.manager, { price: '30.00', discountPrice: '20.00', onHandQuantity: 5 });
-    const body = aBody(buyer.id, [{ offerId: second.id, quantity: 3 }, { offerId: first.id, quantity: 1 }]);
+    const body = aBody([{ offerId: second.id, quantity: 3 }, { offerId: first.id, quantity: 1 }]);
     delete (body.recipient.address as { building?: string }).building;
 
-    const response = await placeOrder(body).expect(202);
+    const response = await placeOrder(buyer, body).expect(202);
 
     expect(response.body).toMatchObject({ status: OrderStatusEnum.pending_payment, totalAmount: '110.00', discountAmount: '30.00' });
     const order = await settledOrder();
@@ -229,11 +234,11 @@ describe('Order create (e2e)', () => {
   });
 
   it('cancels the order when stock is insufficient and charges nothing', async () => {
-    const buyer = await aUser(dataSource.manager);
+    const buyer = await newBuyer();
     await fund(buyer.id, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 1 });
 
-    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 2 }])).expect(202);
+    await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 2 }])).expect(202);
 
     expect((await settledOrder()).status).toBe(OrderStatusEnum.canceled);
     expect(await offerById(offer.id)).toMatchObject({ onHandQuantity: 1, reservedQuantity: 0 });
@@ -248,11 +253,11 @@ describe('Order create (e2e)', () => {
   });
 
   it('marks the order failed_payment and releases the stock when the balance is too low', async () => {
-    const buyer = await aUser(dataSource.manager);
+    const buyer = await newBuyer();
     await fund(buyer.id, '50.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(202);
+    await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(202);
 
     const order = await settledOrder();
     expect(order.status).toBe(OrderStatusEnum.failed_payment);
@@ -279,11 +284,11 @@ describe('Order create (e2e)', () => {
       }
       return send(options);
     });
-    const buyer = await aUser(dataSource.manager);
+    const buyer = await newBuyer();
     await fund(buyer.id, '50.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(202);
+    await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(202);
 
     expect((await settledOrder()).status).toBe(OrderStatusEnum.failed_payment);
     expect(refused).toBe(1);
@@ -291,10 +296,10 @@ describe('Order create (e2e)', () => {
   });
 
   it('marks the order failed_payment when the user has no account', async () => {
-    const buyer = await aUser(dataSource.manager);
+    const buyer = await newBuyer();
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(202);
+    await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(202);
 
     expect((await settledOrder()).status).toBe(OrderStatusEnum.failed_payment);
     expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
@@ -310,11 +315,11 @@ describe('Order create (e2e)', () => {
       }
       return reply;
     });
-    const buyer = await aUser(dataSource.manager);
+    const buyer = await newBuyer();
     await fund(buyer.id, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-    await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }])).expect(202);
+    await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(202);
 
     const order = await settledOrder();
     expect(order.status).toBe(OrderStatusEnum.canceled);
@@ -332,10 +337,10 @@ describe('Order create (e2e)', () => {
   });
 
   it('returns 404 for an unknown offer and leaves nothing behind', async () => {
-    const buyer = await aUser(dataSource.manager);
+    const buyer = await newBuyer();
     await fund(buyer.id, '1000.00');
 
-    await placeOrder(aBody(buyer.id, [{ offerId: 999999, quantity: 1 }])).expect(404);
+    await placeOrder(buyer, aBody([{ offerId: 999999, quantity: 1 }])).expect(404);
 
     expect(await dataSource.getRepository(Order).count()).toBe(0);
     expect(await dataSource.getRepository(OrderRecipient).count()).toBe(0);
@@ -343,15 +348,15 @@ describe('Order create (e2e)', () => {
   });
 
   it('sells the last unit only once under concurrent orders', async () => {
-    const first = await aUser(dataSource.manager);
-    const second = await aUser(dataSource.manager);
+    const first = await newBuyer();
+    const second = await newBuyer();
     await fund(first.id, '1000.00');
     await fund(second.id, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 1 });
 
     const responses = await Promise.all([
-      placeOrder(aBody(first.id, [{ offerId: offer.id, quantity: 1 }])),
-      placeOrder(aBody(second.id, [{ offerId: offer.id, quantity: 1 }])),
+      placeOrder(first, aBody([{ offerId: offer.id, quantity: 1 }])),
+      placeOrder(second, aBody([{ offerId: offer.id, quantity: 1 }])),
     ]);
 
     expect(responses.map((response) => response.status)).toEqual([202, 202]);
@@ -362,13 +367,13 @@ describe('Order create (e2e)', () => {
 
   describe('Idempotency-Key', () => {
     it('places one order for concurrent requests with the same key', async () => {
-      const buyer = await aUser(dataSource.manager);
+      const buyer = await newBuyer();
       await fund(buyer.id, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
       const key = randomUUID();
-      const body = aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }]);
+      const body = aBody([{ offerId: offer.id, quantity: 1 }]);
 
-      const responses = await Promise.all([placeOrder(body, key), placeOrder(body, key)]);
+      const responses = await Promise.all([placeOrder(buyer, body, key), placeOrder(buyer, body, key)]);
 
       expect(responses.map(({ status }) => status)).toEqual([202, 202]);
       expect(responses[0].body.publicId).toBe(responses[1].body.publicId);
@@ -380,15 +385,15 @@ describe('Order create (e2e)', () => {
     });
 
     it('returns the same order when the request is retried after it settled', async () => {
-      const buyer = await aUser(dataSource.manager);
+      const buyer = await newBuyer();
       await fund(buyer.id, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
       const key = randomUUID();
-      const body = aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }]);
+      const body = aBody([{ offerId: offer.id, quantity: 1 }]);
 
-      const first = await placeOrder(body, key).expect(202);
+      const first = await placeOrder(buyer, body, key).expect(202);
       await settledOrders(1);
-      const retry = await placeOrder(body, key).expect(202);
+      const retry = await placeOrder(buyer, body, key).expect(202);
 
       expect(retry.body).toMatchObject({ id: first.body.id, publicId: first.body.publicId, status: OrderStatusEnum.paid });
       expect(await dataSource.getRepository(Order).count()).toBe(1);
@@ -396,38 +401,72 @@ describe('Order create (e2e)', () => {
     });
 
     it('places two orders for the same body with different keys or without a key', async () => {
-      const buyer = await aUser(dataSource.manager);
+      const buyer = await newBuyer();
       await fund(buyer.id, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
-      const body = aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }]);
+      const body = aBody([{ offerId: offer.id, quantity: 1 }]);
 
-      await placeOrder(body, randomUUID()).expect(202);
-      await placeOrder(body, randomUUID()).expect(202);
-      await placeOrder(body).expect(202);
-      await placeOrder(body).expect(202);
+      await placeOrder(buyer, body, randomUUID()).expect(202);
+      await placeOrder(buyer, body, randomUUID()).expect(202);
+      await placeOrder(buyer, body).expect(202);
+      await placeOrder(buyer, body).expect(202);
 
       expect((await settledOrders(4)).map(({ status }) => status)).toEqual(Array(4).fill(OrderStatusEnum.paid));
     });
 
     it('scopes the key to the user', async () => {
-      const first = await aUser(dataSource.manager);
-      const second = await aUser(dataSource.manager);
+      const first = await newBuyer();
+      const second = await newBuyer();
       await fund(first.id, '1000.00');
       await fund(second.id, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
       const key = randomUUID();
 
-      await placeOrder(aBody(first.id, [{ offerId: offer.id, quantity: 1 }]), key).expect(202);
-      await placeOrder(aBody(second.id, [{ offerId: offer.id, quantity: 1 }]), key).expect(202);
+      await placeOrder(first, aBody([{ offerId: offer.id, quantity: 1 }]), key).expect(202);
+      await placeOrder(second, aBody([{ offerId: offer.id, quantity: 1 }]), key).expect(202);
 
       expect((await settledOrders(2)).map(({ userId }) => userId).toSorted()).toEqual([first.id, second.id].toSorted());
     });
 
     it('rejects a key that is not a uuid with 400 and creates nothing', async () => {
-      const buyer = await aUser(dataSource.manager);
+      const buyer = await newBuyer();
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-      await placeOrder(aBody(buyer.id, [{ offerId: offer.id, quantity: 1 }]), 'not-a-uuid').expect(400);
+      await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }]), 'not-a-uuid').expect(400);
+
+      expect(await dataSource.getRepository(Order).count()).toBe(0);
+    });
+  });
+
+  describe('buyer from the token', () => {
+    it('answers 401 without a token', async () => {
+      const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
+
+      await request(app.getHttpServer()).post('/order').send(aBody([{ offerId: offer.id, quantity: 1 }])).expect(401);
+
+      expect(await dataSource.getRepository(Order).count()).toBe(0);
+    });
+
+    it('ignores a userId in the body and places the order for the token owner', async () => {
+      const buyer = await newBuyer();
+      const victim = await newBuyer();
+      await fund(buyer.id, '1000.00');
+      await fund(victim.id, '1000.00');
+      const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
+
+      await placeOrder(buyer, { ...aBody([{ offerId: offer.id, quantity: 1 }]), userId: victim.id }).expect(202);
+
+      const order = await settledOrder();
+      expect(order).toMatchObject({ userId: buyer.id, ownerIdentityPublicId: buyer.identityPublicId, status: OrderStatusEnum.paid });
+      expect(await balanceOf(victim.id)).toBe('1000.00');
+    });
+
+    it('answers 409 while the buyer is not provisioned yet', async () => {
+      const buyer = await newBuyer();
+      await dataSource.getRepository(OrderBuyer).delete({ identityPublicId: buyer.identityPublicId });
+      const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
+
+      await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(409);
 
       expect(await dataSource.getRepository(Order).count()).toBe(0);
     });
@@ -435,8 +474,6 @@ describe('Order create (e2e)', () => {
 
   describe('rejects an invalid body with 400 and creates nothing', () => {
     const cases: [string, (body: ReturnType<typeof aBody>) => unknown][] = [
-      ['missing userId', (body) => ({ ...body, userId: undefined })],
-      ['non-positive userId', (body) => ({ ...body, userId: 0 })],
       ['missing recipient', (body) => ({ ...body, recipient: undefined })],
       ['empty full name', (body) => ({ ...body, recipient: { ...body.recipient, fullName: '' } })],
       ['blank full name', (body) => ({ ...body, recipient: { ...body.recipient, fullName: '   ' } })],
@@ -450,11 +487,11 @@ describe('Order create (e2e)', () => {
       ['empty items', (body) => ({ ...body, items: [] })],
       ['zero quantity', (body) => ({ ...body, items: [{ offerId: 1, quantity: 0 }] })],
       ['unknown currency', (body) => ({ ...body, currency: 'BTC' })],
-      ['old recipient shape', (body) => ({ ...body, userId: undefined, recipient: { ...body.recipient, buyerId: 1, address: undefined, deliveryAddress: body.recipient.address } })],
+      ['old recipient shape', (body) => ({ ...body, recipient: { ...body.recipient, buyerId: 1, address: undefined, deliveryAddress: body.recipient.address } })],
     ];
 
     it.each(cases)('%s', async (_, mutate) => {
-      await placeOrder(mutate(aBody(1, [{ offerId: 1, quantity: 1 }])) as object).expect(400);
+      await placeOrder(await newBuyer(), mutate(aBody([{ offerId: 1, quantity: 1 }])) as object).expect(400);
 
       expect(await dataSource.getRepository(Order).count()).toBe(0);
       expect(await dataSource.getRepository(OrderRecipient).count()).toBe(0);

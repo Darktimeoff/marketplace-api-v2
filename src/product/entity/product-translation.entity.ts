@@ -35,3 +35,5 @@ export class ProductTranslation {
   @JoinColumn({ name: 'productId' })
   product: Product;
 }
+
+export interface ProductTranslationCreateEntityInterface extends Pick<ProductTranslation, 'productId' | 'language' | 'title' | 'description'> {}

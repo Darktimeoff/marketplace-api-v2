@@ -30,6 +30,7 @@ const signingKeys = generateKeyPairSync('ec', {
 });
 process.env.JWT_PRIVATE_KEY = signingKeys.privateKey;
 process.env.JWT_PUBLIC_KEY = signingKeys.publicKey;
+process.env.REFRESH_TOKEN_PEPPER = 'test-refresh-token-pepper';
 
 if (connection.kafkaBrokers) {
   process.env.KAFKA_BROKERS = connection.kafkaBrokers;

@@ -1,52 +1,54 @@
-// TODO(hw-23): remove after homework, shared harness of the redis demo scripts
+// TODO(hw-24): remove after homework, shared harness of the auth demo scripts
 import 'reflect-metadata';
-import { Module, ValidationPipe, type DynamicModule, type INestApplication, type Type } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { EnvironmentModule } from '../generic/environment/environment.module.js';
-import { DBModule } from '../generic/db/db.module.js';
-import { Account } from '../account/entity/account.entity.js';
-import { AccountInbox } from '../account/entity/account-inbox.entity.js';
-import { Transaction } from '../account/entity/transaction.entity.js';
-import { Brand } from '../brand/entity/brand.entity.js';
-import { BrandTranslation } from '../brand/entity/brand-translation.entity.js';
-import { Category } from '../category/entity/category.entity.js';
-import { CategoryTranslation } from '../category/entity/category-translation.entity.js';
-import { Identity } from '../identity/entity/identity.entity.js';
-import { IdentityOutbox } from '../identity/entity/identity-outbox.entity.js';
-import { IdentitySession } from '../identity/entity/identity-session.entity.js';
-import { Order } from '../order/entity/order.entity.js';
-import { OrderLine } from '../order/entity/order-line.entity.js';
-import { OrderOutbox } from '../order/entity/order-outbox.entity.js';
-import { OrderRecipient } from '../order/entity/order-recipient.entity.js';
-import { OrderWorkflowOutbox } from '../order/entity/order-workflow-outbox.entity.js';
-import { Product } from '../product/entity/product.entity.js';
-import { ProductTranslation } from '../product/entity/product-translation.entity.js';
-import { ProductVariant } from '../product-variant/entity/product-variant.entity.js';
-import { Seller } from '../seller/entity/seller.entity.js';
-import { SellerOffer } from '../seller-offer/entity/seller-offer.entity.js';
-import { StockReservation } from '../seller-offer/entity/stock-reservation.entity.js';
-import { Address } from '../user/entity/address.entity.js';
-import { User } from '../user/entity/user.entity.js';
-import { UserOutbox } from '../user/entity/user-outbox.entity.js';
+import { AppModule } from '../app.module.js';
 
-export async function startDemoApp(imports: (Type | DynamicModule)[]): Promise<INestApplication> {
-  @Module({
-    imports: [
-      EnvironmentModule,
-      DBModule,
-      TypeOrmModule.forFeature([
-        Account, AccountInbox, Transaction, Brand, BrandTranslation, Category, CategoryTranslation, Identity, IdentityOutbox, IdentitySession, Order, OrderLine, OrderOutbox, OrderRecipient, OrderWorkflowOutbox, Product, ProductTranslation, ProductVariant, Seller, SellerOffer, StockReservation, Address, User, UserOutbox,
-      ]),
-      ...imports,
-    ],
-  })
-  class DemoModule {}
+export interface DemoResponseInterface {
+  status: number;
+  body: Record<string, unknown>;
+}
 
-  const app = await NestFactory.create(DemoModule, { logger: ['error'] });
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-  await app.listen(0, '127.0.0.1');
-  return app;
+export class DemoClient {
+  private constructor(
+    readonly app: INestApplication,
+    private readonly url: string,
+  ) {}
+
+  static async start(): Promise<DemoClient> {
+    const app = await NestFactory.create(AppModule, { logger: ['error'] });
+    await app.listen(0, '127.0.0.1');
+    return new DemoClient(app, await app.getUrl());
+  }
+
+  async call(method: string, path: string, options: { token?: string; body?: object } = {}): Promise<DemoResponseInterface> {
+    const response = await fetch(`${this.url}${path}`, {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        ...(options.token && { authorization: `Bearer ${options.token}` }),
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    const text = await response.text();
+    return { status: response.status, body: text ? JSON.parse(text) : {} };
+  }
+
+  async register(): Promise<{ email: string; accessToken: string; refreshToken: string }> {
+    const email = `demo-${randomUUID()}@example.com`;
+    const registered = await this.call('POST', '/auth/register', { body: { email, password: 'demo-password-1' } });
+
+    if (registered.status !== 201) {
+      throw new Error(`register failed with ${registered.status}`);
+    }
+
+    return { email, accessToken: String(registered.body.accessToken), refreshToken: String(registered.body.refreshToken) };
+  }
+
+  async stop(): Promise<void> {
+    await Promise.race([this.app.close(), new Promise((resolve) => setTimeout(resolve, 10000))]);
+  }
 }
 
 export function report(values: Record<string, number>, invariants: [string, boolean][]): number {
@@ -59,14 +61,17 @@ export function report(values: Record<string, number>, invariants: [string, bool
   return broken.length === 0 ? 0 : 1;
 }
 
-export async function run(scenario: () => Promise<number>): Promise<void> {
+export async function run(scenario: (client: DemoClient) => Promise<number>): Promise<void> {
   let code = 2;
+  let client: DemoClient | undefined;
 
   try {
-    code = await scenario();
+    client = await DemoClient.start();
+    code = await scenario(client);
   } catch (error) {
     console.error(error);
   } finally {
+    await client?.stop();
     process.exit(code);
   }
 }

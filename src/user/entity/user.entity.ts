@@ -5,6 +5,7 @@ import { GenderEnum } from '../enum/gender.enum.js';
 
 @Entity('User')
 @Unique('User_identityId_key', ['identityId'])
+@Unique('User_identityPublicId_key', ['identityPublicId'])
 @Check('User_dateOfBirth_past', `"dateOfBirth" IS NULL OR "dateOfBirth" < current_date`)
 @Check('User_email_format', `"email" IS NULL OR "email" ~ '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$'`)
 @Check('User_phoneNumber_e164', `"phoneNumber" IS NULL OR "phoneNumber" ~ '^\\+[1-9][0-9]{7,14}$'`)
@@ -18,6 +19,9 @@ export class User {
 
   @Column({ type: 'integer' })
   identityId: number;
+
+  @Column({ type: 'uuid' })
+  identityPublicId: string;
 
   @Column({ type: 'citext', nullable: true })
   email: string | null;
@@ -72,4 +76,4 @@ export class User {
   address: Address | null;
 }
 
-export interface UserCreateEntityInterface extends Pick<User, 'identityId' | 'email' | 'phoneNumber'> {}
+export interface UserCreateEntityInterface extends Pick<User, 'identityId' | 'identityPublicId' | 'email' | 'phoneNumber'> {}

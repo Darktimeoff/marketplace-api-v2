@@ -9,7 +9,7 @@ if (!suite) {
   );
 }
 
-const raw = await readFile(stateFilePath(suite), 'utf-8');
+const raw = await readFile(stateFilePath(suite, Number(process.env.VITEST_POOL_ID ?? 1)), 'utf-8');
 const connection: TestDbConnection = JSON.parse(raw);
 
 process.env.SKIP_VAULT = '1';

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import tsconfigPaths from 'vite-tsconfig-paths';
+import { testWorkers } from './test/support/test-workers.js';
 
 export default defineConfig({
   plugins: [tsconfigPaths()],
@@ -15,7 +16,8 @@ export default defineConfig({
     env: {
       TEST_SUITE: 'e2e',
     },
-    fileParallelism: false,
+    fileParallelism: testWorkers() > 1,
+    maxWorkers: testWorkers(),
     testTimeout: 30000,
     hookTimeout: 60000,
     reporters: ['default'],

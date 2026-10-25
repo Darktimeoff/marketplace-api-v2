@@ -7,12 +7,17 @@ export async function truncateAllTables(dataSource: DataSource): Promise<void> {
     DECLARE
       table_name text;
     BEGIN
+      SET LOCAL session_replication_role = replica;
       FOR table_name IN
         SELECT tablename FROM pg_tables
         WHERE schemaname = 'public' AND tablename <> 'migrations'
       LOOP
-        EXECUTE format('TRUNCATE TABLE %I RESTART IDENTITY CASCADE', table_name);
+        EXECUTE format('DELETE FROM %I', table_name);
       END LOOP;
+      PERFORM setval(sequence.oid, 1, false)
+      FROM pg_class sequence
+      JOIN pg_namespace namespace ON namespace.oid = sequence.relnamespace
+      WHERE sequence.relkind = 'S' AND namespace.nspname = 'public' AND sequence.relname <> 'migrations_id_seq';
     END $$;
   `);
 

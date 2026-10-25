@@ -25,6 +25,8 @@ import { IdentityLogoutCommandHandler } from './command-handler/identity-logout.
 import { IdentityGoogleAuthorizeCommandHandler } from './command-handler/identity-google-authorize.command-handler.js';
 import { GoogleOidcClientService } from './service/google-oidc-client.service.js';
 import { GoogleSignInAttemptService } from './service/google-sign-in-attempt.service.js';
+import { IdentityGoogleSignInCommandHandler } from './command-handler/identity-google-sign-in.command-handler.js';
+import { IdentityExternalAccountRepository } from './repository/identity-external-account.repository.js';
 
 @Module({
   imports: [QueueModule, TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox, IdentityExternalAccount]), SecretManagerModule, KafkaModule, AuthModule, RateLimitModule, RedisModule],
@@ -44,6 +46,8 @@ import { GoogleSignInAttemptService } from './service/google-sign-in-attempt.ser
     IdentityGoogleAuthorizeCommandHandler,
     GoogleOidcClientService,
     GoogleSignInAttemptService,
+    IdentityGoogleSignInCommandHandler,
+    IdentityExternalAccountRepository,
   ],
 })
 export class IdentityModule {}

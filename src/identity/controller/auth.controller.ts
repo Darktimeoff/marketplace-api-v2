@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Redirect, UseGuards } from '@nestjs/common';
+import { Body, Controller, Cookies, Get, HttpCode, HttpStatus, Post, Redirect, Req, Res, UseGuards } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ResponseDto } from '../../generic/validation/response-dto.decorator.js';
 import { IdentityTokenDto } from '../dto/identity-token.dto.js';
@@ -15,6 +16,9 @@ import { Identity } from '../../generic/auth/decorator/identity.decorator.js';
 import type { AccessTokenClaimsInterface } from '../../generic/auth/interface/access-token-claims.interface.js';
 import { IdentityMeDto } from '../dto/identity-me.dto.js';
 import { IdentityGoogleAuthorizeCommandHandler } from '../command-handler/identity-google-authorize.command-handler.js';
+import { IdentityGoogleSignInCommandHandler } from '../command-handler/identity-google-sign-in.command-handler.js';
+import { GOOGLE_SIGN_IN_TTL_SECONDS } from '../constant/google-sign-in.constant.js';
+import { GoogleSignInCookieEnum } from '../enum/google-sign-in-cookie.enum.js';
 
 @Controller('auth')
 export class AuthController {
@@ -24,6 +28,7 @@ export class AuthController {
     private readonly refresh: IdentityRefreshCommandHandler,
     private readonly logout: IdentityLogoutCommandHandler,
     private readonly googleAuthorize: IdentityGoogleAuthorizeCommandHandler,
+    private readonly googleSignIn: IdentityGoogleSignInCommandHandler,
   ) {}
 
   @Public()
@@ -61,8 +66,31 @@ export class AuthController {
   @Public()
   @Redirect()
   @Get('google')
-  async signInWithGoogle(): Promise<{ url: string }> {
-    return { url: (await this.googleAuthorize.execute()).href };
+  async signInWithGoogle(@Res({ passthrough: true }) response: Response): Promise<{ url: string }> {
+    const start = await this.googleAuthorize.execute();
+
+    response.cookie(GoogleSignInCookieEnum.NAME, start.state, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: start.secureCookie,
+      path: GoogleSignInCookieEnum.PATH,
+      maxAge: GOOGLE_SIGN_IN_TTL_SECONDS * 1000,
+    });
+
+    return { url: start.url.href };
+  }
+
+  @Public()
+  @ResponseDto(IdentityTokenDto)
+  @Get('google/callback')
+  googleCallback(
+    @Req() request: Request,
+    @Cookies(GoogleSignInCookieEnum.NAME) browserState: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<IdentityTokenDto> {
+    response.clearCookie(GoogleSignInCookieEnum.NAME, { path: GoogleSignInCookieEnum.PATH });
+
+    return this.googleSignIn.execute(new URL(request.originalUrl, 'http://callback').searchParams, browserState);
   }
 
   @ResponseDto(IdentityMeDto)

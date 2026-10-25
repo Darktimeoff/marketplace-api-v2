@@ -253,7 +253,7 @@ A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
 | `ACCESS_DENYLIST_FAIL_OPEN` | compose / оточення | `true` (default) or `false`, outage policy of the denylist |
 | `SKIP_VAULT` | оточення | `1` skips the vault and takes the secrets above from the environment |
 
-`npm run start` is a bare start: it reads nothing from the vault on its own behalf, and with `SKIP_VAULT=1` and a secret missing it exits with `1` before touching the database, naming every missing variable (`Missing secrets: JWT_PRIVATE_KEY, …`). There are no defaults for secrets: a default key would be a key compiled into the code. `npm run start:vault` (and every demo) goes through `scripts/with-secrets.sh dev`, as `migrate` and `seed` do. A leaked `DATABASE_URL` gives access to the database from the network; a leaked signing key lets anyone mint a token for anyone without any access at all, which is why the keys and the pepper live in the vault and the app refuses to run without them.
+`npm run start` is a bare start: it reads nothing from the vault on its own behalf, and with `SKIP_VAULT=1` and a secret missing it exits with `1` before touching the database, naming every missing variable (`Missing secrets: JWT_PRIVATE_KEY, …`). There are no defaults for secrets: a default key would be a key compiled into the code. `npm run start:vault` goes through `scripts/with-secrets.sh dev`, as `migrate` and `seed` do. A leaked `DATABASE_URL` gives access to the database from the network; a leaked signing key lets anyone mint a token for anyone without any access at all, which is why the keys and the pepper live in the vault and the app refuses to run without them.
 
 Key fingerprints (the `kid`, RFC 7638 thumbprint of the public key; public data) prove the environments use different keys:
 
@@ -288,18 +288,6 @@ Key fingerprints (the `kid`, RFC 7638 thumbprint of the public key; public data)
 - **Ownership is not checked in a guard**: a guard has the token, not the order. `OrderService.findReadableById` loads the order (from the cache when it's there) and asks `ability.can('read', subject('Order', { ownerIdentityPublicId }))`; someone else's order is `403`. The owner is copied from the token's `sub` when the order is created, and `POST /order` takes the buyer from the token too: `OrderBuyer` (`identityPublicId → userId`, copied from `user.created`) gives the `userId` the charge needs, and a `userId` in the body is ignored.
 - **The role in the token is a cache, not the source of truth**: an admin demoted in the database stays an admin for every request until his access token expires, up to 15 minutes, and can refresh into a new token only with the new role. To make a demotion instant, deny his session families (the same `denied-family` keys logout writes) or check the role in the database for critical actions.
 
-### Demos
-
-`npm run demo:auth`, `demo:reuse`, `demo:rbac` (temporary, `TODO(hw-24)`) start the whole app, register fresh users over HTTP and print `key=status` lines; each exits non-zero if an invariant breaks. Own runs:
-
-| Demo | Output |
-|---|---|
-| `demo:auth` | `login=200 no-token=401 with-token=200 refresh=200 logout=204 after-logout=401 refresh-after-logout=401` |
-| `demo:reuse` | `login=200 r1-refresh=200 r1-reuse=401 r2-after-reuse=401` |
-| `demo:rbac` | `anon=401 own=200 foreign=403 role-denied=403 role-allowed=201 tampered=401` |
-
-`demo:rbac` logs in as the seeded seller, waits until the freshly registered buyer is provisioned through Kafka (`POST /order` answers `409` until then) and deletes the product it created.
-
 - **Seeded logins**: `seller1@example.com`, `buyer1@example.com`, … with the password `marketplace-dev`.
 - **Not done yet**: refresh token in an `HttpOnly` cookie, an absolute session limit counted from login, a grace window for a client that refreshes twice in parallel, email/phone verification, the JWKS endpoint, cleanup of expired sessions, and a token instead of `?userId=` on the SSE stream.
 
@@ -331,53 +319,6 @@ npm run test:e2e          # the full app over HTTP (testcontainers)
 ```
 
 Integration and e2e tests start their containers once per run (Postgres, RabbitMQ, Kafka, Temporal and two Redis instances with the same eviction settings as compose, so nothing depends on a running dev stack) and reset state after every test (`test/support/isolation.ts`: truncate all tables and `FLUSHALL` both Redis instances, since restarted identities would otherwise hit cache entries of the previous test), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with.
-
-## Grading
-
-The demos need the whole stack (Postgres, RabbitMQ, Kafka, Temporal, both Redis instances). The values are the dev credentials from `docker-compose.yml` and `secrets/*.example`; the grader has no vault, hence `SKIP_VAULT=1`. The signing pair is generated on the spot (ES256, PEM in base64 so the multi-line key survives `export`); the real keys stay in the vault.
-
-```bash
-cp .env.example .env
-cp secrets/db_password.txt.example secrets/db_password.txt
-cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
-cp secrets/redis_password.txt.example secrets/redis_password.txt
-docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue
-
-export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
-export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
-export KAFKA_BROKERS=127.0.0.1:9092
-export TEMPORAL_ADDRESS=127.0.0.1:7233
-export REDIS_CACHE_URL=redis://default:changeme@127.0.0.1:6380
-export REDIS_QUEUE_URL=redis://default:changeme@127.0.0.1:6381
-export SKIP_VAULT=1
-
-# one-off ES256 pair for this run; the PEM goes in base64
-node -e 'const {generateKeyPairSync}=require("node:crypto");
-const k=generateKeyPairSync("ec",{namedCurve:"P-256",
-  privateKeyEncoding:{type:"pkcs8",format:"pem"},
-  publicKeyEncoding:{type:"spki",format:"pem"}});
-const fs=require("node:fs");
-fs.writeFileSync("/tmp/priv.b64",Buffer.from(k.privateKey).toString("base64"));
-fs.writeFileSync("/tmp/pub.b64",Buffer.from(k.publicKey).toString("base64"));'
-export JWT_PRIVATE_KEY="$(cat /tmp/priv.b64)"
-export JWT_PUBLIC_KEY="$(cat /tmp/pub.b64)"
-export REFRESH_TOKEN_PEPPER=grader-pepper
-
-npm ci
-npm run build
-npm run migrate
-npm run seed
-
-npm run demo:auth
-npm run demo:reuse
-npm run demo:rbac
-```
-
-- `--wait` matters: without it the scripts start before Postgres accepts connections.
-- Name the services: the compose file also has the Infisical stack, which needs credentials of its own.
-- `npm run build` is required: the demos, `migrate` and `seed` run the compiled `dist/`. `seed` provides the seller `demo:rbac` logs in as, the offers, categories and brands.
-- No `kid` variable is needed: the `kid` is the thumbprint of the public key, computed by the app.
-- Free the app port (`3000`) before checking that a bare `npm run start` without the keys fails: it exits `1` and names the missing variables before it binds the port or touches the database.
 
 ## Configuration
 

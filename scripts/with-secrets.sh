@@ -24,7 +24,7 @@ CLIENT_SECRET_FILE="$ROOT/secrets/infisical_client_secret.txt"
 if [ ! -f "$CLIENT_SECRET_FILE" ]; then
   echo "Не найден $CLIENT_SECRET_FILE — секрет клиента хранилища лежит вне git." >&2
   echo "Либо создай его из secrets/infisical_client_secret.txt.example, либо запусти с SKIP_VAULT=1," >&2
-  echo "предварительно выставив DB-переменные вручную (см. README, раздел Grading)." >&2
+  echo "предварительно выставив DB-переменные вручную (см. README, раздел Secrets)." >&2
   exit 1
 fi
 

@@ -14,7 +14,7 @@ function required(name: string): string {
     throw new Error(
       `${name} is not set. Параметры подключения приходят из хранилища секретов: ` +
         `запускай через "bash scripts/with-secrets.sh dev <команда>", ` +
-        `либо выставь DB_* вручную и добавь SKIP_VAULT=1 (см. README, раздел Grading).`,
+        `либо выставь DB_* вручную и добавь SKIP_VAULT=1 (см. README, раздел Secrets).`,
     );
   }
 

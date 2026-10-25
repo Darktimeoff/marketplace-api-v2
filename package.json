@@ -25,6 +25,7 @@
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:integration": "vitest run --config ./vitest.config.integration.ts",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "test:all": "bash scripts/test-all.sh",
     "migrate": "bash scripts/with-secrets.sh dev npx typeorm migration:run -d dist/data-source.js",
     "migrate:show": "bash scripts/with-secrets.sh dev npx typeorm migration:show -d dist/data-source.js",
     "migrate:revert": "bash scripts/with-secrets.sh dev npx typeorm migration:revert -d dist/data-source.js",

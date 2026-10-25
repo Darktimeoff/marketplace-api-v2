@@ -352,9 +352,12 @@ Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <com
 npm test                  # unit tests
 npm run test:integration  # repositories, cache, rate limit and queue against real services (testcontainers)
 npm run test:e2e          # the full app over HTTP (testcontainers)
+npm run test:all          # all three at once, output prefixed per suite, fails if any suite fails
 ```
 
-Integration and e2e tests start their containers once per run (Postgres, RabbitMQ, Kafka, Temporal and two Redis instances with the same eviction settings as compose, so nothing depends on a running dev stack) and reset state after every test (`test/support/isolation.ts`: truncate all tables and `FLUSHALL` both Redis instances, since restarted identities would otherwise hit cache entries of the previous test), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with.
+Integration and e2e tests start their containers once per run (Postgres, RabbitMQ, Kafka, Temporal and two Redis instances with the same eviction settings as compose, so nothing depends on a running dev stack) and reset state after every test (`test/support/isolation.ts`: `DELETE` from every table with foreign-key checks off for that one transaction (`SET LOCAL session_replication_role = replica`) plus one `setval` that restarts every sequence at 1, about 7 ms where a `TRUNCATE` per table took about 175 ms; then `FLUSHALL` both Redis instances, since restarted identities would otherwise hit cache entries of the previous test), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with. The tests poll the outboxes every 100 ms (`OUTBOX_RELAY_INTERVAL_MS`) instead of every second.
+
+`test:all` runs the suites side by side because integration and e2e start their own containers. Within a suite the files stay sequential (`fileParallelism: false`): every e2e file boots the whole app against the same Postgres, Redis, RabbitMQ, Temporal and Kafka, so two files at once would wipe each other's data and consume each other's messages and events. Running them in parallel would need a database, Redis DB, vhost, Temporal namespace and Kafka topic prefix per worker.
 
 ## Configuration
 

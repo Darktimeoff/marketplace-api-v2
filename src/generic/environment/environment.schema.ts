@@ -19,7 +19,7 @@ const environmentSchema = z.object({
   ACCESS_DENYLIST_FAIL_OPEN: z.stringbool().default(true),
   GOOGLE_ISSUER: z.url().default('https://accounts.google.com'),
   GOOGLE_CLIENT_ID: z.string().min(1),
-  GOOGLE_REDIRECT_URI: z.url().default('http://localhost:3000/auth/google/callback'),
+  OIDC_REDIRECT_BASE_URL: z.url().default('http://localhost:3000'),
 })
 
 export type EnvironmentType = z.infer<typeof environmentSchema>

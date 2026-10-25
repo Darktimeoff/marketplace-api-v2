@@ -1,0 +1,1 @@
+export const OIDC_SIGN_IN_TTL_SECONDS = 600;

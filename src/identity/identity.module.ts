@@ -15,6 +15,7 @@ import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { RedisModule } from '../generic/redis/redis.module.js';
 import { AuthController } from './controller/auth.controller.js';
 import { JwksController } from './controller/jwks.controller.js';
+import { OidcController } from './controller/oidc.controller.js';
 import { IdentityRepository } from './repository/identity.repository.js';
 import { IdentitySessionRepository } from './repository/identity-session.repository.js';
 import { PasswordService } from './service/password.service.js';
@@ -23,16 +24,16 @@ import { IdentityRegisterCommandHandler } from './command-handler/identity-regis
 import { IdentityLoginCommandHandler } from './command-handler/identity-login.command-handler.js';
 import { IdentityRefreshCommandHandler } from './command-handler/identity-refresh.command-handler.js';
 import { IdentityLogoutCommandHandler } from './command-handler/identity-logout.command-handler.js';
-import { IdentityGoogleAuthorizeCommandHandler } from './command-handler/identity-google-authorize.command-handler.js';
-import { GoogleOidcClientService } from './service/google-oidc-client.service.js';
-import { GoogleSignInAttemptService } from './service/google-sign-in-attempt.service.js';
-import { IdentityGoogleSignInCommandHandler } from './command-handler/identity-google-sign-in.command-handler.js';
+import { IdentityOidcAuthorizeCommandHandler } from './command-handler/identity-oidc-authorize.command-handler.js';
+import { OidcClientService } from './service/oidc-client.service.js';
+import { OidcSignInAttemptService } from './service/oidc-sign-in-attempt.service.js';
+import { IdentityOidcSignInCommandHandler } from './command-handler/identity-oidc-sign-in.command-handler.js';
 import { IdentityExternalAccountRepository } from './repository/identity-external-account.repository.js';
-import { IdentityGoogleLinkCommandHandler } from './command-handler/identity-google-link.command-handler.js';
+import { IdentityOidcLinkCommandHandler } from './command-handler/identity-oidc-link.command-handler.js';
 
 @Module({
   imports: [QueueModule, TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox, IdentityExternalAccount]), SecretManagerModule, KafkaModule, AuthModule, RateLimitModule, RedisModule],
-  controllers: [AuthController, JwksController],
+  controllers: [AuthController, OidcController, JwksController],
   providers: [
     IdentityRepository,
     IdentitySessionRepository,
@@ -45,12 +46,12 @@ import { IdentityGoogleLinkCommandHandler } from './command-handler/identity-goo
     IdentityLoginCommandHandler,
     IdentityRefreshCommandHandler,
     IdentityLogoutCommandHandler,
-    IdentityGoogleAuthorizeCommandHandler,
-    GoogleOidcClientService,
-    GoogleSignInAttemptService,
-    IdentityGoogleSignInCommandHandler,
+    IdentityOidcAuthorizeCommandHandler,
+    OidcClientService,
+    OidcSignInAttemptService,
+    IdentityOidcSignInCommandHandler,
     IdentityExternalAccountRepository,
-    IdentityGoogleLinkCommandHandler,
+    IdentityOidcLinkCommandHandler,
   ],
 })
 export class IdentityModule {}

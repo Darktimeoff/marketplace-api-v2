@@ -3,31 +3,31 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { calculateJwkThumbprint, exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from 'jose';
 
-export interface FakeGoogleUserInterface {
+export interface FakeOidcUserInterface {
   sub: string;
   email: string;
   emailVerified: boolean;
 }
 
-export interface FakeGoogleBehaviourInterface {
+export interface FakeOidcBehaviourInterface {
   deny?: boolean;
   nonce?: string;
   audience?: string;
 }
 
 interface IssuedCodeInterface {
-  user: FakeGoogleUserInterface;
-  behaviour: FakeGoogleBehaviourInterface;
+  user: FakeOidcUserInterface;
+  behaviour: FakeOidcBehaviourInterface;
   clientId: string;
   redirectUri: string;
   codeChallenge: string;
   nonce: string;
 }
 
-export class FakeGoogle {
+export class FakeOidcProvider {
   issuer: string;
-  user: FakeGoogleUserInterface = { sub: '100000000000000000001', email: 'jane@gmail.com', emailVerified: true };
-  behaviour: FakeGoogleBehaviourInterface = {};
+  user: FakeOidcUserInterface = { sub: '100000000000000000001', email: 'jane@gmail.com', emailVerified: true };
+  behaviour: FakeOidcBehaviourInterface = {};
 
   private server: Server;
   private privateKey: CryptoKey;

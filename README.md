@@ -230,9 +230,9 @@ Redis makes the system faster, not more correct: everything below is an optimiza
 | `POST /auth/refresh` | public | `{ refreshToken }` | `200` new token pair, `401` |
 | `POST /auth/logout` | public | `{ refreshToken }` | `204`, also for an unknown or already revoked token |
 | `GET /auth/me` | token | — | `200 { identityPublicId, role, email, phoneNumber }`, `401` |
-| `GET /auth/google` | public | — | `302` to Google, sets the `google_sign_in_state` cookie; `503` if Google or Redis is unavailable |
-| `GET /auth/google/callback` | public, Google redirects here | Google's query (`code`, `state`, `iss`, …) | `200` token pair, `400` state not from this browser / expired / reused, `401` Google refused or the `id_token` failed a check, `409` the email already has an identity |
-| `POST /auth/google/link` | token, 5 attempts per minute per ip+identity | `{ password }` | `200 { url }` to open in the browser, sets the cookie; `403` wrong password, `401` |
+| `GET /auth/:provider` (`google`) | public | — | `302` to the provider, sets the `oidc_sign_in_state` cookie; `400` unknown provider, `503` if the provider or Redis is unavailable |
+| `GET /auth/:provider/callback` | public, the provider redirects here | the provider's query (`code`, `state`, `iss`, …) | `200` token pair, `400` state not from this browser / expired / reused / another provider's, `401` the provider refused or the `id_token` failed a check, `409` the email already has an identity |
+| `POST /auth/:provider/link` | token, 5 attempts per minute per ip+identity | `{ password }` | `200 { url }` to open in the browser, sets the cookie; `403` wrong password, `401` |
 | `GET /.well-known/jwks.json` | public | — | `200 { keys }`, the public verification keys, `Cache-Control: public, max-age=60` |
 | `POST /order` | token, `create Order` | order body (the buyer comes from the token) | `202`, `401`, `409` while the buyer is being provisioned |
 | `GET /order/:id` | token, `read Order` + ownership | — | `200` own order (admin/owner: any), `403` someone else's, `401` |
@@ -254,7 +254,7 @@ A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
 | `REDIS_CACHE_URL` | сховище (#11, Infisical) | cache Redis URL with its password |
 | `REDIS_QUEUE_URL` | сховище (#11, Infisical) | queue Redis URL with its password (denylist, rate limit, BullMQ) |
 | `GOOGLE_CLIENT_SECRET` | сховище (#11, Infisical) | OAuth client secret from Google Cloud Console; exchanges Google's codes as our app |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_ISSUER`, `GOOGLE_REDIRECT_URI` | оточення | the Google client id (public: it is in every authorize URL), the provider's issuer for discovery, our callback URL |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_ISSUER`, `OIDC_REDIRECT_BASE_URL` | оточення | the Google client id (public: it is in every authorize URL), Google's issuer for discovery, the base our callbacks `/auth/<provider>/callback` are built on |
 | `DBHOST`, `DBPORT`, `DBNAME`, `KAFKA_BROKERS`, `TEMPORAL_ADDRESS`, `RABBITMQ_HOST` | compose / оточення | where the dev services are; not secrets |
 | `ACCESS_DENYLIST_FAIL_OPEN` | compose / оточення | `true` (default) or `false`, outage policy of the denylist |
 | `SKIP_VAULT` | оточення | `1` skips the vault and takes the secrets above from the environment |
@@ -300,20 +300,29 @@ Key fingerprints (the `kid`, RFC 7638 thumbprint of the public key; public data)
 
 Authorization Code flow with PKCE (OIDC). Google only tells us who the person is; we then issue our own token pair, so refresh, logout, the denylist and the abilities work as for a password login. Google's own `access_token` is discarded.
 
-1. `GET /auth/google` creates `state`, `nonce` and `code_verifier`, stores them in redis-queue under `google-sign-in:<state>` for 10 minutes, sets `state` as an `HttpOnly; SameSite=Lax` cookie on `/auth/google` and redirects to Google's authorize URL with `state`, `nonce` and `code_challenge = BASE64URL(SHA256(code_verifier))`. Google's endpoints come from its discovery document, read once on first use; if Google is down only this flow answers `503`.
+1. `GET /auth/google` (any provider: `GET /auth/:provider`) creates `state`, `nonce` and `code_verifier`, stores them with the provider in redis-queue under `oidc-sign-in:<state>` for 10 minutes, sets `state` as an `HttpOnly; SameSite=Lax` cookie on `/auth` and redirects to Google's authorize URL with `state`, `nonce` and `code_challenge = BASE64URL(SHA256(code_verifier))`. Google's endpoints come from its discovery document, read once on first use; if Google is down only this flow answers `503`.
 2. Google signs the person in and redirects the browser to `GET /auth/google/callback?code&state&iss`.
 3. The callback checks, in order:
    - **the `state` equals the cookie**: an attacker who sends you his own callback link (login CSRF) would sign you into his account; his link carries his `state`, your browser your cookie;
-   - **the `state` is in Redis**, read with `GETDEL`: an attempt works once and expires;
+   - **the `state` is in Redis**, read with `GETDEL`, and was started for this provider: an attempt works once, expires, and can't be finished at another provider;
    - **the code exchange** (`openid-client`): `code` + `code_verifier` + client secret go to Google's token endpoint. A code stolen from the redirect URL is useless without the verifier, which never left the server (`invalid_grant`);
    - **the `id_token`**: signature against Google's JWKS by `kid` (`enableNonRepudiationChecks`: `openid-client` skips it by default for a token received directly over TLS), `iss`, `aud` = our client id (a token Google issued to another app is refused), `exp`, and the `nonce` from Redis (a token from another sign-in is refused);
    - **`email_verified`**: accounts are unique by email, so an unverified address could claim someone else's.
 4. In one transaction: the identity is found by `IdentityExternalAccount (google, sub)`. `sub` is Google's permanent id; an email can change or be reused, so it is never the key. A new person gets an `Identity` without a password, the external account and `identity.registered`, so user, account and order buyer are provisioned through Kafka exactly as after a password registration. An email that already has an identity is `409`, never linked silently: whoever controls that address at Google would otherwise take over the account.
 5. Linking Google to a password account is `POST /auth/google/link` with the password again: a stolen 15-minute access token alone could otherwise attach the thief's Google and keep a permanent way in. It returns the authorize URL as JSON because a navigation can't carry the bearer token; the attempt remembers the identity, and the callback attaches Google to it (`409` if that Google account belongs to someone else or the identity already has one).
 
-Errors: Google refused (`invalid_grant`, `access_denied`) or a check failed → `401 Google sign-in failed` with the reason in the log; Google or Redis unavailable → `503`. The logs never carry the email or Google's tokens.
+Errors: Google refused (`invalid_grant`, `access_denied`) or a check failed → `401 Sign-in with google failed` with the reason in the log; Google or Redis unavailable → `503`. The logs never carry the email or Google's tokens.
 
-To use real Google: in Google Cloud Console create an OAuth client of type *Web application* with the redirect URI `http://localhost:3000/auth/google/callback`, add your account as a test user while the app is in *Testing*, put the client id in `.env` and the secret in the vault, then open `http://localhost:3000/auth/google`. The e2e tests run against `test/support/fake-google.ts`, a minimal provider (discovery, JWKS, authorize, token with the PKCE check) that can also deny consent or sign a wrong `nonce`, `aud` or an unverified email.
+To use real Google: in Google Cloud Console create an OAuth client of type *Web application* with the redirect URI `http://localhost:3000/auth/google/callback`, add your account as a test user while the app is in *Testing*, put the client id in `.env` and the secret in the vault, then open `http://localhost:3000/auth/google`. The e2e tests run against `test/support/fake-oidc-provider.ts`, a minimal provider (discovery, JWKS, authorize, token with the PKCE check) that can also deny consent or sign a wrong `nonce`, `aud` or an unverified email.
+
+**Adding another OpenID Connect provider** (Microsoft, GitLab, Auth0, Keycloak, …) is configuration: discovery, PKCE, `state`/`nonce`, the `id_token` checks, the routes and the tests are shared (`OidcClientService`, `OidcController`, one discovery per provider):
+
+1. a value in `IdentityProviderEnum` and a migration `ALTER TYPE "public"."IdentityProviderEnum" ADD VALUE '<provider>'` (the column stays a Postgres enum, so the database refuses an unknown provider);
+2. an entry in `OIDC_PROVIDERS` (`src/identity/constant/oidc-provider.constant.ts`): which variables hold its issuer and client id, which secret its client secret, and its scope;
+3. `<PROVIDER>_ISSUER` and `<PROVIDER>_CLIENT_ID` in `environment.schema.ts` and `.env.example`, `<PROVIDER>_CLIENT_SECRET` in `SecretsInterface`, `SECRET_NAMES` and the vault;
+4. at the provider, the redirect URI `<OIDC_REDIRECT_BASE_URL>/auth/<provider>/callback`.
+
+Apple is not plain OIDC: its client secret is a JWT signed with your key and it posts the callback (`response_mode=form_post`), so it needs those two additions on top.
 
 - **Seeded logins**: `seller1@example.com`, `buyer1@example.com`, … with the password `marketplace-dev`.
 - **Not done yet**: refresh token in an `HttpOnly` cookie, an absolute session limit counted from login, a grace window for a client that refreshes twice in parallel, email/phone verification, unlinking Google and notifying the owner when it is linked, cleanup of expired sessions, and a token instead of `?userId=` on the SSE stream.
@@ -367,7 +376,7 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `TEMPORAL_NAMESPACE` | no | `default` | Temporal namespace of the order workflows |
 | `GOOGLE_CLIENT_ID` | yes | — | Google OAuth client id |
 | `GOOGLE_ISSUER` | no | `https://accounts.google.com` | OpenID provider for Sign in with Google (its discovery document is `<issuer>/.well-known/openid-configuration`) |
-| `GOOGLE_REDIRECT_URI` | no | `http://localhost:3000/auth/google/callback` | our callback; must match the client's redirect URI in Google Cloud Console exactly |
+| `OIDC_REDIRECT_BASE_URL` | no | `http://localhost:3000` | base of the callbacks: `<base>/auth/<provider>/callback` must match the redirect URI registered at the provider exactly |
 | `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
 
 Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`) come from Infisical, or from the environment with `SKIP_VAULT=1`.

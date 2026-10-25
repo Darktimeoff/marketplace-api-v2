@@ -1,1 +1,0 @@
-export const GOOGLE_SIGN_IN_TTL_SECONDS = 600;

@@ -8,10 +8,10 @@ import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentityExternalAccount } from '../../src/identity/entity/identity-external-account.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
 import { truncateAllTables } from '../support/isolation.js';
-import { FakeGoogle } from '../support/fake-google.js';
+import { FakeOidcProvider } from '../support/fake-oidc-provider.js';
 
-describe('Sign in with Google (e2e)', () => {
-  const google = new FakeGoogle(process.env.GOOGLE_CLIENT_ID as string, process.env.GOOGLE_CLIENT_SECRET as string);
+describe('Sign in with an OIDC provider (e2e)', () => {
+  const google = new FakeOidcProvider(process.env.GOOGLE_CLIENT_ID as string, process.env.GOOGLE_CLIENT_SECRET as string);
   let app: INestApplication;
   let dataSource: DataSource;
 
@@ -37,10 +37,10 @@ describe('Sign in with Google (e2e)', () => {
 
   function stateCookie(response: request.Response): string {
     const cookies = [response.headers['set-cookie'] ?? []].flat() as string[];
-    const cookie = cookies.find((value) => value.startsWith('google_sign_in_state='));
+    const cookie = cookies.find((value) => value.startsWith('oidc_sign_in_state='));
 
     if (!cookie) {
-      throw new Error('no google_sign_in_state cookie');
+      throw new Error('no oidc_sign_in_state cookie');
     }
 
     return cookie.split(';')[0];
@@ -103,8 +103,19 @@ describe('Sign in with Google (e2e)', () => {
         redirect_uri: 'http://localhost:3000/auth/google/callback',
       });
       expect(authorize.searchParams.get('nonce')).toBeTruthy();
-      expect(stateCookie(response)).toBe(`google_sign_in_state=${authorize.searchParams.get('state')}`);
+      expect(stateCookie(response)).toBe(`oidc_sign_in_state=${authorize.searchParams.get('state')}`);
       expect(response.headers['set-cookie']?.[0]).toMatch(/HttpOnly; SameSite=Lax/);
+    });
+  });
+
+  describe('providers', () => {
+    it('answers 400 for a provider that is not configured', async () => {
+      await request(app.getHttpServer()).get('/auth/github').expect(400);
+      await request(app.getHttpServer()).get('/auth/github/callback?code=x&state=y').expect(400);
+    });
+
+    it('keeps /auth/me a route of its own', async () => {
+      await request(app.getHttpServer()).get('/auth/me').expect(401);
     });
   });
 
@@ -140,7 +151,7 @@ describe('Sign in with Google (e2e)', () => {
       const path = await consent(authorizeUrl);
 
       await callback(path).expect(400, { message: 'Sign-in state does not match this browser', error: 'Bad Request', statusCode: 400 });
-      await callback(path, 'google_sign_in_state=someone-else').expect(400);
+      await callback(path, 'oidc_sign_in_state=someone-else').expect(400);
       await callback(path, cookie).expect(200);
     });
 
@@ -160,7 +171,7 @@ describe('Sign in with Google (e2e)', () => {
       const { authorizeUrl, cookie } = await begin();
       const path = (await consent(authorizeUrl)).replace(/code=[^&]+/, 'code=forged');
 
-      await callback(path, cookie).expect(401, { message: 'Google sign-in failed', error: 'Unauthorized', statusCode: 401 });
+      await callback(path, cookie).expect(401, { message: 'Sign-in with google failed', error: 'Unauthorized', statusCode: 401 });
     });
 
     it('rejects an id_token with another nonce', async () => {
@@ -185,7 +196,7 @@ describe('Sign in with Google (e2e)', () => {
     it('rejects a Google account without a verified email', async () => {
       google.user = { ...google.user, emailVerified: false };
 
-      await signIn(401, { message: 'Google account has no verified email', error: 'Unauthorized', statusCode: 401 });
+      await signIn(401, { message: 'google account has no verified email', error: 'Unauthorized', statusCode: 401 });
       expect(await dataSource.getRepository(Identity).count()).toBe(0);
     });
 
@@ -229,7 +240,7 @@ describe('Sign in with Google (e2e)', () => {
       const { authorizeUrl, cookie } = await beginLink(accessToken);
 
       await callback(await consent(authorizeUrl), cookie).expect(409, {
-        message: 'This Google account is linked to another identity',
+        message: 'This google account is linked to another identity',
         error: 'Conflict',
         statusCode: 409,
       });
@@ -244,7 +255,7 @@ describe('Sign in with Google (e2e)', () => {
       const second = await beginLink(accessToken);
 
       await callback(await consent(second.authorizeUrl), second.cookie).expect(409, {
-        message: 'This identity already has a linked Google account',
+        message: 'This identity already has a linked google account',
         error: 'Conflict',
         statusCode: 409,
       });

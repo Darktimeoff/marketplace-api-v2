@@ -1,5 +1,4 @@
-import { Body, Controller, Cookies, Get, HttpCode, HttpStatus, Post, Query, Redirect, Res, UseGuards } from '@nestjs/common';
-import type { Response } from 'express';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ResponseDto } from '../../generic/validation/response-dto.decorator.js';
 import { IdentityTokenDto } from '../dto/identity-token.dto.js';
@@ -16,15 +15,6 @@ import { Public } from '../../generic/auth/decorator/public.decorator.js';
 import { Identity } from '../../generic/auth/decorator/identity.decorator.js';
 import type { AccessTokenClaimsInterface } from '../../generic/auth/interface/access-token-claims.interface.js';
 import { IdentityMeDto } from '../dto/identity-me.dto.js';
-import { IdentityGoogleLinkDto } from '../dto/identity-google-link.dto.js';
-import { IdentityGoogleLinkInput } from '../input/identity-google-link.input.js';
-import { IdentityGoogleLinkCommandHandler } from '../command-handler/identity-google-link.command-handler.js';
-import type { GoogleSignInStartInterface } from '../interface/google-sign-in-start.interface.js';
-import { IdentityGoogleAuthorizeCommandHandler } from '../command-handler/identity-google-authorize.command-handler.js';
-import { IdentityGoogleSignInCommandHandler } from '../command-handler/identity-google-sign-in.command-handler.js';
-import { GOOGLE_SIGN_IN_TTL_SECONDS } from '../constant/google-sign-in.constant.js';
-import { identityGoogleLinkTracker } from '../tracker/identity-google-link.tracker.js';
-import { GoogleSignInCookieEnum } from '../enum/google-sign-in-cookie.enum.js';
 
 @Controller('auth')
 export class AuthController {
@@ -33,9 +23,6 @@ export class AuthController {
     private readonly login: IdentityLoginCommandHandler,
     private readonly refresh: IdentityRefreshCommandHandler,
     private readonly logout: IdentityLogoutCommandHandler,
-    private readonly googleAuthorize: IdentityGoogleAuthorizeCommandHandler,
-    private readonly googleSignIn: IdentityGoogleSignInCommandHandler,
-    private readonly googleLink: IdentityGoogleLinkCommandHandler,
   ) {}
 
   @Public()
@@ -70,54 +57,9 @@ export class AuthController {
     return this.logout.execute(input);
   }
 
-  @Public()
-  @Redirect()
-  @Get('google')
-  async signInWithGoogle(@Res({ passthrough: true }) response: Response): Promise<{ url: string }> {
-    return { url: this.toGoogleRedirect(response, await this.googleAuthorize.execute(null)) };
-  }
-
-  @ResponseDto(IdentityGoogleLinkDto)
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: IDENTITY_LOGIN_THROTTLE_LIMIT, ttl: IDENTITY_LOGIN_THROTTLE_TTL_MS, getTracker: identityGoogleLinkTracker } })
-  @Post('google/link')
-  async linkGoogle(
-    @Identity('identityPublicId') identityPublicId: string,
-    @Body() input: IdentityGoogleLinkInput,
-    @Res({ passthrough: true }) response: Response,
-  ): Promise<IdentityGoogleLinkDto> {
-    return { url: this.toGoogleRedirect(response, await this.googleLink.execute(identityPublicId, input)) };
-  }
-
-  @Public()
-  @ResponseDto(IdentityTokenDto)
-  @Get('google/callback')
-  googleCallback(
-    @Query() query: Record<string, string>,
-    @Cookies(GoogleSignInCookieEnum.NAME) browserState: string | undefined,
-    @Res({ passthrough: true }) response: Response,
-  ): Promise<IdentityTokenDto> {
-    response.clearCookie(GoogleSignInCookieEnum.NAME, { path: GoogleSignInCookieEnum.PATH });
-
-    return this.googleSignIn.execute(new URLSearchParams(query), browserState);
-  }
-
   @ResponseDto(IdentityMeDto)
   @Get('me')
   me(@Identity() identity: AccessTokenClaimsInterface): IdentityMeDto {
     return identity;
-  }
-
-  private toGoogleRedirect(response: Response, start: GoogleSignInStartInterface): string {
-    response.cookie(GoogleSignInCookieEnum.NAME, start.state, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: start.secureCookie,
-      path: GoogleSignInCookieEnum.PATH,
-      maxAge: GOOGLE_SIGN_IN_TTL_SECONDS * 1000,
-    });
-
-    return start.url.href;
   }
 }

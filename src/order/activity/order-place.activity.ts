@@ -7,6 +7,8 @@ import { AccountCustomerChargeRequest, AccountCustomerRefundRequest, StockReleas
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
 import { OrderPlaceMessageService } from '../service/order-place-message.service.js';
+import { CacheEvict } from '../../generic/cache/decorator/cache-evict.decorator.js';
+import { orderCacheKey } from '../constant/order-cache.constant.js';
 import { OrderPlaceFailureTypeEnum } from '../enum/order-place-failure-type.enum.js';
 import type { OrderFailureInterface } from '../interface/order-failure.interface.js';
 import type {
@@ -74,6 +76,7 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
     });
   }
 
+  @CacheEvict({ key: orderCacheKey })
   @Transactional()
   async markPaid(orderId: number): Promise<void> {
     const paid = await this.orderRepository.updatePendingStatusById(orderId, OrderStatusEnum.paid);
@@ -83,6 +86,7 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
     }
   }
 
+  @CacheEvict({ key: orderCacheKey })
   @Transactional()
   async markFailed(orderId: number, failure: OrderFailureInterface): Promise<void> {
     const failed = await this.orderRepository.updatePendingStatusById(orderId, failure.status);

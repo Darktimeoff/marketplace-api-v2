@@ -28,14 +28,13 @@ import { AddOrderWorkflowOutbox1791000000120 } from '../../src/migrations/179100
 import { DropOrderOutboxBroker1791000000130 } from '../../src/migrations/1791000000130-DropOrderOutboxBroker.js';
 import { AddOrderIdempotencyKey1791000000140 } from '../../src/migrations/1791000000140-AddOrderIdempotencyKey.js';
 import { AddOrderConfirmation1791000000150 } from '../../src/migrations/1791000000150-AddOrderConfirmation.js';
+import { DropOrderConfirmation1791000000160 } from '../../src/migrations/1791000000160-DropOrderConfirmation.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
 import { UserOutbox } from '../../src/user/entity/user-outbox.entity.js';
 import { OrderOutbox } from '../../src/order/entity/order-outbox.entity.js';
 import { OrderWorkflowOutbox } from '../../src/order/entity/order-workflow-outbox.entity.js';
-import { OrderInbox } from '../../src/order/entity/order-inbox.entity.js';
-import { OrderConfirmation } from '../../src/order/entity/order-confirmation.entity.js';
 import { User } from '../../src/user/entity/user.entity.js';
 import { Brand } from '../../src/brand/entity/brand.entity.js';
 import { BrandTranslation } from '../../src/brand/entity/brand-translation.entity.js';
@@ -85,6 +84,7 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   DropOrderOutboxBroker1791000000130,
   AddOrderIdempotencyKey1791000000140,
   AddOrderConfirmation1791000000150,
+  DropOrderConfirmation1791000000160,
 ];
 
 export const testEntities = [
@@ -94,8 +94,6 @@ export const testEntities = [
   UserOutbox,
   OrderOutbox,
   OrderWorkflowOutbox,
-  OrderInbox,
-  OrderConfirmation,
   User,
   Brand,
   BrandTranslation,

@@ -1,3 +1,4 @@
+import { QueueModule } from "../generic/queue/queue.module.js";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { Order } from "./entity/order.entity.js";
@@ -9,12 +10,6 @@ import { OrderOutboxRelayService } from "./service/order-outbox-relay.service.js
 import { OrderWorkflowOutbox } from "./entity/order-workflow-outbox.entity.js";
 import { OrderWorkflowOutboxRepository } from "./repository/order-workflow-outbox.repository.js";
 import { OrderWorkflowOutboxRelayService } from "./service/order-workflow-outbox-relay.service.js";
-import { OrderInbox } from "./entity/order-inbox.entity.js";
-import { OrderConfirmation } from "./entity/order-confirmation.entity.js";
-import { OrderInboxRepository } from "./repository/order-inbox.repository.js";
-import { OrderConfirmationRepository } from "./repository/order-confirmation.repository.js";
-import { OrderConfirmCommandHandler } from "./command-handler/order-confirm.command-handler.js";
-import { OrderConfirmationEventsGateway } from "./gateway/order-confirmation-events.gateway.js";
 import { OrderNotifyEventsGateway } from "./gateway/order-notify-events.gateway.js";
 import { OrderPlaceMessageService } from "./service/order-place-message.service.js";
 import { OrderRepository } from "./repository/order.repository.js";
@@ -32,15 +27,18 @@ import { OrderAccessGuard } from "./guard/order-access.guard.js";
 import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
 import { KafkaModule } from "../generic/kafka/kafka.module.js";
 import { TemporalModule } from "../generic/temporal/temporal.module.js";
+import { CacheModule } from "../generic/cache/cache.module.js";
 import { OrderPlaceActivity } from "./activity/order-place.activity.js";
 import { OrderPlaceWorker } from "./worker/order-place.worker.js";
 
 @Module({
   imports: [
+    QueueModule,
     RabbitMqModule,
     KafkaModule,
     TemporalModule,
-    TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient, OrderOutbox, OrderWorkflowOutbox, OrderInbox, OrderConfirmation]),
+    CacheModule,
+    TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient, OrderOutbox, OrderWorkflowOutbox]),
     SellerOfferModule,
     AccountModule,
   ],
@@ -53,10 +51,6 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
     OrderOutboxRelayService,
     OrderWorkflowOutboxRepository,
     OrderWorkflowOutboxRelayService,
-    OrderInboxRepository,
-    OrderConfirmationRepository,
-    OrderConfirmCommandHandler,
-    OrderConfirmationEventsGateway,
     OrderNotifyEventsGateway,
     OrderPlaceMessageService,
     OrderService,

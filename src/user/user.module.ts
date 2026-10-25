@@ -1,3 +1,4 @@
+import { QueueModule } from '../generic/queue/queue.module.js';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './entity/user.entity.js';
@@ -12,7 +13,7 @@ import { UserCreateCommandHandler } from './command-handler/user-create.command-
 import { UserIdentityEventsGateway } from './gateway/user-identity-events.gateway.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Address, UserOutbox]), KafkaModule],
+  imports: [QueueModule, TypeOrmModule.forFeature([User, Address, UserOutbox]), KafkaModule],
   providers: [UserRepository, UserOutboxRepository, UserCreateCommandHandler, UserIdentityEventsGateway, UserOutboxRelayService, UserMessageService],
 })
 export class UserModule {}

@@ -59,12 +59,16 @@ From a fresh clone, without access to the secret store:
 cp .env.example .env
 cp secrets/db_password.txt.example secrets/db_password.txt
 cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
-docker compose up -d --wait db db-bouncer rabbitmq kafka temporal
+cp secrets/redis_password.txt.example secrets/redis_password.txt
+docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue
 
 export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
 export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
 export KAFKA_BROKERS=localhost:9092
 export TEMPORAL_ADDRESS=localhost:7233
+export REDIS_CACHE_URL=redis://default:changeme@localhost:6380 REDIS_QUEUE_URL=redis://default:changeme@localhost:6381
+export JWT_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
+export JWT_PUBLIC_KEY="$(printf '%s' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
 export SKIP_VAULT=1
 
 npm ci
@@ -181,7 +185,7 @@ Each step is owned by its context: identity never writes users, user never write
 - **Key = `subject`**: all events about one identity land on the same partition and stay in order; different identities spread across partitions.
 - **Topics**: `TopicEnum` lists every topic name regardless of broker. `RabbitMqModule` declares only the command exchanges, and `KafkaProducerService` (`src/generic/kafka/`) creates the topics it owns at startup with the admin API (an existing topic is left as it is; replication factor `-1` takes the broker default).
 - **Producer**: `@confluentinc/kafka-javascript` (librdkafka) with idempotence on and `acks: all`, so a retried send never writes a duplicate and a send succeeds only once every in-sync replica has it.
-- **Transactional outbox (identity and user)**: no producer calls Kafka directly. Register inserts an `IdentityOutbox` row in the same transaction as the `Identity`, and user inserts a `UserOutbox` row in the same transaction as the `User` (only when the user was actually inserted, so a redelivered `identity.registered` adds nothing). Each row has (`id` = the CloudEvent id, `topic`, `aggregateType`, `aggregateId` = the Kafka key, `type`, `payload` = the event's `data`). If the transaction rolls back, there is no event; if it commits, the event is guaranteed to be sent, even if Kafka is down or the process dies right after. Each context has its own copy of the table, repository and relay (`IdentityOutboxRelayService`, `UserOutboxRelayService`), like separate services. A relay runs every second: in one transaction it claims up to 100 unpublished rows oldest first with `FOR UPDATE SKIP LOCKED`, builds the CloudEvent from each row (`source` from `SourceEnum`, `time` = `createdAt`), sends them in order, and sets `publishedAt` on the sent rows. The first failure increments `attempts`, stores `lastError` and ends the batch, so later rows never overtake it; the next run retries. A send gives up after 10 s (`message.timeout.ms`), so an unreachable Kafka shows up as `lastError = Local: Message timed out` instead of a transaction held open. Delivery is at-least-once: a row sent but not yet marked published (crash, or a timed-out send that still arrived) is sent again with the same `id`, which consumers already deduplicate. A daily cron deletes published rows older than 7 days; Kafka keeps the events.
+- **Transactional outbox (identity and user)**: no producer calls Kafka directly. Register inserts an `IdentityOutbox` row in the same transaction as the `Identity`, and user inserts a `UserOutbox` row in the same transaction as the `User` (only when the user was actually inserted, so a redelivered `identity.registered` adds nothing). Each row has (`id` = the CloudEvent id, `topic`, `aggregateType`, `aggregateId` = the Kafka key, `type`, `payload` = the event's `data`). If the transaction rolls back, there is no event; if it commits, the event is guaranteed to be sent, even if Kafka is down or the process dies right after. Each context has its own copy of the table, repository and relay (`IdentityOutboxRelayService`, `UserOutboxRelayService`), like separate services. A relay runs every second: in one transaction it claims up to 100 unpublished rows oldest first with `FOR UPDATE SKIP LOCKED`, builds the CloudEvent from each row (`source` from `SourceEnum`, `time` = `createdAt`), sends them in order, and sets `publishedAt` on the sent rows. The first failure increments `attempts`, stores `lastError` and ends the batch, so later rows never overtake it; the next run retries. A send gives up after 10 s (`message.timeout.ms`), so an unreachable Kafka shows up as `lastError = Local: Message timed out` instead of a transaction held open. Delivery is at-least-once: a row sent but not yet marked published (crash, or a timed-out send that still arrived) is sent again with the same `id`, which consumers already deduplicate. A daily job in the `maintenance` queue (see Redis below) deletes published rows older than 7 days; Kafka keeps the events.
 - **Several app instances**: `SKIP LOCKED` lets every instance run the relay without sending a row twice, but two instances can send two events of the same identity out of order. With one event per identity (`identity.registered`) that can't happen; a second identity event type should come with a single active relay (a Postgres advisory lock taken per run).
 - **One topic per aggregate, not per event type**: Kafka orders messages only within a partition of one topic, so `identity.registered`, a later `identity.email-changed` and `identity.deleted` for the same identity must share a topic to reach consumers in that order. A stream gets its own topic only when its volume or retention differs (e.g. a per-login event).
 - **Replay instead of losing skipped events**: a consumer commits its offset past events it skips, so a handler added later never sees them in that group. Instead each use case is its own consumer group (`user.profile`, later `user.email-sync`): a new group starts from the earliest offset and replays the whole topic. An existing group can also be rewound (`kafka-consumer-groups.sh --group <group> --reset-offsets --to-earliest --execute --topic identity.events` while it is stopped) and relies on its idempotency for the events it already handled. Either works only while the events still exist, which is why `identity.events` has `retention.ms=-1`.
@@ -203,21 +207,30 @@ Two npm workspaces, transport-agnostic, with folders mirroring `src/<domain>/`:
 
 Packages export TypeScript sources for types (so `npx tsc --noEmit` works without building them) and `dist/` for Node. Mapping `TOPIC`/`TYPE` to an exchange and routing key happens only in the app's infrastructure.
 
-## Outbox та ідемпотентність
+## Redis: кеш, сесії, ліміти, черга
 
-The chain the three demos exercise: `POST /order` with an `Idempotency-Key` → `Order` and its `order.created` row in `OrderOutbox`, in one COMMIT → `OrderOutboxRelayService` (`FOR UPDATE SKIP LOCKED`) → Kafka `order.events` (a separate process from Postgres) → the `order.confirmation` consumer group → one `OrderConfirmation` per event, deduplicated through `OrderInbox` (`INSERT … ON CONFLICT DO NOTHING` on `(consumer, messageId)`, the CloudEvent id). The confirmation is a plain insert, so without the inbox a second delivery would write a second row; the inbox row and the confirmation are written in one transaction, so a crash between them can't leave one without the other. The confirmation consumer exists for these demos and is marked `TODO(hw-22)`.
+Redis makes the system faster, not more correct: everything below is an optimization or a convenience whose failure costs a database read, a login or a retry, never corrupted data. No business invariant (stock, balance, uniqueness) is guarded by Redis; those stay in Postgres.
 
-Each demo starts its own copy of the order module (HTTP, relay, consumer) in-process, with the scheduler off so the relay runs exactly when the demo calls it, and uses a fresh random buyer id and key, so earlier runs never leak into its counts. It prints `key=number` lines and exits non-zero if an invariant breaks. `deliveries` and `applied` are counted by wrapping the consumer's handler; the other numbers are read from the database. Stop a running API first: it would join the same consumer group and take some of the deliveries.
+**Two instances.** `maxmemory` and `maxmemory-policy` belong to the whole Redis process, and the two jobs need opposite settings: a cache must evict (`allkeys-lru`, 64 MB, no persistence), while BullMQ says it "cannot work properly if Redis evicts keys arbitrarily" and requires `noeviction`. `SELECT 1` doesn't separate them, so there are two containers: `redis-cache` (`allkeys-lru`, no RDB/AOF) and `redis-queue` (`noeviction`, `appendonly yes`, `appendfsync everysec`, 256 MB). Both run `redis:8.4.1-alpine` as the `redis` user with a password from `secrets/redis_password.txt`, written into a config file at start so it never shows up in the process arguments.
 
-| Run | Output | What it shows |
-|---|---|---|
-| `npm run demo:outbox` | `requests=2 accepted=2 orders=1 outbox=1 published=1 deliveries=1 effect=1 processed=1` | two concurrent requests with one `Idempotency-Key` give one order, one event, one effect |
-| `npm run demo:crash-write` | `write-failed=1 orders=0 outbox=0 published=0 deliveries=0 effect=0` | the request crashes right after the outbox row is inserted; the row is rolled back with the order, so nothing is ever published |
-| `npm run demo:crash-relay` | `relay-crashes=1 published-after-crash=0 published=1 deliveries=2 applied=1 effect=1 processed=1` | the relay sends the event, then fails before `UPDATE publishedAt`; the row stays unpublished, the next run sends it again, and the consumer applies it once |
+- **Cache-aside on `GET /order/:id`** (`redis-cache`). `@Cacheable` on `OrderService.findById` (a three-table read: order, lines, recipient) goes through `CacheService.getOrLoad`: a hit is served from Redis only, a miss reads Postgres and stores the JSON with a TTL of 300 s + `randomInt(0..60)`, so keys warmed together don't all expire in the same second. `@CacheEvict` on `markPaid`/`markFailed` deletes the key after the status transaction commits; the TTL is still always set, so a lost delete leaves stale data for at most 6 minutes. A 404 is not cached. The decorators only set metadata; `CacheExplorer` (`DiscoveryService`) wraps the marked methods at startup, outside `@Transactional`, which is why the delete happens after the commit.
+- **Stampede lock.** On a miss, the first request takes `SET lock:<key> <uuid> NX PX 5000`; the others poll the key every 50 ms and return the value as soon as it appears. The owner releases only its own lock with `DELEX lock:<key> IFEQ <uuid>` (Redis 8.4), since a plain `DEL` after a slow read would delete the next owner's lock and let the stampede back in. If the owner fails, a waiter takes the lock; after 5 s a waiter reads the database itself instead of hanging.
+- **Access sessions** (`redis-queue`). Every access token carries a `jti`; issuing it writes `session:<jti>` (idle TTL 5 min) and adds it to `session-family:<familyId>`. `AccessTokenVerifierService` checks the signature, then `GETEX session:<jti> EX 300`: a missing key is a 401, an existing one gets its TTL extended, so an active user is never logged out mid-work while an idle token dies before its 15-minute `exp`. Logout and refresh-token reuse delete the whole family, so access tokens stop working immediately instead of at `exp`. Revocation is one Lua script that deletes the family's sessions and leaves a tombstone `session-family-revoked:<familyId>` for as long as any of its tokens can live (15 min + 5 s); `open` refuses a family with a tombstone and `touch` rejects a session whose family has one, each in one atomic script. Without it, a refresh that passed the Postgres check just before a logout could write its session after the revocation and keep a revoked login alive until `exp`. Sessions are in `redis-queue`, not the cache: `allkeys-lru` would eventually evict a live session and log someone out in a way nobody could reproduce. A Redis error on this check is a 500, not a 401, so an outage isn't reported as an expired session.
+- **Login rate limit** (`redis-queue`). `POST /auth/login` allows 5 attempts per 60 s per `ip:login` (login trimmed and lowercased), through `@nestjs/throttler` with `RedisThrottlerStorage`: a sliding window in one Lua script (`ZREMRANGEBYSCORE` + `ZCARD` + `ZADD` + `PEXPIRE`, time from Redis `TIME` so pods agree). Login allows no burst, so the window is sliding rather than a token bucket, which would let up to 10 attempts through in the worst minute. Over the limit: `429` with `Retry-After` = seconds until the oldest attempt leaves the window. The counter lives in Redis, so every pod shares one limit; throttler's default storage is per process.
+- **Queue** (`redis-queue`, `@nestjs/bullmq`). One queue, `maintenance`: `MaintenanceJobRegistryService` holds the handlers contexts register, `MaintenanceQueueService` only touches the queue (`upsertJobScheduler` on bootstrap, `enqueue(name, jobId)`), and `MaintenanceProcessor extends WorkerHost` only runs jobs (`concurrency: 1`, started after every context registered, `@OnWorkerEvent('failed' | 'stalled')`). Jobs get `attempts: 3`, `backoff: { type: 'exponential', delay: 1000, jitter: 0.5 }`, and `removeOnComplete` as an age/count limit, never `true`, which would turn `jobId` dedup off. The four outbox cleanups (identity, user, order, order workflow) moved here from `@Cron`: `upsertJobScheduler` keeps one scheduler per name across restarts and pods, and each daily run is processed by one worker instead of every pod. A job with no handler fails at once with `UnrecoverableError`.
 
-The crashes are simulated, not `kill -9`: `demo:crash-write` makes `OrderOutboxRepository.create` throw after its insert, inside the request's transaction, and `demo:crash-relay` makes `OrderOutboxRepository.markPublished` throw once, after the send and before the `UPDATE`, inside the relay's transaction. That is the exact point a killed process would stop at, and the rollback that follows is what Postgres does when the connection of a killed process goes away.
+Own runs (`npm run demo:*`, local compose stack, `SKIP_VAULT=1`; the demo scripts are temporary and will be removed after grading):
 
-**Why publish and `UPDATE publishedAt` can't swap places.** With the `UPDATE` first, a crash or a failed send after it leaves a row that says "published" for an event the broker never got: the relay never looks at it again and the event is lost for good, at-most-once delivery. With the send first, the worst a crash can do is send it twice: the row stays unpublished and is sent again, at-least-once delivery, and a duplicate is something the consumer can drop by the event id, while a lost event can't be recovered by anyone. Doing both in one transaction doesn't remove the choice: the broker isn't part of the Postgres transaction, so whatever order they run in, the commit and the send can still disagree, and the relay must pick which way they may disagree. It picks the one the inbox repairs.
+| Demo | Output |
+|---|---|
+| `demo:cache` | `cache-lru=1 cache-maxmemory=1 warmed=50 ttl-distinct=34 concurrent=20 db-calls=1 db-calls-warm=0` |
+| `demo:session` | `requests=8 sessions=1 in-redis=1 ttl-before=298 ttl-after=300 ttl-renewed=1 survives-restart=1 revoked-on-logout=1` |
+| `demo:ratelimit` | `instances=2 limit=5 requests=8 allowed=5 blocked=3 status=429 retry-after=1 retry-after-seconds=60` |
+| `demo:queue` | `queue-noeviction=1 attempts=3 completed=1 added=2 queued=1 schedulers=1 scheduled-runs=4` |
+
+`demo:cache` reads 50 orders it inserts for a dedicated buyer through the real `OrderService.findById` and counts database reads by wrapping `OrderRepository.findByIdOrFail`; `demo:session` logs in as the seeded `buyer1@example.com`, checks the session before and after activity, restarts the app and logs out; `demo:ratelimit` starts two app instances and alternates 8 attempts for a fresh login between them; `demo:queue` registers three demo jobs in the real `maintenance` queue and removes them and their schedulers afterwards. Each demo cleans up what it created and exits non-zero if an invariant breaks.
+
+**If the stampede lock breaks.** If Redis loses the lock, the owner dies before releasing it or the 5 s wait runs out, several requests miss at once and each reads Postgres: N identical `SELECT`s instead of one, and the last `SET` wins with the same value. That costs a few database reads on one hot key for one moment; nothing is written, so nothing can end up inconsistent. That is why a lock is acceptable here: it protects a read that may be repeated, and every path where it fails degrades to the behaviour we had without it. The same `SET NX PX` guarding a write (one charge per order, one reservation per offer) would be wrong: a lock can expire under a slow owner, and two writers would both proceed. Those invariants are enforced in Postgres (`UPDATE … WHERE balance >= $n`, natural keys with `ON CONFLICT`), never with a Redis lock.
 
 ## Auth (identity)
 
@@ -233,7 +246,7 @@ A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
 - **Access token**: a 15-minute JWT signed with ES256. Claims: `sub` (the identity's `publicId`, a uuid; the integer id never leaves identity), `role`, `email`, `phone_number` (E.164), `iss: identity-service`, and a `kid` header (the public key's JWK thumbprint). Email and phone are in the token so other contexts don't have to ask identity for them on every request. A JWT is signed, not encrypted: anyone holding it can read these claims.
 - **Asymmetric keys**: only identity reads `JWT_PRIVATE_KEY` and signs. Verifying needs only `JWT_PUBLIC_KEY`, so any service can check a token without being able to mint one. `AccessTokenGuard` (`src/generic/auth/`) accepts only ES256 from `identity-service`, which rules out `alg: none` and HS/RS key confusion, validates the payload with a zod schema, and puts `{ identityPublicId, role, email, phoneNumber }` on the request. Today the public key comes from configuration; the next step towards zero trust is identity publishing it at `/.well-known/jwks.json` and verifiers fetching it from there.
 - **`@Identity()`** (`src/generic/auth/decorator/`) reads those claims in a handler: `@UseGuards(AccessTokenGuard) @Get() me(@Identity() identity: AccessTokenClaimsInterface)`, or `@Identity('identityPublicId') identityPublicId: string` for one field. Without the guard on the route it fails with 500 instead of silently returning `undefined`.
-- **Refresh token**: 32 random bytes, valid for 30 days, stored only as a SHA-256 hash in `IdentitySession`. Every refresh marks the token used and issues a new one in the same session family. The "not used yet" check is an `UPDATE … WHERE "usedAt" IS NULL RETURNING`, so two parallel refreshes can't both win. Presenting a used token again means it was copied, so the whole family is revoked. Logout revokes the family too. Each login starts a new family, so sessions on other devices are unaffected.
+- **Refresh token**: 32 random bytes, valid for 30 days, stored only as a SHA-256 hash in `IdentitySession`. Every refresh marks the token used and issues a new one in the same session family. The "not used yet" check is an `UPDATE … WHERE "usedAt" IS NULL RETURNING`, so two parallel refreshes can't both win. Presenting a used token again means it was copied, so the whole family is revoked. Logout revokes the family too. Each login starts a new family, so sessions on other devices are unaffected. A refresh and a revocation of the same family are serialized by a transaction-scoped advisory lock on the `familyId`: without it, a logout running while a refresh commits would revoke the old row but not the new one, which its snapshot can't see, and the rotated token would stay valid for 30 days.
 - **Passwords**: argon2id, 8–128 characters, no composition rules (NIST 800-63B). Login answers an unknown login, a wrong password and a deleted identity with the same `401 Invalid login or password`, and hashes a dummy password when the login doesn't exist, so timing doesn't reveal which accounts exist.
 - **Registration** creates the `Identity` (role `user`; a `role` in the body is ignored), and the User and its account follow asynchronously through Kafka (see Events). The user starts with the identity's `email` and `phoneNumber` as contact details. `activatedAt` stays `NULL` until a verification flow exists.
 - **Keys** live in Infisical (`JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, PEM). Generate a pair with `openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt` and `openssl ec -pubout`. Tests generate a fresh pair per run (`test/support/env.ts`).
@@ -248,7 +261,7 @@ The stream is fed from Kafka, not from the code that changes the status. Order w
 
 ## Secrets
 
-Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` (see `SecretsInterface`). Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.
+Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL` (see `SecretsInterface`). The Redis URLs carry the password (`redis://default:<password>@host:port`), so they are secrets rather than settings; `npm run bootstrap:secrets` writes that password to `secrets/redis_password.txt` for compose, taking it from the URLs so it lives in one place. Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.
 
 `npm run rotate:db-password` rotates the database password: it changes it in Postgres, writes `secrets/db_password.txt`, syncs Infisical and terminates the old sessions. With `SKIP_VAULT=1`, re-export `DBPASSWORD` afterwards.
 
@@ -263,26 +276,31 @@ Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <com
 
 ```bash
 npm test                  # unit tests
-npm run test:integration  # repositories against Postgres (testcontainers)
-npm run test:e2e          # the full app over HTTP (testcontainers: Postgres, RabbitMQ, Kafka)
+npm run test:integration  # repositories, cache, rate limit and queue against real services (testcontainers)
+npm run test:e2e          # the full app over HTTP (testcontainers)
 ```
 
-Integration and e2e tests start their containers once per run and truncate all tables after every test (`test/support/isolation.ts`), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with.
+Integration and e2e tests start their containers once per run (Postgres, RabbitMQ, Kafka, Temporal and two Redis instances with the same eviction settings as compose, so nothing depends on a running dev stack) and reset state after every test (`test/support/isolation.ts`: truncate all tables and `FLUSHALL` both Redis instances, since restarted identities would otherwise hit cache entries of the previous test), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with.
 
 ## Grading
 
-The broker for the outbox demos is Kafka (`KAFKA_BROKERS`, `host:9092`). The app also needs Postgres, RabbitMQ and Temporal running. Values below are the dev credentials from `docker-compose.yml` and `secrets/*.example`; the grader has no secret store, hence `SKIP_VAULT=1`.
+The demos need the whole stack: Postgres, RabbitMQ, Kafka, Temporal and both Redis instances. Values are the dev credentials from `docker-compose.yml` and `secrets/*.example`; the grader has no secret store, hence `SKIP_VAULT=1`, and the JWT pair is generated on the spot. Stop a running API first.
 
 ```bash
 cp .env.example .env
 cp secrets/db_password.txt.example secrets/db_password.txt
 cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
-docker compose up -d --wait db db-bouncer rabbitmq kafka temporal
+cp secrets/redis_password.txt.example secrets/redis_password.txt
+docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue
 
 export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
 export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
 export KAFKA_BROKERS=127.0.0.1:9092
 export TEMPORAL_ADDRESS=127.0.0.1:7233
+export REDIS_CACHE_URL=redis://default:changeme@127.0.0.1:6380
+export REDIS_QUEUE_URL=redis://default:changeme@127.0.0.1:6381
+export JWT_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
+export JWT_PUBLIC_KEY="$(printf '%s' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
 export SKIP_VAULT=1
 
 npm ci
@@ -290,14 +308,15 @@ npm run build
 npm run migrate
 npm run seed
 
-npm run demo:outbox
-npm run demo:crash-write
-npm run demo:crash-relay
+npm run demo:cache
+npm run demo:session
+npm run demo:ratelimit
+npm run demo:queue
 ```
 
-- `--wait` matters: without it the scripts start before Postgres accepts connections and fail with `ECONNREFUSED`.
+- `--wait` matters: without it the scripts start before Postgres and Redis accept connections and fail with `ECONNREFUSED`.
 - Name the services: the compose file also has the Infisical stack, which needs credentials of its own.
-- `npm run build` is required: the demos, `migrate` and `seed` run the compiled `dist/`. `seed` provides the offer the demos order.
+- `npm run build` is required: the demos, `migrate` and `seed` run the compiled `dist/`. `seed` provides the buyer `demo:session` logs in as and the offers.
 
 ## Configuration
 
@@ -318,4 +337,4 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `TEMPORAL_NAMESPACE` | no | `default` | Temporal namespace of the order workflows |
 | `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
 
-Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`) come from Infisical, or from the environment with `SKIP_VAULT=1`.
+Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`) come from Infisical, or from the environment with `SKIP_VAULT=1`.

@@ -8,7 +8,7 @@ import { OrderRepository } from '../repository/order.repository.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
 import { OrderPlaceMessageService } from '../service/order-place-message.service.js';
 import { CacheEvict } from '../../generic/cache/decorator/cache-evict.decorator.js';
-import { orderCacheKey } from '../constant/order-cache.constant.js';
+import { orderCacheKey } from '../cache-key/order.cache-key.js';
 import { OrderPlaceFailureTypeEnum } from '../enum/order-place-failure-type.enum.js';
 import type { OrderFailureInterface } from '../interface/order-failure.interface.js';
 import type {

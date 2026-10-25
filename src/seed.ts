@@ -142,7 +142,7 @@ async function seed(): Promise<void> {
           activatedAt: null,
         }),
       );
-    } else if (!identity.passwordHash.startsWith('$argon2id$')) {
+    } else if (!identity.passwordHash?.startsWith('$argon2id$')) {
       await identities.update({ id: identity.id }, { passwordHash: seedPasswordHash });
     }
 

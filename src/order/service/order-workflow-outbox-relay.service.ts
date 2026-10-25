@@ -1,6 +1,7 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { CronExpression, Interval } from '@nestjs/schedule';
+import { Injectable, Logger, OnApplicationBootstrap, OnModuleInit, Optional } from '@nestjs/common';
+import { CronExpression, SchedulerRegistry } from '@nestjs/schedule';
 import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-job-registry.service.js';
+import { EnvironmentService } from '../../generic/environment/environment.module.js';
 import { subDays } from 'date-fns';
 import { Transactional } from '@nestjs-cls/transactional';
 import { WorkflowExecutionAlreadyStartedError } from '@temporalio/client';
@@ -9,18 +10,21 @@ import { OrderWorkflowOutbox } from '../entity/order-workflow-outbox.entity.js';
 import { TemporalClientService } from '../../generic/temporal/temporal-client.service.js';
 
 @Injectable()
-export class OrderWorkflowOutboxRelayService implements OnModuleInit {
+export class OrderWorkflowOutboxRelayService implements OnModuleInit, OnApplicationBootstrap {
   private readonly logger = new Logger(OrderWorkflowOutboxRelayService.name);
   private readonly cleanupJobName = 'order-workflow-outbox-cleanup';
   private readonly batchSize = 100;
   private readonly startedRetentionDays = 7;
   private readonly startTimeoutMs = 10000;
+  private readonly relayIntervalName = 'order-workflow-outbox-relay';
   private relaying = false;
 
   constructor(
     private readonly outbox: OrderWorkflowOutboxRepository,
     private readonly temporal: TemporalClientService,
     private readonly maintenance: MaintenanceJobRegistryService,
+    private readonly environment: EnvironmentService,
+    @Optional() private readonly scheduler?: SchedulerRegistry,
   ) {}
 
   onModuleInit(): void {
@@ -31,7 +35,10 @@ export class OrderWorkflowOutboxRelayService implements OnModuleInit {
     });
   }
 
-  @Interval(1000)
+  onApplicationBootstrap(): void {
+    this.scheduler?.addInterval(this.relayIntervalName, setInterval(() => void this.relay(), this.environment.get('OUTBOX_RELAY_INTERVAL_MS')));
+  }
+
   async relay(): Promise<void> {
     if (this.relaying) {
       return;

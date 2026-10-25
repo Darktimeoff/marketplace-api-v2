@@ -16,6 +16,10 @@ export class IdentityRepository {
     return this.txHost.tx.getRepository(Identity).findOne({ where: { id } });
   }
 
+  findByPublicId(publicId: Identity['publicId']): Promise<Identity | null> {
+    return this.txHost.tx.getRepository(Identity).findOne({ where: { publicId } });
+  }
+
   findByEmail(email: string): Promise<Identity | null> {
     return this.txHost.tx.getRepository(Identity).findOne({ where: { email } });
   }

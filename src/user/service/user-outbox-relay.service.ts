@@ -1,6 +1,7 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { CronExpression, Interval } from '@nestjs/schedule';
+import { Injectable, Logger, OnApplicationBootstrap, OnModuleInit, Optional } from '@nestjs/common';
+import { CronExpression, SchedulerRegistry } from '@nestjs/schedule';
 import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-job-registry.service.js';
+import { EnvironmentService } from '../../generic/environment/environment.module.js';
 import { subDays } from 'date-fns';
 import { Transactional } from '@nestjs-cls/transactional';
 import { SourceEnum, type CloudEventInterface } from '@marketplace/messaging-contracts';
@@ -9,17 +10,20 @@ import { UserOutboxRepository } from '../repository/user-outbox.repository.js';
 import { UserOutbox } from '../entity/user-outbox.entity.js';
 
 @Injectable()
-export class UserOutboxRelayService implements OnModuleInit {
+export class UserOutboxRelayService implements OnModuleInit, OnApplicationBootstrap {
   private readonly logger = new Logger(UserOutboxRelayService.name);
   private readonly cleanupJobName = 'user-outbox-cleanup';
   private readonly batchSize = 100;
   private readonly publishedRetentionDays = 7;
+  private readonly relayIntervalName = 'user-outbox-relay';
   private relaying = false;
 
   constructor(
     private readonly outbox: UserOutboxRepository,
     private readonly kafka: KafkaProducerService,
     private readonly maintenance: MaintenanceJobRegistryService,
+    private readonly environment: EnvironmentService,
+    @Optional() private readonly scheduler?: SchedulerRegistry,
   ) {}
 
   onModuleInit(): void {
@@ -30,7 +34,10 @@ export class UserOutboxRelayService implements OnModuleInit {
     });
   }
 
-  @Interval(1000)
+  onApplicationBootstrap(): void {
+    this.scheduler?.addInterval(this.relayIntervalName, setInterval(() => void this.relay(), this.environment.get('OUTBOX_RELAY_INTERVAL_MS')));
+  }
+
   async relay(): Promise<void> {
     if (this.relaying) {
       return;

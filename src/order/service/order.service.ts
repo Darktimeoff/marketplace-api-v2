@@ -7,7 +7,8 @@ import { ConfirmChannel, ConsumeMessage } from 'amqplib';
 import { OrderRepository } from '../repository/order.repository.js';
 import { Order } from '../entity/order.entity.js';
 import { Cacheable } from '../../generic/cache/decorator/cacheable.decorator.js';
-import { ORDER_CACHE_JITTER_SECONDS, ORDER_CACHE_TTL_SECONDS, orderCacheKey } from '../constant/order-cache.constant.js';
+import { ORDER_CACHE_JITTER_SECONDS, ORDER_CACHE_TTL_SECONDS } from '../constant/order-cache.constant.js';
+import { orderCacheKey } from '../cache-key/order.cache-key.js';
 
 @Injectable()
 export class OrderService implements OnModuleInit {

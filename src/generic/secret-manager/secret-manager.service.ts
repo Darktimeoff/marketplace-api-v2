@@ -52,7 +52,7 @@ export class SecretManagerService implements OnModuleInit {
     if (!value) {
       throw new Error(
         `${name} is not set. При SKIP_VAULT=1 секреты берутся из окружения — ` +
-          `выставь ${name} вручную (см. README, раздел Grading).`,
+          `выставь ${name} вручную (см. README, раздел Secrets).`,
       )
     }
 

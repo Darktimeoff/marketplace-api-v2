@@ -4,7 +4,7 @@ import { Logger, type INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { DataSource } from 'typeorm';
-import { decodeProtectedHeader, importSPKI, jwtVerify } from 'jose';
+import { createLocalJWKSet, decodeProtectedHeader, importSPKI, jwtVerify, type JSONWebKeySet } from 'jose';
 import { AppModule } from '../../src/app.module.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
@@ -407,6 +407,22 @@ describe('Auth (e2e)', () => {
 
       expect(response.headers['x-ratelimit-limit']).toBe('5');
       expect(response.headers['x-ratelimit-remaining']).toBe('4');
+    });
+  });
+
+  describe('jwks', () => {
+    it('publishes the public verification keys that verify an access token by kid', async () => {
+      const { accessToken } = await register();
+      const response = await request(app.getHttpServer()).get('/.well-known/jwks.json').expect(200);
+      const jwks = response.body as JSONWebKeySet;
+
+      expect(response.headers['cache-control']).toBe('public, max-age=60');
+      expect(jwks.keys).toHaveLength(1);
+      expect(Object.keys(jwks.keys[0]).sort()).toEqual(['alg', 'crv', 'kid', 'kty', 'use', 'x', 'y']);
+      expect(jwks.keys[0]).toMatchObject({ kty: 'EC', crv: 'P-256', alg: 'ES256', use: 'sig', kid: decodeProtectedHeader(accessToken).kid });
+
+      const { payload } = await jwtVerify(accessToken, createLocalJWKSet(jwks), { issuer: 'identity-service', algorithms: ['ES256'] });
+      expect(payload.sub).toBeDefined();
     });
   });
 });

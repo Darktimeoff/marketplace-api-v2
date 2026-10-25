@@ -9,7 +9,7 @@ if (!suite) {
   );
 }
 
-const raw = await readFile(stateFilePath(suite), 'utf-8');
+const raw = await readFile(stateFilePath(suite, Number(process.env.VITEST_POOL_ID ?? 1)), 'utf-8');
 const connection: TestDbConnection = JSON.parse(raw);
 
 process.env.SKIP_VAULT = '1';
@@ -31,6 +31,9 @@ const signingKeys = generateKeyPairSync('ec', {
 process.env.JWT_PRIVATE_KEY = signingKeys.privateKey;
 process.env.JWT_PUBLIC_KEY = signingKeys.publicKey;
 process.env.REFRESH_TOKEN_PEPPER = 'test-refresh-token-pepper';
+process.env.OUTBOX_RELAY_INTERVAL_MS = '100';
+process.env.GOOGLE_CLIENT_ID = 'test-google-client';
+process.env.GOOGLE_CLIENT_SECRET = 'test-google-secret';
 
 if (connection.kafkaBrokers) {
   process.env.KAFKA_BROKERS = connection.kafkaBrokers;

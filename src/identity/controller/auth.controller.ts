@@ -9,7 +9,8 @@ import { IdentityRegisterCommandHandler } from '../command-handler/identity-regi
 import { IdentityLoginCommandHandler } from '../command-handler/identity-login.command-handler.js';
 import { IdentityRefreshCommandHandler } from '../command-handler/identity-refresh.command-handler.js';
 import { IdentityLogoutCommandHandler } from '../command-handler/identity-logout.command-handler.js';
-import { IDENTITY_LOGIN_THROTTLE_LIMIT, IDENTITY_LOGIN_THROTTLE_TTL_MS, identityLoginTracker } from '../constant/identity-login-throttle.constant.js';
+import { IDENTITY_LOGIN_THROTTLE_LIMIT, IDENTITY_LOGIN_THROTTLE_TTL_MS } from '../constant/identity-login-throttle.constant.js';
+import { identityLoginTracker } from '../tracker/identity-login.tracker.js';
 import { Public } from '../../generic/auth/decorator/public.decorator.js';
 import { Identity } from '../../generic/auth/decorator/identity.decorator.js';
 import type { AccessTokenClaimsInterface } from '../../generic/auth/interface/access-token-claims.interface.js';

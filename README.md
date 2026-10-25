@@ -230,6 +230,10 @@ Redis makes the system faster, not more correct: everything below is an optimiza
 | `POST /auth/refresh` | public | `{ refreshToken }` | `200` new token pair, `401` |
 | `POST /auth/logout` | public | `{ refreshToken }` | `204`, also for an unknown or already revoked token |
 | `GET /auth/me` | token | — | `200 { identityPublicId, role, email, phoneNumber }`, `401` |
+| `GET /auth/:provider` (`google`) | public | — | `302` to the provider, sets the `oidc_sign_in_state` cookie; `400` unknown provider, `503` if the provider or Redis is unavailable |
+| `GET /auth/:provider/callback` | public, the provider redirects here | the provider's query (`code`, `state`, `iss`, …) | `200` token pair, `400` state not from this browser / expired / reused / another provider's, `401` the provider refused or the `id_token` failed a check, `409` the email already has an identity |
+| `POST /auth/:provider/link` | token, 5 attempts per minute per ip+identity | `{ password }` | `200 { url }` to open in the browser, sets the cookie; `403` wrong password, `401` |
+| `GET /.well-known/jwks.json` | public | — | `200 { keys }`, the public verification keys, `Cache-Control: public, max-age=60` |
 | `POST /order` | token, `create Order` | order body (the buyer comes from the token) | `202`, `401`, `409` while the buyer is being provisioned |
 | `GET /order/:id` | token, `read Order` + ownership | — | `200` own order (admin/owner: any), `403` someone else's, `401` |
 | `POST /product` | token, `create Product` (seller, admin, owner) | `{ categoryId, brandId, translations: [{ language, title, description? }] }` | `201`, `403` for a buyer, `401`, `404` unknown category or brand |
@@ -249,11 +253,13 @@ A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
 | `RABBITMQ_PASSWORD` | сховище (#11, Infisical) | RabbitMQ password |
 | `REDIS_CACHE_URL` | сховище (#11, Infisical) | cache Redis URL with its password |
 | `REDIS_QUEUE_URL` | сховище (#11, Infisical) | queue Redis URL with its password (denylist, rate limit, BullMQ) |
+| `GOOGLE_CLIENT_SECRET` | сховище (#11, Infisical) | OAuth client secret from Google Cloud Console; exchanges Google's codes as our app |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_ISSUER`, `OIDC_REDIRECT_BASE_URL` | оточення | the Google client id (public: it is in every authorize URL), Google's issuer for discovery, the base our callbacks `/auth/<provider>/callback` are built on |
 | `DBHOST`, `DBPORT`, `DBNAME`, `KAFKA_BROKERS`, `TEMPORAL_ADDRESS`, `RABBITMQ_HOST` | compose / оточення | where the dev services are; not secrets |
 | `ACCESS_DENYLIST_FAIL_OPEN` | compose / оточення | `true` (default) or `false`, outage policy of the denylist |
 | `SKIP_VAULT` | оточення | `1` skips the vault and takes the secrets above from the environment |
 
-`npm run start` is a bare start: it reads nothing from the vault on its own behalf, and with `SKIP_VAULT=1` and a secret missing it exits with `1` before touching the database, naming every missing variable (`Missing secrets: JWT_PRIVATE_KEY, …`). There are no defaults for secrets: a default key would be a key compiled into the code. `npm run start:vault` (and every demo) goes through `scripts/with-secrets.sh dev`, as `migrate` and `seed` do. A leaked `DATABASE_URL` gives access to the database from the network; a leaked signing key lets anyone mint a token for anyone without any access at all, which is why the keys and the pepper live in the vault and the app refuses to run without them.
+`npm run start` is a bare start: it reads nothing from the vault on its own behalf, and with `SKIP_VAULT=1` and a secret missing it exits with `1` before touching the database, naming every missing variable (`Missing secrets: JWT_PRIVATE_KEY, …`). There are no defaults for secrets: a default key would be a key compiled into the code. `npm run start:vault` goes through `scripts/with-secrets.sh dev`, as `migrate` and `seed` do. A leaked `DATABASE_URL` gives access to the database from the network; a leaked signing key lets anyone mint a token for anyone without any access at all, which is why the keys and the pepper live in the vault and the app refuses to run without them.
 
 Key fingerprints (the `kid`, RFC 7638 thumbprint of the public key; public data) prove the environments use different keys:
 
@@ -280,6 +286,8 @@ Key fingerprints (the `kid`, RFC 7638 thumbprint of the public key; public data)
 
   If k1 leaked, skip the waiting: tokens forged with it would verify for as long as it stays in `JWT_PUBLIC_KEY`. Put k2 in both secrets at once; within a minute every k1 token is rejected, clients get a `401`, refresh (refresh tokens are in Postgres, not signed) and receive k2 tokens.
 
+- **JWKS**: `GET /.well-known/jwks.json` publishes the public keys the verifier holds, `kid` included. Another service verifies our tokens with `createRemoteJWKSet` and that URL alone: no shared secret, no call to identity per request, and it learns a new `kid` from the endpoint during a rotation. `max-age=60` equals the 60 s refresh, so the rotation steps above cover outside verifiers as well. There is no `/.well-known/openid-configuration`: our `iss` is `identity-service`, not a URL.
+
 ### Authorization
 
 - **Default deny**: `AccessTokenGuard` and `AbilityGuard` are global (`APP_GUARD`); every route needs a token unless it is marked `@Public()`. Both guards skip non-HTTP handlers (RabbitMQ RPC).
@@ -288,20 +296,36 @@ Key fingerprints (the `kid`, RFC 7638 thumbprint of the public key; public data)
 - **Ownership is not checked in a guard**: a guard has the token, not the order. `OrderService.findReadableById` loads the order (from the cache when it's there) and asks `ability.can('read', subject('Order', { ownerIdentityPublicId }))`; someone else's order is `403`. The owner is copied from the token's `sub` when the order is created, and `POST /order` takes the buyer from the token too: `OrderBuyer` (`identityPublicId → userId`, copied from `user.created`) gives the `userId` the charge needs, and a `userId` in the body is ignored.
 - **The role in the token is a cache, not the source of truth**: an admin demoted in the database stays an admin for every request until his access token expires, up to 15 minutes, and can refresh into a new token only with the new role. To make a demotion instant, deny his session families (the same `denied-family` keys logout writes) or check the role in the database for critical actions.
 
-### Demos
+### Sign in with Google
 
-`npm run demo:auth`, `demo:reuse`, `demo:rbac` (temporary, `TODO(hw-24)`) start the whole app, register fresh users over HTTP and print `key=status` lines; each exits non-zero if an invariant breaks. Own runs:
+Authorization Code flow with PKCE (OIDC). Google only tells us who the person is; we then issue our own token pair, so refresh, logout, the denylist and the abilities work as for a password login. Google's own `access_token` is discarded.
 
-| Demo | Output |
-|---|---|
-| `demo:auth` | `login=200 no-token=401 with-token=200 refresh=200 logout=204 after-logout=401 refresh-after-logout=401` |
-| `demo:reuse` | `login=200 r1-refresh=200 r1-reuse=401 r2-after-reuse=401` |
-| `demo:rbac` | `anon=401 own=200 foreign=403 role-denied=403 role-allowed=201 tampered=401` |
+1. `GET /auth/google` (any provider: `GET /auth/:provider`) creates `state`, `nonce` and `code_verifier`, stores them with the provider in redis-queue under `oidc-sign-in:<state>` for 10 minutes, sets `state` as an `HttpOnly; SameSite=Lax` cookie on `/auth` and redirects to Google's authorize URL with `state`, `nonce` and `code_challenge = BASE64URL(SHA256(code_verifier))`. Google's endpoints come from its discovery document, read once on first use; if Google is down only this flow answers `503`.
+2. Google signs the person in and redirects the browser to `GET /auth/google/callback?code&state&iss`.
+3. The callback checks, in order:
+   - **the `state` equals the cookie**: an attacker who sends you his own callback link (login CSRF) would sign you into his account; his link carries his `state`, your browser your cookie;
+   - **the `state` is in Redis**, read with `GETDEL`, and was started for this provider: an attempt works once, expires, and can't be finished at another provider;
+   - **the code exchange** (`openid-client`): `code` + `code_verifier` + client secret go to Google's token endpoint. A code stolen from the redirect URL is useless without the verifier, which never left the server (`invalid_grant`);
+   - **the `id_token`**: signature against Google's JWKS by `kid` (`enableNonRepudiationChecks`: `openid-client` skips it by default for a token received directly over TLS), `iss`, `aud` = our client id (a token Google issued to another app is refused), `exp`, and the `nonce` from Redis (a token from another sign-in is refused);
+   - **`email_verified`**: accounts are unique by email, so an unverified address could claim someone else's.
+4. In one transaction: the identity is found by `IdentityExternalAccount (google, sub)`. `sub` is Google's permanent id; an email can change or be reused, so it is never the key. A new person gets an `Identity` without a password, the external account and `identity.registered`, so user, account and order buyer are provisioned through Kafka exactly as after a password registration. An email that already has an identity is `409`, never linked silently: whoever controls that address at Google would otherwise take over the account.
+5. Linking Google to a password account is `POST /auth/google/link` with the password again: a stolen 15-minute access token alone could otherwise attach the thief's Google and keep a permanent way in. It returns the authorize URL as JSON because a navigation can't carry the bearer token; the attempt remembers the identity, and the callback attaches Google to it (`409` if that Google account belongs to someone else or the identity already has one).
 
-`demo:rbac` logs in as the seeded seller, waits until the freshly registered buyer is provisioned through Kafka (`POST /order` answers `409` until then) and deletes the product it created.
+Errors: Google refused (`invalid_grant`, `access_denied`) or a check failed → `401 Sign-in with google failed` with the reason in the log; Google or Redis unavailable → `503`. The logs never carry the email or Google's tokens.
+
+To use real Google: in Google Cloud Console create an OAuth client of type *Web application* with the redirect URI `http://localhost:3000/auth/google/callback`, add your account as a test user while the app is in *Testing*, put the client id in `.env` and the secret in the vault, then open `http://localhost:3000/auth/google`. The e2e tests run against `test/support/fake-oidc-provider.ts`, a minimal provider (discovery, JWKS, authorize, token with the PKCE check) that can also deny consent or sign a wrong `nonce`, `aud` or an unverified email.
+
+**Adding another OpenID Connect provider** (Microsoft, GitLab, Auth0, Keycloak, …) is configuration: discovery, PKCE, `state`/`nonce`, the `id_token` checks, the routes and the tests are shared (`OidcClientService`, `OidcController`, one discovery per provider):
+
+1. a value in `IdentityProviderEnum` and a migration `ALTER TYPE "public"."IdentityProviderEnum" ADD VALUE '<provider>'` (the column stays a Postgres enum, so the database refuses an unknown provider);
+2. an entry in `OIDC_PROVIDERS` (`src/identity/constant/oidc-provider.constant.ts`): which variables hold its issuer and client id, which secret its client secret, and its scope;
+3. `<PROVIDER>_ISSUER` and `<PROVIDER>_CLIENT_ID` in `environment.schema.ts` and `.env.example`, `<PROVIDER>_CLIENT_SECRET` in `SecretsInterface`, `SECRET_NAMES` and the vault;
+4. at the provider, the redirect URI `<OIDC_REDIRECT_BASE_URL>/auth/<provider>/callback`.
+
+Apple is not plain OIDC: its client secret is a JWT signed with your key and it posts the callback (`response_mode=form_post`), so it needs those two additions on top.
 
 - **Seeded logins**: `seller1@example.com`, `buyer1@example.com`, … with the password `marketplace-dev`.
-- **Not done yet**: refresh token in an `HttpOnly` cookie, an absolute session limit counted from login, a grace window for a client that refreshes twice in parallel, email/phone verification, the JWKS endpoint, cleanup of expired sessions, and a token instead of `?userId=` on the SSE stream.
+- **Not done yet**: refresh token in an `HttpOnly` cookie, an absolute session limit counted from login, a grace window for a client that refreshes twice in parallel, email/phone verification, unlinking Google and notifying the owner when it is linked, cleanup of expired sessions, and a token instead of `?userId=` on the SSE stream.
 
 ## Realtime order status (SSE)
 
@@ -311,7 +335,7 @@ The stream is fed from Kafka, not from the code that changes the status. Order w
 
 ## Secrets
 
-Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`, `REFRESH_TOKEN_PEPPER` (see `SecretsInterface`). The Redis URLs carry the password (`redis://default:<password>@host:port`), so they are secrets rather than settings; `npm run bootstrap:secrets` writes that password to `secrets/redis_password.txt` for compose, taking it from the URLs so it lives in one place. Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.
+Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET` (see `SecretsInterface`). The Redis URLs carry the password (`redis://default:<password>@host:port`), so they are secrets rather than settings; `npm run bootstrap:secrets` writes that password to `secrets/redis_password.txt` for compose, taking it from the URLs so it lives in one place. Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.
 
 `npm run rotate:db-password` rotates the database password: it changes it in Postgres, writes `secrets/db_password.txt`, syncs Infisical and terminates the old sessions. With `SKIP_VAULT=1`, re-export `DBPASSWORD` afterwards.
 
@@ -328,56 +352,12 @@ Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <com
 npm test                  # unit tests
 npm run test:integration  # repositories, cache, rate limit and queue against real services (testcontainers)
 npm run test:e2e          # the full app over HTTP (testcontainers)
+npm run test:all          # all three at once, output prefixed per suite, fails if any suite fails
 ```
 
-Integration and e2e tests start their containers once per run (Postgres, RabbitMQ, Kafka, Temporal and two Redis instances with the same eviction settings as compose, so nothing depends on a running dev stack) and reset state after every test (`test/support/isolation.ts`: truncate all tables and `FLUSHALL` both Redis instances, since restarted identities would otherwise hit cache entries of the previous test), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with.
+Integration and e2e tests start their containers once per run (Postgres, RabbitMQ, Kafka, Temporal and two Redis instances with the same eviction settings as compose, so nothing depends on a running dev stack) and reset state after every test (`test/support/isolation.ts`: `DELETE` from every table with foreign-key checks off for that one transaction (`SET LOCAL session_replication_role = replica`) plus one `setval` that restarts every sequence at 1, about 7 ms where a `TRUNCATE` per table took about 175 ms; then `FLUSHALL` both Redis instances, since restarted identities would otherwise hit cache entries of the previous test), because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with. The tests poll the outboxes every 100 ms (`OUTBOX_RELAY_INTERVAL_MS`) instead of every second.
 
-## Grading
-
-The demos need the whole stack (Postgres, RabbitMQ, Kafka, Temporal, both Redis instances). The values are the dev credentials from `docker-compose.yml` and `secrets/*.example`; the grader has no vault, hence `SKIP_VAULT=1`. The signing pair is generated on the spot (ES256, PEM in base64 so the multi-line key survives `export`); the real keys stay in the vault.
-
-```bash
-cp .env.example .env
-cp secrets/db_password.txt.example secrets/db_password.txt
-cp secrets/rabbitmq_password.txt.example secrets/rabbitmq_password.txt
-cp secrets/redis_password.txt.example secrets/redis_password.txt
-docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue
-
-export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
-export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
-export KAFKA_BROKERS=127.0.0.1:9092
-export TEMPORAL_ADDRESS=127.0.0.1:7233
-export REDIS_CACHE_URL=redis://default:changeme@127.0.0.1:6380
-export REDIS_QUEUE_URL=redis://default:changeme@127.0.0.1:6381
-export SKIP_VAULT=1
-
-# one-off ES256 pair for this run; the PEM goes in base64
-node -e 'const {generateKeyPairSync}=require("node:crypto");
-const k=generateKeyPairSync("ec",{namedCurve:"P-256",
-  privateKeyEncoding:{type:"pkcs8",format:"pem"},
-  publicKeyEncoding:{type:"spki",format:"pem"}});
-const fs=require("node:fs");
-fs.writeFileSync("/tmp/priv.b64",Buffer.from(k.privateKey).toString("base64"));
-fs.writeFileSync("/tmp/pub.b64",Buffer.from(k.publicKey).toString("base64"));'
-export JWT_PRIVATE_KEY="$(cat /tmp/priv.b64)"
-export JWT_PUBLIC_KEY="$(cat /tmp/pub.b64)"
-export REFRESH_TOKEN_PEPPER=grader-pepper
-
-npm ci
-npm run build
-npm run migrate
-npm run seed
-
-npm run demo:auth
-npm run demo:reuse
-npm run demo:rbac
-```
-
-- `--wait` matters: without it the scripts start before Postgres accepts connections.
-- Name the services: the compose file also has the Infisical stack, which needs credentials of its own.
-- `npm run build` is required: the demos, `migrate` and `seed` run the compiled `dist/`. `seed` provides the seller `demo:rbac` logs in as, the offers, categories and brands.
-- No `kid` variable is needed: the `kid` is the thumbprint of the public key, computed by the app.
-- Free the app port (`3000`) before checking that a bare `npm run start` without the keys fails: it exits `1` and names the missing variables before it binds the port or touches the database.
+`test:all` runs the suites side by side because integration and e2e start their own containers. Inside a suite the files run in `TEST_WORKERS` workers (default `4`; `TEST_WORKERS=1` runs them one by one on a machine with little memory). Every e2e file boots the whole app, and every test wipes the database and Redis, so workers can't share infrastructure: the global setup starts one container set per worker in parallel (e2e: Postgres, RabbitMQ, Kafka, Temporal, two Redis; integration: Postgres and two Redis) and each worker connects to its own set by `VITEST_POOL_ID`. Four e2e sets take about 4 GB of memory.
 
 ## Configuration
 
@@ -395,8 +375,12 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `KAFKA_BROKERS` | no | `kafka:29092` | comma-separated Kafka bootstrap servers (`localhost:9092` when the app runs outside Docker) |
 | `KAFKA_CONSUMERS_ENABLED` | no | `true` | `false` starts the app without Kafka consumers |
 | `ACCESS_DENYLIST_FAIL_OPEN` | no | `true` | when the access-token denylist (Redis) is unavailable: `true` accepts tokens on their signature, `false` answers `503` |
+| `OUTBOX_RELAY_INTERVAL_MS` | no | `1000` | how often each outbox relay (identity, user, order events, order workflow starts) polls for unpublished rows; the tests use `100` |
 | `TEMPORAL_ADDRESS` | no | `temporal:7233` | Temporal frontend (`localhost:7233` when the app runs outside Docker) |
 | `TEMPORAL_NAMESPACE` | no | `default` | Temporal namespace of the order workflows |
+| `GOOGLE_CLIENT_ID` | yes | — | Google OAuth client id |
+| `GOOGLE_ISSUER` | no | `https://accounts.google.com` | OpenID provider for Sign in with Google (its discovery document is `<issuer>/.well-known/openid-configuration`) |
+| `OIDC_REDIRECT_BASE_URL` | no | `http://localhost:3000` | base of the callbacks: `<base>/auth/<provider>/callback` must match the redirect URI registered at the provider exactly |
 | `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
 
-Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`, `REFRESH_TOKEN_PEPPER`) come from Infisical, or from the environment with `SKIP_VAULT=1`.
+Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`) come from Infisical, or from the environment with `SKIP_VAULT=1`.

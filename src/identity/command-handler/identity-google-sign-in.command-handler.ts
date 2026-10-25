@@ -57,7 +57,9 @@ export class IdentityGoogleSignInCommandHandler {
         : await this.signIn(google, google.email);
     } catch (error) {
       if (error instanceof QueryFailedError && (error.driverError as { code?: string }).code === UNIQUE_VIOLATION) {
-        throw new ConflictException('An identity with this email already exists');
+        throw new ConflictException(
+          attempt.linkIdentityPublicId ? 'This identity already has a linked Google account' : 'An identity with this email already exists',
+        );
       }
 
       throw error;

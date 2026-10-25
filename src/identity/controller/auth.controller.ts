@@ -16,10 +16,13 @@ import { Identity } from '../../generic/auth/decorator/identity.decorator.js';
 import type { AccessTokenClaimsInterface } from '../../generic/auth/interface/access-token-claims.interface.js';
 import { IdentityMeDto } from '../dto/identity-me.dto.js';
 import { IdentityGoogleLinkDto } from '../dto/identity-google-link.dto.js';
+import { IdentityGoogleLinkInput } from '../input/identity-google-link.input.js';
+import { IdentityGoogleLinkCommandHandler } from '../command-handler/identity-google-link.command-handler.js';
 import type { GoogleSignInStartInterface } from '../interface/google-sign-in-start.interface.js';
 import { IdentityGoogleAuthorizeCommandHandler } from '../command-handler/identity-google-authorize.command-handler.js';
 import { IdentityGoogleSignInCommandHandler } from '../command-handler/identity-google-sign-in.command-handler.js';
 import { GOOGLE_SIGN_IN_TTL_SECONDS } from '../constant/google-sign-in.constant.js';
+import { identityGoogleLinkTracker } from '../tracker/identity-google-link.tracker.js';
 import { GoogleSignInCookieEnum } from '../enum/google-sign-in-cookie.enum.js';
 
 @Controller('auth')
@@ -31,6 +34,7 @@ export class AuthController {
     private readonly logout: IdentityLogoutCommandHandler,
     private readonly googleAuthorize: IdentityGoogleAuthorizeCommandHandler,
     private readonly googleSignIn: IdentityGoogleSignInCommandHandler,
+    private readonly googleLink: IdentityGoogleLinkCommandHandler,
   ) {}
 
   @Public()
@@ -74,12 +78,15 @@ export class AuthController {
 
   @ResponseDto(IdentityGoogleLinkDto)
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: IDENTITY_LOGIN_THROTTLE_LIMIT, ttl: IDENTITY_LOGIN_THROTTLE_TTL_MS, getTracker: identityGoogleLinkTracker } })
   @Post('google/link')
   async linkGoogle(
     @Identity('identityPublicId') identityPublicId: string,
+    @Body() input: IdentityGoogleLinkInput,
     @Res({ passthrough: true }) response: Response,
   ): Promise<IdentityGoogleLinkDto> {
-    return { url: this.toGoogleRedirect(response, await this.googleAuthorize.execute(identityPublicId)) };
+    return { url: this.toGoogleRedirect(response, await this.googleLink.execute(identityPublicId, input)) };
   }
 
   @Public()

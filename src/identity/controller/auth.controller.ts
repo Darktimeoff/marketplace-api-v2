@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Redirect, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ResponseDto } from '../../generic/validation/response-dto.decorator.js';
 import { IdentityTokenDto } from '../dto/identity-token.dto.js';
@@ -14,6 +14,7 @@ import { Public } from '../../generic/auth/decorator/public.decorator.js';
 import { Identity } from '../../generic/auth/decorator/identity.decorator.js';
 import type { AccessTokenClaimsInterface } from '../../generic/auth/interface/access-token-claims.interface.js';
 import { IdentityMeDto } from '../dto/identity-me.dto.js';
+import { IdentityGoogleAuthorizeCommandHandler } from '../command-handler/identity-google-authorize.command-handler.js';
 
 @Controller('auth')
 export class AuthController {
@@ -22,6 +23,7 @@ export class AuthController {
     private readonly login: IdentityLoginCommandHandler,
     private readonly refresh: IdentityRefreshCommandHandler,
     private readonly logout: IdentityLogoutCommandHandler,
+    private readonly googleAuthorize: IdentityGoogleAuthorizeCommandHandler,
   ) {}
 
   @Public()
@@ -54,6 +56,13 @@ export class AuthController {
   @Post('logout')
   logoutIdentity(@Body() input: IdentityRefreshTokenInput): Promise<void> {
     return this.logout.execute(input);
+  }
+
+  @Public()
+  @Redirect()
+  @Get('google')
+  async signInWithGoogle(): Promise<{ url: string }> {
+    return { url: (await this.googleAuthorize.execute()).href };
   }
 
   @ResponseDto(IdentityMeDto)

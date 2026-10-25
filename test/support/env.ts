@@ -31,6 +31,8 @@ const signingKeys = generateKeyPairSync('ec', {
 process.env.JWT_PRIVATE_KEY = signingKeys.privateKey;
 process.env.JWT_PUBLIC_KEY = signingKeys.publicKey;
 process.env.REFRESH_TOKEN_PEPPER = 'test-refresh-token-pepper';
+process.env.GOOGLE_CLIENT_ID = 'test-google-client';
+process.env.GOOGLE_CLIENT_SECRET = 'test-google-secret';
 
 if (connection.kafkaBrokers) {
   process.env.KAFKA_BROKERS = connection.kafkaBrokers;

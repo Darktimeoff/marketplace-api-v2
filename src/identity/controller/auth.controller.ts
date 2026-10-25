@@ -15,6 +15,8 @@ import { Public } from '../../generic/auth/decorator/public.decorator.js';
 import { Identity } from '../../generic/auth/decorator/identity.decorator.js';
 import type { AccessTokenClaimsInterface } from '../../generic/auth/interface/access-token-claims.interface.js';
 import { IdentityMeDto } from '../dto/identity-me.dto.js';
+import { IdentityGoogleLinkDto } from '../dto/identity-google-link.dto.js';
+import type { GoogleSignInStartInterface } from '../interface/google-sign-in-start.interface.js';
 import { IdentityGoogleAuthorizeCommandHandler } from '../command-handler/identity-google-authorize.command-handler.js';
 import { IdentityGoogleSignInCommandHandler } from '../command-handler/identity-google-sign-in.command-handler.js';
 import { GOOGLE_SIGN_IN_TTL_SECONDS } from '../constant/google-sign-in.constant.js';
@@ -67,17 +69,17 @@ export class AuthController {
   @Redirect()
   @Get('google')
   async signInWithGoogle(@Res({ passthrough: true }) response: Response): Promise<{ url: string }> {
-    const start = await this.googleAuthorize.execute();
+    return { url: this.toGoogleRedirect(response, await this.googleAuthorize.execute(null)) };
+  }
 
-    response.cookie(GoogleSignInCookieEnum.NAME, start.state, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: start.secureCookie,
-      path: GoogleSignInCookieEnum.PATH,
-      maxAge: GOOGLE_SIGN_IN_TTL_SECONDS * 1000,
-    });
-
-    return { url: start.url.href };
+  @ResponseDto(IdentityGoogleLinkDto)
+  @HttpCode(HttpStatus.OK)
+  @Post('google/link')
+  async linkGoogle(
+    @Identity('identityPublicId') identityPublicId: string,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<IdentityGoogleLinkDto> {
+    return { url: this.toGoogleRedirect(response, await this.googleAuthorize.execute(identityPublicId)) };
   }
 
   @Public()
@@ -97,5 +99,17 @@ export class AuthController {
   @Get('me')
   me(@Identity() identity: AccessTokenClaimsInterface): IdentityMeDto {
     return identity;
+  }
+
+  private toGoogleRedirect(response: Response, start: GoogleSignInStartInterface): string {
+    response.cookie(GoogleSignInCookieEnum.NAME, start.state, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: start.secureCookie,
+      path: GoogleSignInCookieEnum.PATH,
+      maxAge: GOOGLE_SIGN_IN_TTL_SECONDS * 1000,
+    });
+
+    return start.url.href;
   }
 }

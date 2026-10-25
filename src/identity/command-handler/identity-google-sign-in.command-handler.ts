@@ -52,7 +52,9 @@ export class IdentityGoogleSignInCommandHandler {
     }
 
     try {
-      return await this.signIn(google, google.email);
+      return attempt.linkIdentityPublicId
+        ? await this.link(google, attempt.linkIdentityPublicId)
+        : await this.signIn(google, google.email);
     } catch (error) {
       if (error instanceof QueryFailedError && (error.driverError as { code?: string }).code === UNIQUE_VIOLATION) {
         throw new ConflictException('An identity with this email already exists');
@@ -98,6 +100,29 @@ export class IdentityGoogleSignInCommandHandler {
     await this.outbox.create(this.messages.toIdentityRegisteredOutbox(identity));
     this.logger.log(`google sign-up identity=${identity.publicId} sub=${google.subject}`);
 
+    return this.tokens.createTokenPair(identity);
+  }
+
+  @Transactional()
+  private async link(google: GoogleIdentityInterface, identityPublicId: string): Promise<IdentityTokenResponseInterface> {
+    const identity = await this.identities.findByPublicId(identityPublicId);
+
+    if (!identity) {
+      throw new UnauthorizedException('Google sign-in failed');
+    }
+
+    const account = await this.externalAccounts.findByProviderSubject(IdentityProviderEnum.google, google.subject);
+
+    if (account && account.identityId !== identity.id) {
+      this.logger.warn(`google link refused: sub=${google.subject} belongs to another identity, requested by identity=${identity.publicId}`);
+      throw new ConflictException('This Google account is linked to another identity');
+    }
+
+    if (!account) {
+      await this.externalAccounts.create({ identityId: identity.id, provider: IdentityProviderEnum.google, subject: google.subject });
+    }
+
+    this.logger.log(`google linked identity=${identity.publicId} sub=${google.subject}`);
     return this.tokens.createTokenPair(identity);
   }
 }

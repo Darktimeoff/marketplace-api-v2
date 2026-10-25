@@ -14,16 +14,17 @@ export class IdentityGoogleAuthorizeCommandHandler {
     private readonly attempts: GoogleSignInAttemptService,
   ) {}
 
-  async execute(): Promise<GoogleSignInStartInterface> {
+  async execute(linkIdentityPublicId: string | null): Promise<GoogleSignInStartInterface> {
     const attempt: GoogleSignInAttemptInterface = {
       state: oidc.randomState(),
       nonce: oidc.randomNonce(),
       codeVerifier: oidc.randomPKCECodeVerifier(),
+      linkIdentityPublicId,
     };
     const url = await this.google.buildAuthorizationUrl(attempt);
 
     await this.attempts.save(attempt);
-    this.logger.log(`google sign-in started state=${attempt.state.slice(0, 8)}…`);
+    this.logger.log(`google ${linkIdentityPublicId ? `link for identity=${linkIdentityPublicId}` : 'sign-in'} started state=${attempt.state.slice(0, 8)}…`);
 
     return { url, state: attempt.state, secureCookie: this.google.isCallbackSecure() };
   }

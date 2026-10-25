@@ -11,3 +11,4 @@ export * from './identity/response/identity-token.response.js';
 export * from './product/request/product-create.request.js';
 export * from './product/response/product.response.js';
 export * from './identity/response/identity-me.response.js';
+export * from './identity/response/identity-google-link.response.js';

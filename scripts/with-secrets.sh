@@ -13,7 +13,7 @@ ENV_SLUG="${1:-dev}"; shift || true
 if [ "${SKIP_VAULT:-0}" = "1" ]; then exec "$@"; fi
 
 if [ -f "$ROOT/.env" ]; then
-  while IFS='=' read -r key value; do
+  while IFS='=' read -r key value || [ -n "$key" ]; do
     case "$key" in ''|\#*) continue ;; esac
     [ -n "${!key-}" ] || export "$key=$value"
   done < "$ROOT/.env"

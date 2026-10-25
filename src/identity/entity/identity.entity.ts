@@ -24,8 +24,8 @@ export class Identity {
   @Column(() => LoginPhone, { prefix: false })
   loginPhone: LoginPhone;
 
-  @Column({ type: 'varchar', length: 255 })
-  passwordHash: string;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  passwordHash: string | null;
 
   @Column({ type: 'enum', enum: RoleEnum, enumName: 'RoleEnum', default: RoleEnum.user })
   role: RoleEnum;

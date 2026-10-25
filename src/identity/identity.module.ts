@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Identity } from './entity/identity.entity.js';
 import { IdentitySession } from './entity/identity-session.entity.js';
 import { IdentityOutbox } from './entity/identity-outbox.entity.js';
+import { IdentityExternalAccount } from './entity/identity-external-account.entity.js';
 import { IdentityOutboxRepository } from './repository/identity-outbox.repository.js';
 import { IdentityOutboxRelayService } from './service/identity-outbox-relay.service.js';
 import { IdentityMessageService } from './service/identity-message.service.js';
@@ -22,7 +23,7 @@ import { IdentityRefreshCommandHandler } from './command-handler/identity-refres
 import { IdentityLogoutCommandHandler } from './command-handler/identity-logout.command-handler.js';
 
 @Module({
-  imports: [QueueModule, TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox]), SecretManagerModule, KafkaModule, AuthModule, RateLimitModule],
+  imports: [QueueModule, TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox, IdentityExternalAccount]), SecretManagerModule, KafkaModule, AuthModule, RateLimitModule],
   controllers: [AuthController],
   providers: [
     IdentityRepository,

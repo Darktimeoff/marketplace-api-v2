@@ -1,5 +1,5 @@
-import { Body, Controller, Cookies, Get, HttpCode, HttpStatus, Post, Redirect, Req, Res, UseGuards } from '@nestjs/common';
-import type { Request, Response } from 'express';
+import { Body, Controller, Cookies, Get, HttpCode, HttpStatus, Post, Query, Redirect, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ResponseDto } from '../../generic/validation/response-dto.decorator.js';
 import { IdentityTokenDto } from '../dto/identity-token.dto.js';
@@ -94,13 +94,13 @@ export class AuthController {
   @ResponseDto(IdentityTokenDto)
   @Get('google/callback')
   googleCallback(
-    @Req() request: Request,
+    @Query() query: Record<string, string>,
     @Cookies(GoogleSignInCookieEnum.NAME) browserState: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<IdentityTokenDto> {
     response.clearCookie(GoogleSignInCookieEnum.NAME, { path: GoogleSignInCookieEnum.PATH });
 
-    return this.googleSignIn.execute(new URL(request.originalUrl, 'http://callback').searchParams, browserState);
+    return this.googleSignIn.execute(new URLSearchParams(query), browserState);
   }
 
   @ResponseDto(IdentityMeDto)

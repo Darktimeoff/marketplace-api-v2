@@ -5,7 +5,7 @@ export const CHECK_ABILITY_METADATA = 'auth:ability';
 
 export interface AbilityRequirementInterface {
   action: AppActionType;
-  subject: 'Order' | 'Product';
+  subject: 'Order' | 'Product' | 'Media';
 }
 
 export function CheckAbility(action: AppActionType, subject: AbilityRequirementInterface['subject']): CustomDecorator<string> {

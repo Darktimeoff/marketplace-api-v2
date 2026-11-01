@@ -10,6 +10,7 @@ export class AbilityFactory {
     const { can, build } = new AbilityBuilder<AppAbilityType>(createMongoAbility);
 
     can('create', 'Order');
+    can('create', 'Media');
 
     if (identity.role === RoleEnum.admin || identity.role === RoleEnum.owner) {
       can('read', 'Order');

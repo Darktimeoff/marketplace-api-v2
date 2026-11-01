@@ -14,3 +14,8 @@ export * from './product/response/product.response.js';
 export * from './identity/response/identity-me.response.js';
 export * from './identity/response/identity-oidc-link.response.js';
 export * from './identity/response/identity-jwks.response.js';
+export * from './media/enum/media-kind.enum.js';
+export * from './media/enum/media-status.enum.js';
+export * from './media/request/media-upload.request.js';
+export * from './media/response/media.response.js';
+export * from './media/response/media-upload.response.js';

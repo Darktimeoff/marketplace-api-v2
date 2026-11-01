@@ -327,10 +327,10 @@ async function seed(): Promise<void> {
     for (const [position, offer] of items.entries()) {
       await ensure(
         orderLines,
-        { orderId: order.id, offerId: offer.id } as FindOptionsWhere<OrderLine>,
+        { orderId: order.id, offerPublicId: offer.publicId } as FindOptionsWhere<OrderLine>,
         {
           orderId: order.id,
-          offerId: offer.id,
+          offerPublicId: offer.publicId,
           quantity: position + 1,
           unitPrice: offer.price,
           unitDiscountPrice: offer.discountPrice,

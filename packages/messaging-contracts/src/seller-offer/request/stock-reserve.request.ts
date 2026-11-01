@@ -10,7 +10,7 @@ export namespace StockReserveRequest {
   export const RESPONSE_SOURCE = SourceEnum.SELLER_OFFER;
 
   export interface ItemInterface {
-    offerId: number;
+    offerPublicId: string;
     quantity: number;
   }
 

@@ -63,17 +63,13 @@ export class OrderPlaceCommandHandler {
       }
     }
 
-    const orderProductIds = input.items
-      .map((item) => item.offerId)
-      .toSorted();
-
-    const offers = await this.offers.findByIds(orderProductIds);
+    const offers = await this.offers.findByPublicIds(input.items.map((item) => item.offerPublicId));
 
     const recipient = await this.createRecipient(input.recipient);
 
-    const offersById = new Map(offers.map((offer) => [offer.id, offer]));
+    const offersByPublicId = new Map(offers.map((offer) => [offer.publicId, offer]));
     const pricedItems = input.items.map((item) =>
-      this.toPriceItemOrFail(item, offersById),
+      this.toPriceItemOrFail(item, offersByPublicId),
     );
 
     const order = await this.createOrder(
@@ -138,12 +134,12 @@ export class OrderPlaceCommandHandler {
 
   private toPriceItemOrFail(
     item: OrderCreateItemInput,
-    offersById: Map<number, SellerOffer>,
+    offersByPublicId: Map<string, SellerOffer>,
   ): PricedOrderLine {
-    const offer = offersById.get(item.offerId);
+    const offer = offersByPublicId.get(item.offerPublicId);
     if (!offer) {
       throw new NotFoundException(
-        `Product with this id ${item.offerId} not existed, please try again`,
+        `Product with this id ${item.offerPublicId} not existed, please try again`,
       );
     }
 
@@ -153,7 +149,7 @@ export class OrderPlaceCommandHandler {
 
     return {
       item: {
-        offerId: item.offerId,
+        offerPublicId: item.offerPublicId,
         quantity: item.quantity,
         unitPrice: offer.price,
         unitDiscountPrice: offer.discountPrice,

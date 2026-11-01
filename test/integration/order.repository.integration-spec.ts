@@ -93,7 +93,7 @@ describe('OrderRepository', () => {
     await orderLines.create([
       {
         orderId: order.id,
-        offerId: offer.id,
+        offerPublicId: offer.publicId,
         quantity: 2,
         unitPrice: '50.00',
         unitDiscountPrice: null,
@@ -104,7 +104,7 @@ describe('OrderRepository', () => {
 
     expect(found.orderRecipient.id).toBe(recipient.id);
     expect(found.lines).toHaveLength(1);
-    expect(found.lines[0].offerId).toBe(offer.id);
+    expect(found.lines[0].offerPublicId).toBe(offer.publicId);
   });
 
   it('findByIdOrFail rejects for a missing id', async () => {

@@ -82,7 +82,7 @@ export class SellerOfferGateway {
   private isValidItems(items: StockReserveRequest.ItemInterface[] | undefined): items is StockReserveRequest.ItemInterface[] {
     return Array.isArray(items)
       && items.length > 0
-      && items.every((item) => Number.isSafeInteger(item?.offerId) && item.offerId > 0 && Number.isSafeInteger(item?.quantity) && item.quantity > 0)
+      && items.every((item) => isUUID(item?.offerPublicId) && Number.isSafeInteger(item?.quantity) && item.quantity > 0)
   }
 
   private toResponse(

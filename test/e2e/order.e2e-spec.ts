@@ -71,7 +71,7 @@ describe('Order (e2e)', () => {
           phone: { countryCode: CountryCodeEnum.UA, rawNumber: '+380501234567', fullNumber: '+380501234567', nationalNumber: '0501234567' },
           address: { addressLine: 'Khreshchatyk St, 1', city: 'Kyiv' },
         },
-        items: [{ offerId: offer.id, quantity: 1 }],
+        items: [{ offerPublicId: offer.publicId, quantity: 1 }],
         currency: CurrencyEnum.UAH,
       })
       .expect(202);
@@ -103,7 +103,7 @@ describe('Order (e2e)', () => {
             city: 'Kyiv',
           },
         },
-        items: [{ offerId: offer.id, quantity: 2 }],
+        items: [{ offerPublicId: offer.publicId, quantity: 2 }],
         currency: CurrencyEnum.UAH,
       })
       .expect(202);

@@ -49,7 +49,7 @@ describe('Order create (e2e)', () => {
     await dataSource.query(`INSERT INTO "Account" ("publicId", "balance") VALUES ($1, $2)`, [publicId, balance]);
   }
 
-  function aBody(items: { offerId: number; quantity: number }[]) {
+  function aBody(items: { offerPublicId: string; quantity: number }[]) {
     return {
       recipient: {
         fullName: 'Jane Doe',
@@ -144,7 +144,7 @@ describe('Order create (e2e)', () => {
     await fund(buyer.identityPublicId, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', discountPrice: '80.00', onHandQuantity: 5 });
 
-    const response = await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 2 }])).expect(202);
+    const response = await placeOrder(buyer, aBody([{ offerPublicId: offer.publicId, quantity: 2 }])).expect(202);
 
     expect(response.body).toMatchObject({
       status: OrderStatusEnum.pending_payment,
@@ -166,7 +166,7 @@ describe('Order create (e2e)', () => {
       address: { addressLine: 'Khreshchatyk St, 1', city: 'Kyiv', building: '1A' },
     });
     expect(order.lines).toEqual([
-      expect.objectContaining({ offerId: offer.id, quantity: 2, unitPrice: '100.00', unitDiscountPrice: '80.00' }),
+      expect.objectContaining({ offerPublicId: offer.publicId, quantity: 2, unitPrice: '100.00', unitDiscountPrice: '80.00' }),
     ]);
 
     expect(await offerById(offer.id)).toMatchObject({ onHandQuantity: 5, reservedQuantity: 2 });
@@ -206,7 +206,7 @@ describe('Order create (e2e)', () => {
         totalAmount: '160.00',
         discountAmount: '40.00',
         currency: CurrencyEnum.UAH,
-        lines: [{ offerId: offer.id, quantity: 2, unitPrice: '100.00', unitDiscountPrice: '80.00' }],
+        lines: [{ offerPublicId: offer.publicId, quantity: 2, unitPrice: '100.00', unitDiscountPrice: '80.00' }],
         paidAt: expect.any(String),
       },
     });
@@ -220,7 +220,7 @@ describe('Order create (e2e)', () => {
     await fund(buyer.identityPublicId, '1000.00');
     const first = await aSellerOffer(dataSource.manager, { price: '50.00', onHandQuantity: 5 });
     const second = await aSellerOffer(dataSource.manager, { price: '30.00', discountPrice: '20.00', onHandQuantity: 5 });
-    const body = aBody([{ offerId: second.id, quantity: 3 }, { offerId: first.id, quantity: 1 }]);
+    const body = aBody([{ offerPublicId: second.publicId, quantity: 3 }, { offerPublicId: first.publicId, quantity: 1 }]);
     delete (body.recipient.address as { building?: string }).building;
 
     const response = await placeOrder(buyer, body).expect(202);
@@ -238,7 +238,7 @@ describe('Order create (e2e)', () => {
     await fund(buyer.identityPublicId, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 1 });
 
-    await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 2 }])).expect(202);
+    await placeOrder(buyer, aBody([{ offerPublicId: offer.publicId, quantity: 2 }])).expect(202);
 
     expect((await settledOrder()).status).toBe(OrderStatusEnum.canceled);
     expect(await offerById(offer.id)).toMatchObject({ onHandQuantity: 1, reservedQuantity: 0 });
@@ -257,7 +257,7 @@ describe('Order create (e2e)', () => {
     await fund(buyer.identityPublicId, '50.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-    await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(202);
+    await placeOrder(buyer, aBody([{ offerPublicId: offer.publicId, quantity: 1 }])).expect(202);
 
     const order = await settledOrder();
     expect(order.status).toBe(OrderStatusEnum.failed_payment);
@@ -288,7 +288,7 @@ describe('Order create (e2e)', () => {
     await fund(buyer.identityPublicId, '50.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-    await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(202);
+    await placeOrder(buyer, aBody([{ offerPublicId: offer.publicId, quantity: 1 }])).expect(202);
 
     expect((await settledOrder()).status).toBe(OrderStatusEnum.failed_payment);
     expect(refused).toBe(1);
@@ -299,7 +299,7 @@ describe('Order create (e2e)', () => {
     const buyer = await newBuyer();
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-    await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(202);
+    await placeOrder(buyer, aBody([{ offerPublicId: offer.publicId, quantity: 1 }])).expect(202);
 
     expect((await settledOrder()).status).toBe(OrderStatusEnum.failed_payment);
     expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
@@ -319,7 +319,7 @@ describe('Order create (e2e)', () => {
     await fund(buyer.identityPublicId, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-    await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(202);
+    await placeOrder(buyer, aBody([{ offerPublicId: offer.publicId, quantity: 1 }])).expect(202);
 
     const order = await settledOrder();
     expect(order.status).toBe(OrderStatusEnum.canceled);
@@ -340,7 +340,7 @@ describe('Order create (e2e)', () => {
     const buyer = await newBuyer();
     await fund(buyer.identityPublicId, '1000.00');
 
-    await placeOrder(buyer, aBody([{ offerId: 999999, quantity: 1 }])).expect(404);
+    await placeOrder(buyer, aBody([{ offerPublicId: randomUUID(), quantity: 1 }])).expect(404);
 
     expect(await dataSource.getRepository(Order).count()).toBe(0);
     expect(await dataSource.getRepository(OrderRecipient).count()).toBe(0);
@@ -355,8 +355,8 @@ describe('Order create (e2e)', () => {
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 1 });
 
     const responses = await Promise.all([
-      placeOrder(first, aBody([{ offerId: offer.id, quantity: 1 }])),
-      placeOrder(second, aBody([{ offerId: offer.id, quantity: 1 }])),
+      placeOrder(first, aBody([{ offerPublicId: offer.publicId, quantity: 1 }])),
+      placeOrder(second, aBody([{ offerPublicId: offer.publicId, quantity: 1 }])),
     ]);
 
     expect(responses.map((response) => response.status)).toEqual([202, 202]);
@@ -371,7 +371,7 @@ describe('Order create (e2e)', () => {
       await fund(buyer.identityPublicId, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
       const key = randomUUID();
-      const body = aBody([{ offerId: offer.id, quantity: 1 }]);
+      const body = aBody([{ offerPublicId: offer.publicId, quantity: 1 }]);
 
       const responses = await Promise.all([placeOrder(buyer, body, key), placeOrder(buyer, body, key)]);
 
@@ -389,7 +389,7 @@ describe('Order create (e2e)', () => {
       await fund(buyer.identityPublicId, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
       const key = randomUUID();
-      const body = aBody([{ offerId: offer.id, quantity: 1 }]);
+      const body = aBody([{ offerPublicId: offer.publicId, quantity: 1 }]);
 
       const first = await placeOrder(buyer, body, key).expect(202);
       await settledOrders(1);
@@ -404,7 +404,7 @@ describe('Order create (e2e)', () => {
       const buyer = await newBuyer();
       await fund(buyer.identityPublicId, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
-      const body = aBody([{ offerId: offer.id, quantity: 1 }]);
+      const body = aBody([{ offerPublicId: offer.publicId, quantity: 1 }]);
 
       await placeOrder(buyer, body, randomUUID()).expect(202);
       await placeOrder(buyer, body, randomUUID()).expect(202);
@@ -422,8 +422,8 @@ describe('Order create (e2e)', () => {
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
       const key = randomUUID();
 
-      await placeOrder(first, aBody([{ offerId: offer.id, quantity: 1 }]), key).expect(202);
-      await placeOrder(second, aBody([{ offerId: offer.id, quantity: 1 }]), key).expect(202);
+      await placeOrder(first, aBody([{ offerPublicId: offer.publicId, quantity: 1 }]), key).expect(202);
+      await placeOrder(second, aBody([{ offerPublicId: offer.publicId, quantity: 1 }]), key).expect(202);
 
       expect((await settledOrders(2)).map(({ buyer }) => buyer.publicId).toSorted()).toEqual([first.identityPublicId, second.identityPublicId].toSorted());
     });
@@ -432,7 +432,7 @@ describe('Order create (e2e)', () => {
       const buyer = await newBuyer();
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-      await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }]), 'not-a-uuid').expect(400);
+      await placeOrder(buyer, aBody([{ offerPublicId: offer.publicId, quantity: 1 }]), 'not-a-uuid').expect(400);
 
       expect(await dataSource.getRepository(Order).count()).toBe(0);
     });
@@ -442,7 +442,7 @@ describe('Order create (e2e)', () => {
     it('answers 401 without a token', async () => {
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-      await request(app.getHttpServer()).post('/order').send(aBody([{ offerId: offer.id, quantity: 1 }])).expect(401);
+      await request(app.getHttpServer()).post('/order').send(aBody([{ offerPublicId: offer.publicId, quantity: 1 }])).expect(401);
 
       expect(await dataSource.getRepository(Order).count()).toBe(0);
     });
@@ -454,7 +454,7 @@ describe('Order create (e2e)', () => {
       await fund(victim.identityPublicId, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-      await placeOrder(buyer, { ...aBody([{ offerId: offer.id, quantity: 1 }]), userId: victim.id }).expect(202);
+      await placeOrder(buyer, { ...aBody([{ offerPublicId: offer.publicId, quantity: 1 }]), userId: victim.id }).expect(202);
 
       const order = await settledOrder();
       expect(order).toMatchObject({ buyer: { publicId: buyer.identityPublicId }, status: OrderStatusEnum.paid });
@@ -466,7 +466,7 @@ describe('Order create (e2e)', () => {
       await dataSource.getRepository(OrderBuyer).delete({ publicId: buyer.identityPublicId });
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
-      await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(409);
+      await placeOrder(buyer, aBody([{ offerPublicId: offer.publicId, quantity: 1 }])).expect(409);
 
       expect(await dataSource.getRepository(Order).count()).toBe(0);
     });
@@ -485,13 +485,13 @@ describe('Order create (e2e)', () => {
       ['missing city', (body) => ({ ...body, recipient: { ...body.recipient, address: { addressLine: 'Khreshchatyk St, 1' } } })],
       ['address line too long', (body) => ({ ...body, recipient: { ...body.recipient, address: { ...body.recipient.address, addressLine: 'x'.repeat(256) } } })],
       ['empty items', (body) => ({ ...body, items: [] })],
-      ['zero quantity', (body) => ({ ...body, items: [{ offerId: 1, quantity: 0 }] })],
+      ['zero quantity', (body) => ({ ...body, items: [{ offerPublicId: '00000000-0000-4000-8000-000000000001', quantity: 0 }] })],
       ['unknown currency', (body) => ({ ...body, currency: 'BTC' })],
       ['old recipient shape', (body) => ({ ...body, recipient: { ...body.recipient, buyerId: 1, address: undefined, deliveryAddress: body.recipient.address } })],
     ];
 
     it.each(cases)('%s', async (_, mutate) => {
-      await placeOrder(await newBuyer(), mutate(aBody([{ offerId: 1, quantity: 1 }])) as object).expect(400);
+      await placeOrder(await newBuyer(), mutate(aBody([{ offerPublicId: '00000000-0000-4000-8000-000000000001', quantity: 1 }])) as object).expect(400);
 
       expect(await dataSource.getRepository(Order).count()).toBe(0);
       expect(await dataSource.getRepository(OrderRecipient).count()).toBe(0);

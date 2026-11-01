@@ -4,6 +4,7 @@ import { OrderPlaceMessageService } from '../../src/order/service/order-place-me
 import type { Order } from '../../src/order/entity/order.entity.js';
 
 const buyerPublicId = '9c82efe4-36c4-4767-b525-42e95cdbc5a3';
+const offerPublicId = '1b8d0c7e-4f2a-4c5e-9d3b-7a6e5f4d3c2b';
 
 const order = {
   id: 7,
@@ -14,7 +15,7 @@ const order = {
   currency: CurrencyEnum.UAH,
   createdAt: new Date('2026-10-10T10:00:00.000Z'),
   updatedAt: new Date('2026-10-10T10:00:05.000Z'),
-  lines: [{ offerId: 3, quantity: 2, unitPrice: '100.00', unitDiscountPrice: '80.00' }],
+  lines: [{ offerPublicId, quantity: 2, unitPrice: '100.00', unitDiscountPrice: '80.00' }],
 } as unknown as Order;
 
 describe('OrderPlaceMessageService', () => {
@@ -34,7 +35,7 @@ describe('OrderPlaceMessageService', () => {
         totalAmount: '160.00',
         discountAmount: '40.00',
         currency: CurrencyEnum.UAH,
-        lines: [{ offerId: 3, quantity: 2, unitPrice: '100.00', unitDiscountPrice: '80.00' }],
+        lines: [{ offerPublicId, quantity: 2, unitPrice: '100.00', unitDiscountPrice: '80.00' }],
         paidAt: '2026-10-10T10:00:05.000Z',
       },
     });
@@ -46,7 +47,7 @@ describe('OrderPlaceMessageService', () => {
   });
 
   it('builds the workflow start as an outbox row keyed by the order publicId', () => {
-    expect(messages.toOrderPlaceWorkflowOutbox(order, order.buyer, [{ offerId: 3, quantity: 2 }])).toEqual({
+    expect(messages.toOrderPlaceWorkflowOutbox(order, order.buyer, [{ offerPublicId, quantity: 2 }])).toEqual({
       workflowId: `order-place-${order.publicId}`,
       workflowType: 'orderPlaceWorkflow',
       taskQueue: 'order-place',
@@ -55,18 +56,18 @@ describe('OrderPlaceMessageService', () => {
         orderPublicId: order.publicId,
         buyerPublicId,
         totalAmount: '160.00',
-        items: [{ offerId: 3, quantity: 2 }],
+        items: [{ offerPublicId, quantity: 2 }],
       },
     });
   });
 
   it('builds the reserve and charge requests as CloudEvents', () => {
-    expect(messages.toStockReserveRequest(order.publicId, [{ offerId: 3, quantity: 2 }])).toMatchObject({
+    expect(messages.toStockReserveRequest(order.publicId, [{ offerPublicId, quantity: 2 }])).toMatchObject({
       specversion: '1.0',
       id: order.publicId,
       type: 'seller-offer.stock.reserve',
       subject: order.publicId,
-      data: { items: [{ offerId: 3, quantity: 2 }] },
+      data: { items: [{ offerPublicId, quantity: 2 }] },
     });
     expect(messages.toAccountCustomerChargeRequest(order.publicId, buyerPublicId, '160.00')).toMatchObject({
       type: 'account.customer.charge',

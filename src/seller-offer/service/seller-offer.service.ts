@@ -6,7 +6,7 @@ import { SellerOffer } from '../entity/seller-offer.entity.js';
 export class SellerOfferService {
   constructor(private readonly sellerOfferRepository: SellerOfferRepository) {}
 
-  findByIds(ids: SellerOffer['id'][]): Promise<SellerOffer[]> {
-    return this.sellerOfferRepository.findByIds(ids);
+  findByPublicIds(publicIds: SellerOffer['publicId'][]): Promise<SellerOffer[]> {
+    return this.sellerOfferRepository.findByPublicIds(publicIds);
   }
 }

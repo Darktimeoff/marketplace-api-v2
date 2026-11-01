@@ -1,7 +1,7 @@
 import type { OrderFailureInterface } from '../interface/order-failure.interface.js';
 
 export interface OrderPlaceItemInterface {
-  offerId: number;
+  offerPublicId: string;
   quantity: number;
 }
 

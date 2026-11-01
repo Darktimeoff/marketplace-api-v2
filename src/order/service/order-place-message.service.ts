@@ -64,7 +64,7 @@ export class OrderPlaceMessageService {
         totalAmount: order.totalAmount,
         discountAmount: order.discountAmount,
         currency: order.currency,
-        lines: order.lines.map(({ offerId, quantity, unitPrice, unitDiscountPrice }) => ({ offerId, quantity, unitPrice, unitDiscountPrice })),
+        lines: order.lines.map(({ offerPublicId, quantity, unitPrice, unitDiscountPrice }) => ({ offerPublicId, quantity, unitPrice, unitDiscountPrice })),
         paidAt: order.updatedAt.toISOString(),
       } satisfies OrderPaidEvent.DataInterface,
     }
@@ -80,7 +80,7 @@ export class OrderPlaceMessageService {
         orderPublicId: order.publicId,
         buyerPublicId: buyer.publicId,
         totalAmount: order.totalAmount,
-        items: items.map(({ offerId, quantity }) => ({ offerId, quantity })),
+        items: items.map(({ offerPublicId, quantity }) => ({ offerPublicId, quantity })),
       } satisfies OrderPlaceWorkflowInputInterface,
     }
   }
@@ -129,7 +129,7 @@ export class OrderPlaceMessageService {
       datacontenttype: 'application/json',
       subject: id,
       correlationid: id,
-      data: { items: items.map(({ offerId, quantity }) => ({ offerId, quantity })) },
+      data: { items: items.map(({ offerPublicId, quantity }) => ({ offerPublicId, quantity })) },
     }
   }
 

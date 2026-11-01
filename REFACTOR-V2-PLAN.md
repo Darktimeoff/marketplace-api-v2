@@ -80,14 +80,15 @@ The integer `id` never leaves its context: not in HTTP, not in events, not in Ra
 
 ### 2.2 order line → offer, stock
 
-- [ ] **Migration:** `OrderLine`: PK `(orderId, offerId)` → `(orderId, offerPublicId)` (backfill from `SellerOffer.publicId`). `StockReservation` stays as is (`offerId` is an FK inside seller).
-- [ ] **Contracts:** `StockReserveRequest` / `StockReleaseRequest`: `offerId` → `offerPublicId`. `OrderCreateRequest.items[].offerId` → `offerPublicId`.
-- [ ] **Code:**
+- [x] **Migration:** `OrderLine`: PK `(orderId, offerId)` → `(orderId, offerPublicId)` (backfill from `SellerOffer.publicId`). `StockReservation` stays as is (`offerId` is an FK inside seller).
+- [x] **Contracts:** `StockReserveRequest` / `StockReleaseRequest`: `offerId` → `offerPublicId`. `OrderCreateRequest.items[].offerId` → `offerPublicId`.
+- [x] **Code:**
   - the seller-offer gateway and reserve / release handlers resolve `offerPublicId → SellerOffer.id` inside seller;
   - `order-create.input`, `order-place.command-handler` (price read through the seller-offer service, by `publicId`);
   - `order-place-message.service`, the workflow interface, the `order-line` entity.
-- [ ] **Temporal:** the same as in 1.3; the workflow input changes.
-- [ ] **Tests:** `order-create.e2e`, `order.e2e`, the stock e2e, `order-place-message.service.spec`.
+- [x] **Temporal:** the same as in 1.3; the workflow input changes.
+- [x] **Tests:** `order-create.e2e`, `order.e2e`, the stock e2e, `order-place-message.service.spec`.
+- [x] **Moved here from pass 3:** `order.paid.lines[].offerId` → `offerPublicId`, since `OrderLine` no longer has the int.
 
 ### 2.3 product → category / brand over HTTP
 

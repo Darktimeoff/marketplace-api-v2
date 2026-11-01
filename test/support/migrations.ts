@@ -41,6 +41,7 @@ import { AccountIdentifiers1793000000100 } from '../../src/migrations/1793000000
 import { OrderBuyerIdentifiers1793000000200 } from '../../src/migrations/1793000000200-OrderBuyerIdentifiers.js';
 import { PersonOwners1793000000300 } from '../../src/migrations/1793000000300-PersonOwners.js';
 import { OfferVariantPublicId1793000000400 } from '../../src/migrations/1793000000400-OfferVariantPublicId.js';
+import { OrderLineOfferPublicId1793000000500 } from '../../src/migrations/1793000000500-OrderLineOfferPublicId.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
@@ -113,6 +114,7 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   OrderBuyerIdentifiers1793000000200,
   PersonOwners1793000000300,
   OfferVariantPublicId1793000000400,
+  OrderLineOfferPublicId1793000000500,
 ];
 
 export const testEntities = [

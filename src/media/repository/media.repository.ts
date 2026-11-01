@@ -14,12 +14,12 @@ export class MediaRepository {
     return media.save(media.create(input));
   }
 
-  async lockIdempotencyKey(ownerIdentityPublicId: Media['ownerIdentityPublicId'], idempotencyKey: string): Promise<void> {
-    await this.txHost.tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`media:${ownerIdentityPublicId}:${idempotencyKey}`]);
+  async lockIdempotencyKey(ownerPublicId: Media['ownerPublicId'], idempotencyKey: string): Promise<void> {
+    await this.txHost.tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`media:${ownerPublicId}:${idempotencyKey}`]);
   }
 
-  findByIdempotencyKey(ownerIdentityPublicId: Media['ownerIdentityPublicId'], idempotencyKey: string): Promise<Media | null> {
-    return this.txHost.tx.getRepository(Media).findOneBy({ ownerIdentityPublicId, idempotencyKey });
+  findByIdempotencyKey(ownerPublicId: Media['ownerPublicId'], idempotencyKey: string): Promise<Media | null> {
+    return this.txHost.tx.getRepository(Media).findOneBy({ ownerPublicId, idempotencyKey });
   }
 
   findByPublicId(publicId: Media['publicId']): Promise<Media | null> {
@@ -40,7 +40,7 @@ export class MediaRepository {
 
   async claim(
     publicIds: Media['publicId'][],
-    ownerIdentityPublicId: Media['ownerIdentityPublicId'],
+    ownerPublicId: Media['ownerPublicId'],
     attachedToType: MediaAttachmentTypeEnum,
     attachedToId: string,
     claimTtlSeconds: number,
@@ -52,12 +52,12 @@ export class MediaRepository {
               "attachedAt" = COALESCE("attachedAt", now()),
               "claimExpiresAt" = CASE WHEN "attachedToId" IS NULL THEN now() + make_interval(secs => $5) ELSE "claimExpiresAt" END
         WHERE "publicId" = ANY($1::uuid[])
-          AND "ownerIdentityPublicId" = $2
+          AND "ownerPublicId" = $2
           AND "status" = $6
           AND "deletedAt" IS NULL
           AND ("attachedToId" IS NULL OR ("attachedToType" = $3 AND "attachedToId" = $4))
     RETURNING "id"`,
-      [publicIds, ownerIdentityPublicId, attachedToType, attachedToId, claimTtlSeconds, MediaStatusEnum.READY],
+      [publicIds, ownerPublicId, attachedToType, attachedToId, claimTtlSeconds, MediaStatusEnum.READY],
     );
     const ids = (rows as { id: number }[]).map((row) => row.id);
 
@@ -91,8 +91,8 @@ export class MediaRepository {
     return affected as number;
   }
 
-  findOwned(publicId: Media['publicId'], ownerIdentityPublicId: Media['ownerIdentityPublicId']): Promise<Media | null> {
-    return this.txHost.tx.getRepository(Media).findOneBy({ publicId, ownerIdentityPublicId });
+  findOwned(publicId: Media['publicId'], ownerPublicId: Media['ownerPublicId']): Promise<Media | null> {
+    return this.txHost.tx.getRepository(Media).findOneBy({ publicId, ownerPublicId });
   }
 
   async markPendingReady(id: Media['id']): Promise<Media | null> {

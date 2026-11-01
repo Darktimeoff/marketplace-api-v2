@@ -2,7 +2,7 @@ import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, OneToMany, P
 import type { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
 
 @Entity('Seller')
-@Unique('Seller_userId_key', ['userId'])
+@Unique('Seller_ownerPublicId_key', ['ownerPublicId'])
 @Check('Seller_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
 export class Seller {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
@@ -11,8 +11,8 @@ export class Seller {
   @Column({ type: 'uuid', unique: true, default: () => 'gen_random_uuid()' })
   publicId: string;
 
-  @Column({ type: 'integer' })
-  userId: number;
+  @Column({ type: 'uuid' })
+  ownerPublicId: string;
 
   @CreateDateColumn({ type: 'timestamptz', default: () => 'now()' })
   createdAt: Date;

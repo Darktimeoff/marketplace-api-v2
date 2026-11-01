@@ -45,13 +45,13 @@ export class ProductCreateCommandHandler {
     }
   }
 
-  private async claimMedia(mediaIds: string[], ownerIdentityPublicId: string, productPublicId: string): Promise<MediaClaimRpc.ClaimedMediaInterface[]> {
+  private async claimMedia(mediaIds: string[], ownerPublicId: string, productPublicId: string): Promise<MediaClaimRpc.ClaimedMediaInterface[]> {
     if (mediaIds.length === 0) {
       return [];
     }
 
     const claim = await this.mediaClient.claim({
-      ownerIdentityPublicId,
+      ownerPublicId,
       mediaIds,
       attachTo: { type: MediaAttachmentTypeEnum.PRODUCT, id: productPublicId },
     });

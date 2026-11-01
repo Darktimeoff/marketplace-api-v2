@@ -17,8 +17,8 @@ export class MediaUploadPartsCommandHandler {
     private readonly plan: MediaPartPlanService,
   ) {}
 
-  async execute(publicId: string, ownerIdentityPublicId: string): Promise<MediaUploadPartsResponseInterface> {
-    const media = await this.media.findOwned(publicId, ownerIdentityPublicId);
+  async execute(publicId: string, ownerPublicId: string): Promise<MediaUploadPartsResponseInterface> {
+    const media = await this.media.findOwned(publicId, ownerPublicId);
 
     if (!media) {
       throw new NotFoundException('Media not found');

@@ -7,7 +7,7 @@ export interface OrderSubjectInterface {
 }
 
 export interface MediaSubjectInterface {
-  ownerIdentityPublicId: string;
+  ownerPublicId: string;
 }
 
 export type AppSubjectType =

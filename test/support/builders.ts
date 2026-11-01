@@ -124,7 +124,7 @@ export async function aSellerOffer(
   if (sellerId === undefined) {
     const sellerUser = await aUser(manager);
     const seller = await sellers.save(
-      sellers.create({ userId: sellerUser.id }),
+      sellers.create({ ownerPublicId: sellerUser.publicId }),
     );
 
     sellerId = seller.id;

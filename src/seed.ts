@@ -188,8 +188,8 @@ async function seed(): Promise<void> {
   for (const sellerUser of sellers) {
     const seller = await ensure(
       sellerRepo,
-      { userId: sellerUser.id } as FindOptionsWhere<Seller>,
-      { userId: sellerUser.id },
+      { ownerPublicId: sellerUser.publicId } as FindOptionsWhere<Seller>,
+      { ownerPublicId: sellerUser.publicId },
     );
 
     sellerRows.push(seller);

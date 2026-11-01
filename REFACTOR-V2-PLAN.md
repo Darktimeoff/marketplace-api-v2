@@ -61,13 +61,13 @@ The integer `id` never leaves its context: not in HTTP, not in events, not in Ra
 
 ### 1.4 seller owner and media owner
 
-- [ ] **Migration `PersonOwners`:** `Seller.userId` → `ownerPublicId uuid` (backfill from `User.publicId`, which is already the person's uuid after 1.1); `Media.ownerIdentityPublicId` → `ownerPublicId` (a rename).
-- [ ] **Code:**
+- [x] **Migration `PersonOwners`:** `Seller.userId` → `ownerPublicId uuid` (backfill from `User.publicId`, which is already the person's uuid after 1.1); `Media.ownerIdentityPublicId` → `ownerPublicId` (a rename).
+- [x] **Code:**
   - `seller.entity`, `seed.ts`;
   - media: the entity, repository, the four command handlers, `media.service`;
   - `MediaClaimRpc.RequestInterface.ownerIdentityPublicId` → `ownerPublicId`;
   - `product-create.command-handler`.
-- [ ] **Tests:** `media.repository.integration`, `media-message.service.spec`, `media.e2e`, `product-media.e2e`.
+- [x] **Tests:** `media.repository.integration`, `media-message.service.spec`, `media.e2e`, `product-media.e2e`.
 
 ---
 

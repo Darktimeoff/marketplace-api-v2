@@ -31,7 +31,7 @@ describe('MediaMessageService', () => {
   });
 
   it('never leaks the internal integer id or the owner', () => {
-    const media = aMedia('33333333-3333-4333-8333-333333333333', { id: 7, ownerIdentityPublicId: 'owner' } as Partial<Media>);
+    const media = aMedia('33333333-3333-4333-8333-333333333333', { id: 7, ownerPublicId: 'owner' } as Partial<Media>);
 
     const [claimed] = new MediaMessageService().toClaimed([media.publicId], [media]).media;
 

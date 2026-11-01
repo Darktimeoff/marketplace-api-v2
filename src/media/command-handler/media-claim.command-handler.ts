@@ -35,7 +35,7 @@ export class MediaClaimCommandHandler {
   private async claimAll(request: MediaClaimRpc.RequestInterface): Promise<MediaClaimRpc.ClaimedResponseInterface> {
     const claimed = await this.media.claim(
       request.mediaIds,
-      request.ownerIdentityPublicId,
+      request.ownerPublicId,
       request.attachTo.type,
       request.attachTo.id,
       this.claimTtlSeconds,

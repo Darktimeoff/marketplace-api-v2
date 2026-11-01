@@ -40,7 +40,7 @@ describe('MediaRepository', () => {
 
   async function aMedia(overrides: Partial<Media> = {}): Promise<Media> {
     const created = await media.create({
-      ownerIdentityPublicId: owner,
+      ownerPublicId: owner,
       kind: MediaKindEnum.IMAGE,
       storageKey: `media/${owner}/${randomUUID()}.png`,
       mimeType: 'image/png',
@@ -58,7 +58,7 @@ describe('MediaRepository', () => {
   }
 
   function claim(ids: string[], productId: string, by = owner) {
-    return claimHandler.execute({ ownerIdentityPublicId: by, mediaIds: ids, attachTo: { type: PRODUCT, id: productId } });
+    return claimHandler.execute({ ownerPublicId: by, mediaIds: ids, attachTo: { type: PRODUCT, id: productId } });
   }
 
   describe('claim', () => {
@@ -75,7 +75,7 @@ describe('MediaRepository', () => {
     });
 
     it('rejects media of someone else, pending media and media attached elsewhere', async () => {
-      const foreign = await aMedia({ ownerIdentityPublicId: randomUUID() });
+      const foreign = await aMedia({ ownerPublicId: randomUUID() });
       const pending = await aMedia({ status: MediaStatusEnum.PENDING });
       const taken = await aMedia({ attachedToType: PRODUCT, attachedToId: randomUUID(), attachedAt: new Date() });
 
@@ -86,7 +86,7 @@ describe('MediaRepository', () => {
 
     it('claims all or nothing: one bad id rolls back the good ones', async () => {
       const mine = await aMedia();
-      const foreign = await aMedia({ ownerIdentityPublicId: randomUUID() });
+      const foreign = await aMedia({ ownerPublicId: randomUUID() });
 
       const response = await claim([mine.publicId, foreign.publicId], randomUUID());
 

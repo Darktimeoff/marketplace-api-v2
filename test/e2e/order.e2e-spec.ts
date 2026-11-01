@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
@@ -124,7 +125,6 @@ describe('Order (e2e)', () => {
 
     expect(readResponse.body).toMatchObject({
       id: orderId,
-      publicId: createResponse.body.publicId,
       status: 'paid',
       totalAmount: '100.00',
     });
@@ -139,7 +139,8 @@ describe('Order (e2e)', () => {
   });
 
   it('returns 404 for a non-existent order id', async () => {
-    await get('/order/999999', await aBuyer(app, dataSource)).expect(404);
+    await get(`/order/${randomUUID()}`, await aBuyer(app, dataSource)).expect(404);
+    await get('/order/999999', await aBuyer(app, dataSource)).expect(400);
   });
 
   describe('ownership', () => {

@@ -10,7 +10,6 @@ export namespace OrderCreatedEvent {
   export const SOURCE = SourceEnum.ORDER;
 
   export interface DataInterface {
-    orderId: number;
     orderPublicId: string;
     buyerPublicId: string;
     totalAmount: string;

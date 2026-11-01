@@ -12,7 +12,6 @@ export namespace OrderFailedEvent {
   export type ReasonType = 'insufficient_stock' | 'payment_rejected' | 'error';
 
   export interface DataInterface {
-    orderId: number;
     orderPublicId: string;
     buyerPublicId: string;
     status: OrderStatusEnum.canceled | OrderStatusEnum.failed_payment;

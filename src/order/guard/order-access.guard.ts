@@ -12,8 +12,8 @@ export class OrderAccessGuard implements CanActivate {
       query: { buyerPublicId?: string };
       headers: { 'last-event-id'?: string };
     }>();
-    const orderId = Number(request.params.id);
-    if (!Number.isSafeInteger(orderId) || orderId <= 0) {
+    const orderId = request.params.id;
+    if (!isUUID(orderId)) {
       throw new BadRequestException('A valid order id is required');
     }
     const buyerPublicId = request.query.buyerPublicId;

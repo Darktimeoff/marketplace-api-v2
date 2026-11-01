@@ -21,7 +21,6 @@ export class OrderPlaceMessageService {
       aggregateId: order.publicId,
       type: OrderCreatedEvent.TYPE,
       payload: {
-        orderId: order.id,
         orderPublicId: order.publicId,
         buyerPublicId: buyer.publicId,
         totalAmount: order.totalAmount,
@@ -40,7 +39,6 @@ export class OrderPlaceMessageService {
       aggregateId: order.publicId,
       type: OrderFailedEvent.TYPE,
       payload: {
-        orderId: order.id,
         orderPublicId: order.publicId,
         buyerPublicId: order.buyer.publicId,
         status: failure.status,
@@ -58,7 +56,6 @@ export class OrderPlaceMessageService {
       aggregateId: order.publicId,
       type: OrderPaidEvent.TYPE,
       payload: {
-        orderId: order.id,
         orderPublicId: order.publicId,
         buyerPublicId: order.buyer.publicId,
         totalAmount: order.totalAmount,
@@ -76,7 +73,6 @@ export class OrderPlaceMessageService {
       workflowType: 'orderPlaceWorkflow',
       taskQueue: OrderTaskQueueEnum.ORDER_PLACE,
       input: {
-        orderId: order.id,
         orderPublicId: order.publicId,
         buyerPublicId: buyer.publicId,
         totalAmount: order.totalAmount,

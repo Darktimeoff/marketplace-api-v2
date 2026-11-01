@@ -27,8 +27,8 @@ export class OrderService implements OnModuleInit {
       });
   }
 
-  async findReadableById(id: Order['id'], ability: AppAbilityType): Promise<Order> {
-    const order = await this.findById(id);
+  async findReadableByPublicId(publicId: Order['publicId'], ability: AppAbilityType): Promise<Order> {
+    const order = await this.findByPublicId(publicId);
 
     if (!ability.can('read', subject('Order', { buyerPublicId: order.buyer.publicId }))) {
       this.logger.warn(`forbidden read of order=${order.publicId}`);
@@ -39,12 +39,12 @@ export class OrderService implements OnModuleInit {
   }
 
   @Cacheable({ key: orderCacheKey, ttlSeconds: ORDER_CACHE_TTL_SECONDS, jitterSeconds: ORDER_CACHE_JITTER_SECONDS })
-  async findById(id: Order['id']): Promise<Order> {
+  async findByPublicId(publicId: Order['publicId']): Promise<Order> {
     try {
-      return await this.orderRepository.findByIdOrFail(id);
+      return await this.orderRepository.findByPublicIdOrFail(publicId);
     } catch (error) {
       if (error instanceof EntityNotFoundError) {
-        throw new NotFoundException(`Order with id ${id} not found`);
+        throw new NotFoundException(`Order with id ${publicId} not found`);
       }
 
       throw error;

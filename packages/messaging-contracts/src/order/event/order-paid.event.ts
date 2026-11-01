@@ -17,7 +17,6 @@ export namespace OrderPaidEvent {
   }
 
   export interface DataInterface {
-    orderId: number;
     orderPublicId: string;
     buyerPublicId: string;
     totalAmount: string;

@@ -102,9 +102,10 @@ The integer `id` never leaves its context: not in HTTP, not in events, not in Ra
 
 ## Pass 3. The order API and order events
 
-- [ ] **HTTP:** `GET /order/:id` and SSE `/orders/:id/…` switch to `ParseUUIDPipe` and look up by `publicId`; `OrderResponseInterface.id` = the uuid, with no separate `publicId` field.
-- [ ] **Events:** `order.created` / `order.paid` / `order.failed` drop `orderId`, `userId`, `offerId` ints and get `orderPublicId`, `buyerPublicId`, `offerPublicId`; the order consumers and SSE (`order-notify-events.gateway`) get a tolerant reader.
-- [ ] **Tests:** `order.e2e`, `order-realtime.e2e`, `order-notify-events.gateway.spec`, the order message service specs.
+- [x] **HTTP:** `GET /order/:id` and SSE `/orders/:id/…` switch to `ParseUUIDPipe` and look up by `publicId`; `OrderResponseInterface.id` = the uuid, with no separate `publicId` field.
+- [x] **Events:** `order.created` / `order.paid` / `order.failed` drop `orderId`, `userId`, `offerId` ints and get `orderPublicId`, `buyerPublicId`, `offerPublicId`; the order consumers and SSE (`order-notify-events.gateway`) get a tolerant reader.
+- [x] **Tests:** `order.e2e`, `order-realtime.e2e`, `order-notify-events.gateway.spec`, the order message service specs.
+- [x] **Workflow:** the input lost the int `orderId`; `markPaid` / `markFailed` take `orderPublicId`, and the order cache key is `order:<publicId>`.
 
 ---
 

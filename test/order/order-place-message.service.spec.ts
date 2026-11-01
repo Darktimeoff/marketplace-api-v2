@@ -29,7 +29,6 @@ describe('OrderPlaceMessageService', () => {
       aggregateId: order.publicId,
       type: 'order.paid',
       payload: {
-        orderId: 7,
         orderPublicId: order.publicId,
         buyerPublicId,
         totalAmount: '160.00',
@@ -41,7 +40,7 @@ describe('OrderPlaceMessageService', () => {
     });
     expect(messages.toOrderFailedOutbox(order, { status: OrderStatusEnum.failed_payment, reason: 'payment_rejected' })).toMatchObject({
       type: 'order.failed',
-      payload: { orderId: 7, buyerPublicId, status: 'failed_payment', reason: 'payment_rejected', failedAt: '2026-10-10T10:00:05.000Z' },
+      payload: { buyerPublicId, status: 'failed_payment', reason: 'payment_rejected', failedAt: '2026-10-10T10:00:05.000Z' },
     });
     expect(messages.toOrderCreatedOutbox(order, order.buyer).payload).toEqual(expect.objectContaining({ buyerPublicId, createdAt: '2026-10-10T10:00:00.000Z' }));
   });
@@ -52,7 +51,6 @@ describe('OrderPlaceMessageService', () => {
       workflowType: 'orderPlaceWorkflow',
       taskQueue: 'order-place',
       input: {
-        orderId: 7,
         orderPublicId: order.publicId,
         buyerPublicId,
         totalAmount: '160.00',

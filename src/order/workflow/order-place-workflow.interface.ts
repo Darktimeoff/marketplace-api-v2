@@ -6,7 +6,6 @@ export interface OrderPlaceItemInterface {
 }
 
 export interface OrderPlaceWorkflowInputInterface {
-  orderId: number;
   orderPublicId: string;
   buyerPublicId: string;
   totalAmount: string;
@@ -24,6 +23,6 @@ export interface OrderPlaceActivitiesInterface {
   releaseStock(orderPublicId: string): Promise<void>;
   chargeCustomer(charge: OrderPlaceChargeInterface): Promise<void>;
   refundCustomer(charge: OrderPlaceChargeInterface): Promise<void>;
-  markPaid(orderId: number): Promise<void>;
-  markFailed(orderId: number, failure: OrderFailureInterface): Promise<void>;
+  markPaid(orderPublicId: string): Promise<void>;
+  markFailed(orderPublicId: string, failure: OrderFailureInterface): Promise<void>;
 }

@@ -5,11 +5,11 @@ export const ORDER_EVENT_HISTORY_LIMIT = 100;
 
 @Injectable()
 export class OrderNotifyService {
-  private readonly history = new Map<number, OrderStatusEvent[]>();
-  private readonly listeners = new Map<number, Set<(event: OrderStatusEvent) => void>>();
+  private readonly history = new Map<string, OrderStatusEvent[]>();
+  private readonly listeners = new Map<string, Set<(event: OrderStatusEvent) => void>>();
 
   record(event: OrderStatusEvent): void {
-    const history = this.history.get(event.orderId) ?? [];
+    const history = this.history.get(event.orderPublicId) ?? [];
 
     if (history.length > 0 && history[history.length - 1].id >= event.id) {
       return;
@@ -19,27 +19,27 @@ export class OrderNotifyService {
     if (history.length > ORDER_EVENT_HISTORY_LIMIT) {
       history.shift();
     }
-    this.history.set(event.orderId, history);
-    for (const listener of this.listeners.get(event.orderId) ?? []) {
+    this.history.set(event.orderPublicId, history);
+    for (const listener of this.listeners.get(event.orderPublicId) ?? []) {
       listener(event);
     }
   }
 
-  getAfter(orderId: number, lastEventId: number): OrderStatusEvent[] {
-    return (this.history.get(orderId) ?? []).filter((event) => event.id > lastEventId);
+  getAfter(orderPublicId: string, lastEventId: number): OrderStatusEvent[] {
+    return (this.history.get(orderPublicId) ?? []).filter((event) => event.id > lastEventId);
   }
 
   subscribe(
-    orderId: number,
+    orderPublicId: string,
     listener: (event: OrderStatusEvent) => void,
   ): () => void {
-    const listeners = this.listeners.get(orderId) ?? new Set();
+    const listeners = this.listeners.get(orderPublicId) ?? new Set();
     listeners.add(listener);
-    this.listeners.set(orderId, listeners);
+    this.listeners.set(orderPublicId, listeners);
     return () => {
       listeners.delete(listener);
       if (listeners.size === 0) {
-        this.listeners.delete(orderId);
+        this.listeners.delete(orderPublicId);
       }
     };
   }

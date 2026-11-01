@@ -37,7 +37,7 @@ export class OrderNotifyEventsGateway implements OnModuleInit {
       throw new KafkaRejectedMessageException(parsed.error.message);
     }
 
-    this.orderNotify.record({ id: Number(position.offset) + 1, orderId: parsed.data.data.orderId, status: this.toStatus(parsed.data) });
+    this.orderNotify.record({ id: Number(position.offset) + 1, orderPublicId: parsed.data.data.orderPublicId, status: this.toStatus(parsed.data) });
   }
 
   private toStatus(event: ReturnType<typeof orderStatusEventSchema.parse>): OrderStatusEnum {

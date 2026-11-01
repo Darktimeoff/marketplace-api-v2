@@ -5,7 +5,6 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseIntPipe,
   ParseUUIDPipe,
   Post,
 } from '@nestjs/common';
@@ -19,6 +18,7 @@ import { CheckAbility } from '../../generic/auth/decorator/check-ability.decorat
 import { CurrentAbility } from '../../generic/auth/decorator/current-ability.decorator.js';
 import { Identity } from '../../generic/auth/decorator/identity.decorator.js';
 import type { AppAbilityType } from '../../generic/auth/app-ability.type.js';
+import type { Order } from '../entity/order.entity.js';
 
 @Controller('order')
 export class OrderController {
@@ -35,14 +35,14 @@ export class OrderController {
     @Body() input: OrderCreateInput,
     @Identity('identityPublicId') identityPublicId: string,
     @IdempotencyKey(new ParseUUIDPipe({ optional: true })) idempotencyKey?: string,
-  ): Promise<OrderDto> {
+  ): Promise<Order> {
     return this.orderPlace.execute(input, identityPublicId, idempotencyKey ?? null);
   }
 
   @ResponseDto(OrderDto)
   @CheckAbility('read', 'Order')
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number, @CurrentAbility() ability: AppAbilityType): Promise<OrderDto> {
-    return this.orderService.findReadableById(id, ability);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentAbility() ability: AppAbilityType): Promise<Order> {
+    return this.orderService.findReadableByPublicId(id, ability);
   }
 }

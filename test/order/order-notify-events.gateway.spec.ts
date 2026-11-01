@@ -14,6 +14,9 @@ function aGateway(): { notify: OrderNotifyService; subscription: KafkaSubscripti
   return { notify, subscription };
 }
 
+const ORDER = 'aaaaaaaa-0000-4000-8000-000000000011';
+const OTHER_ORDER = 'aaaaaaaa-0000-4000-8000-000000000012';
+
 describe('OrderNotifyEventsGateway', () => {
   it('registers a broadcast consumer of order.events', () => {
     expect(aGateway().subscription).toMatchObject({ groupId: 'order.notify', topic: 'order.events', broadcast: true });
@@ -22,23 +25,31 @@ describe('OrderNotifyEventsGateway', () => {
   it('maps created, paid and failed to statuses, using offset + 1 as the event id so offset 0 is not lost', async () => {
     const { notify, subscription } = aGateway();
 
-    await subscription.handle({ type: 'order.created', data: { orderId: 7 } }, { partition: 0, offset: '0' });
-    await subscription.handle({ type: 'order.paid', data: { orderId: 7 } }, { partition: 0, offset: '1' });
-    await subscription.handle({ type: 'order.failed', data: { orderId: 8, status: 'failed_payment' } }, { partition: 1, offset: '0' });
+    await subscription.handle({ type: 'order.created', data: { orderPublicId: ORDER } }, { partition: 0, offset: '0' });
+    await subscription.handle({ type: 'order.paid', data: { orderPublicId: ORDER } }, { partition: 0, offset: '1' });
+    await subscription.handle({ type: 'order.failed', data: { orderPublicId: OTHER_ORDER, status: 'failed_payment' } }, { partition: 1, offset: '0' });
 
-    expect(notify.getAfter(7, 0)).toEqual([
-      { id: 1, orderId: 7, status: OrderStatusEnum.pending_payment },
-      { id: 2, orderId: 7, status: OrderStatusEnum.paid },
+    expect(notify.getAfter(ORDER, 0)).toEqual([
+      { id: 1, orderPublicId: ORDER, status: OrderStatusEnum.pending_payment },
+      { id: 2, orderPublicId: ORDER, status: OrderStatusEnum.paid },
     ]);
-    expect(notify.getAfter(8, 0)).toEqual([{ id: 1, orderId: 8, status: OrderStatusEnum.failed_payment }]);
+    expect(notify.getAfter(OTHER_ORDER, 0)).toEqual([{ id: 1, orderPublicId: OTHER_ORDER, status: OrderStatusEnum.failed_payment }]);
   });
 
   it('skips types it does not stream and rejects a malformed known type', async () => {
     const { notify, subscription } = aGateway();
 
-    await subscription.handle({ type: 'order.shipped', data: { orderId: 7 } }, { partition: 0, offset: '0' });
+    await subscription.handle({ type: 'order.shipped', data: { orderPublicId: ORDER } }, { partition: 0, offset: '0' });
     await expect(subscription.handle({ type: 'order.paid', data: {} }, { partition: 0, offset: '1' })).rejects.toBeInstanceOf(KafkaRejectedMessageException);
 
-    expect(notify.getAfter(7, 0)).toEqual([]);
+    expect(notify.getAfter(ORDER, 0)).toEqual([]);
+  });
+
+  it('reads events published before the int id was dropped by their orderPublicId', async () => {
+    const { notify, subscription } = aGateway();
+
+    await subscription.handle({ type: 'order.paid', data: { orderId: 7, orderPublicId: ORDER } }, { partition: 0, offset: '4' });
+
+    expect(notify.getAfter(ORDER, 0)).toEqual([{ id: 5, orderPublicId: ORDER, status: OrderStatusEnum.paid }]);
   });
 });

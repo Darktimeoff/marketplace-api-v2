@@ -154,7 +154,7 @@ describe('Order create (e2e)', () => {
     });
 
     const order = await settledOrder();
-    expect(order).toMatchObject({ id: response.body.id, publicId: response.body.publicId, buyer: { publicId: buyer.identityPublicId }, status: OrderStatusEnum.paid });
+    expect(order).toMatchObject({ publicId: response.body.id, buyer: { publicId: buyer.identityPublicId }, status: OrderStatusEnum.paid });
     expect(order.orderRecipient).toMatchObject({
       fullName: 'Jane Doe',
       phone: {
@@ -179,7 +179,6 @@ describe('Order create (e2e)', () => {
     const rows = await publishedOutboxRows(2);
     expect(rows.map(({ type }) => type)).toEqual(['order.created', 'order.paid']);
     expect(rows[0].payload).toEqual({
-      orderId: order.id,
       orderPublicId: order.publicId,
       buyerPublicId: buyer.identityPublicId,
       totalAmount: '160.00',
@@ -200,7 +199,6 @@ describe('Order create (e2e)', () => {
       subject: order.publicId,
       correlationid: order.publicId,
       data: {
-        orderId: order.id,
         orderPublicId: order.publicId,
         buyerPublicId: buyer.identityPublicId,
         totalAmount: '160.00',
@@ -248,7 +246,7 @@ describe('Order create (e2e)', () => {
     const order = await onlyOrder();
     expect(await publishedOutboxRows(2)).toEqual([
       expect.objectContaining({ type: 'order.created' }),
-      expect.objectContaining({ type: 'order.failed', payload: expect.objectContaining({ orderId: order.id, status: 'canceled', reason: 'insufficient_stock' }) }),
+      expect.objectContaining({ type: 'order.failed', payload: expect.objectContaining({ orderPublicId: order.publicId, status: 'canceled', reason: 'insufficient_stock' }) }),
     ]);
   });
 
@@ -332,7 +330,7 @@ describe('Order create (e2e)', () => {
     ]);
     expect(await publishedOutboxRows(2)).toEqual([
       expect.objectContaining({ type: 'order.created' }),
-      expect.objectContaining({ type: 'order.failed', payload: expect.objectContaining({ orderId: order.id, status: 'canceled', reason: 'error' }) }),
+      expect.objectContaining({ type: 'order.failed', payload: expect.objectContaining({ orderPublicId: order.publicId, status: 'canceled', reason: 'error' }) }),
     ]);
   });
 
@@ -376,9 +374,9 @@ describe('Order create (e2e)', () => {
       const responses = await Promise.all([placeOrder(buyer, body, key), placeOrder(buyer, body, key)]);
 
       expect(responses.map(({ status }) => status)).toEqual([202, 202]);
-      expect(responses[0].body.publicId).toBe(responses[1].body.publicId);
+      expect(responses[0].body.id).toBe(responses[1].body.id);
       const [order] = await settledOrders(1);
-      expect(order).toMatchObject({ publicId: responses[0].body.publicId, idempotencyKey: key, status: OrderStatusEnum.paid });
+      expect(order).toMatchObject({ publicId: responses[0].body.id, idempotencyKey: key, status: OrderStatusEnum.paid });
       expect(await dataSource.getRepository(OrderRecipient).count()).toBe(1);
       expect(await balanceOf(buyer.identityPublicId)).toBe('900.00');
       expect((await publishedOutboxRows(2)).map(({ type }) => type)).toEqual(['order.created', 'order.paid']);
@@ -395,7 +393,7 @@ describe('Order create (e2e)', () => {
       await settledOrders(1);
       const retry = await placeOrder(buyer, body, key).expect(202);
 
-      expect(retry.body).toMatchObject({ id: first.body.id, publicId: first.body.publicId, status: OrderStatusEnum.paid });
+      expect(retry.body).toMatchObject({ id: first.body.id, status: OrderStatusEnum.paid });
       expect(await dataSource.getRepository(Order).count()).toBe(1);
       expect(await balanceOf(buyer.identityPublicId)).toBe('900.00');
     });

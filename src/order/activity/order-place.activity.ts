@@ -78,8 +78,8 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
 
   @CacheEvict({ key: orderCacheKey })
   @Transactional()
-  async markPaid(orderId: number): Promise<void> {
-    const paid = await this.orderRepository.updatePendingStatusById(orderId, OrderStatusEnum.paid);
+  async markPaid(orderPublicId: string): Promise<void> {
+    const paid = await this.orderRepository.updatePendingStatusByPublicId(orderPublicId, OrderStatusEnum.paid);
 
     if (paid) {
       await this.outbox.create(this.messages.toOrderPaidOutbox(paid));
@@ -88,8 +88,8 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
 
   @CacheEvict({ key: orderCacheKey })
   @Transactional()
-  async markFailed(orderId: number, failure: OrderFailureInterface): Promise<void> {
-    const failed = await this.orderRepository.updatePendingStatusById(orderId, failure.status);
+  async markFailed(orderPublicId: string, failure: OrderFailureInterface): Promise<void> {
+    const failed = await this.orderRepository.updatePendingStatusByPublicId(orderPublicId, failure.status);
 
     if (failed) {
       await this.outbox.create(this.messages.toOrderFailedOutbox(failed, failure));

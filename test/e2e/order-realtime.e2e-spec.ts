@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { get as httpGet, type IncomingMessage, type ClientRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -13,7 +14,7 @@ import { truncateAllTables } from '../support/isolation.js';
 
 interface StreamedEventInterface {
   id: number;
-  orderId: number;
+  orderId: string;
   status: OrderStatusEnum;
 }
 
@@ -40,7 +41,7 @@ describe('Order realtime over Kafka (e2e)', () => {
     await app.close();
   });
 
-  async function placeOrder(balance: string): Promise<{ orderId: number; buyerPublicId: string }> {
+  async function placeOrder(balance: string): Promise<{ orderId: string; buyerPublicId: string }> {
     const buyer = await aBuyer(app, dataSource);
     await dataSource.query(`INSERT INTO "Account" ("publicId", "balance") VALUES ($1, $2)`, [buyer.identityPublicId, balance]);
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
@@ -58,10 +59,10 @@ describe('Order realtime over Kafka (e2e)', () => {
         currency: CurrencyEnum.UAH,
       });
 
-    return { orderId: response.body.id ?? (await dataSource.query(`SELECT max("id") AS id FROM "Order"`))[0].id, buyerPublicId: buyer.identityPublicId };
+    return { orderId: response.body.id ?? (await dataSource.query(`SELECT "publicId" FROM "Order" ORDER BY "id" DESC LIMIT 1`))[0].publicId, buyerPublicId: buyer.identityPublicId };
   }
 
-  function openStream(orderId: number, buyerPublicId?: string, lastEventId?: number): Promise<StreamInterface> {
+  function openStream(orderId: string, buyerPublicId?: string, lastEventId?: number): Promise<StreamInterface> {
     const { port } = app.getHttpServer().address() as AddressInfo;
     const chunks: string[] = [];
 
@@ -153,6 +154,7 @@ describe('Order realtime over Kafka (e2e)', () => {
     const { orderId } = await placeOrder('1000.00');
 
     await request(app.getHttpServer()).get(`/orders/${orderId}/events?buyerPublicId=abc`).expect(400);
-    await request(app.getHttpServer()).get('/orders/999999/events').expect(404);
+    await request(app.getHttpServer()).get(`/orders/${randomUUID()}/events`).expect(404);
+    await request(app.getHttpServer()).get('/orders/999999/events').expect(400);
   });
 });

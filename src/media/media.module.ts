@@ -11,6 +11,7 @@ import { MediaOutboxRepository } from './repository/media-outbox.repository.js';
 import { MediaOutboxRelay } from './relay/media-outbox.relay.js';
 import { MediaOutboxCleanupCron } from './cron/media-outbox-cleanup.cron.js';
 import { MediaTopologyService } from './service/media-topology.service.js';
+import { MediaThumbHashService } from './service/media-thumbhash.service.js';
 import { MediaRepository } from './repository/media.repository.js';
 import { MediaStorageService } from './service/media-storage.service.js';
 import { MediaResponse } from './response/media.response.js';
@@ -37,6 +38,7 @@ import { MediaProductEventsConsumer } from './consumer/media-product-events.cons
     MediaOutboxRelay,
     MediaOutboxCleanupCron,
     MediaTopologyService,
+    MediaThumbHashService,
     MediaStorageService,
     MediaResponse,
     MediaPartPlanService,

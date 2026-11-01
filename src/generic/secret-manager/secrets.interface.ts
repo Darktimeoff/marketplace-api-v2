@@ -9,4 +9,6 @@ export interface SecretsInterface {
   REDIS_QUEUE_URL: string
   REFRESH_TOKEN_PEPPER: string
   GOOGLE_CLIENT_SECRET: string
+  STORAGE_ACCESS_KEY: string
+  STORAGE_SECRET_KEY: string
 }

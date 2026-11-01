@@ -21,6 +21,9 @@ const environmentSchema = z.object({
   GOOGLE_ISSUER: z.url().default('https://accounts.google.com'),
   GOOGLE_CLIENT_ID: z.string().min(1),
   OIDC_REDIRECT_BASE_URL: z.url().default('http://localhost:3000'),
+  STORAGE_ENDPOINT: z.url().or(z.literal('')).default(''),
+  STORAGE_REGION: z.string().min(1).default('us-east-1'),
+  STORAGE_BUCKET: z.string().min(1).default('marketplace-media'),
 })
 
 export type EnvironmentType = z.infer<typeof environmentSchema>

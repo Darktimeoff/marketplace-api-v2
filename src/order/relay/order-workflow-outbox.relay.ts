@@ -1,8 +1,6 @@
-import { Injectable, Logger, OnApplicationBootstrap, OnModuleInit, Optional } from '@nestjs/common';
-import { CronExpression, SchedulerRegistry } from '@nestjs/schedule';
-import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-job-registry.service.js';
+import { Injectable, Logger, OnApplicationBootstrap, Optional } from '@nestjs/common';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import { EnvironmentService } from '../../generic/environment/environment.module.js';
-import { subDays } from 'date-fns';
 import { Transactional } from '@nestjs-cls/transactional';
 import { WorkflowExecutionAlreadyStartedError } from '@temporalio/client';
 import { OrderWorkflowOutboxRepository } from '../repository/order-workflow-outbox.repository.js';
@@ -10,11 +8,9 @@ import { OrderWorkflowOutbox } from '../entity/order-workflow-outbox.entity.js';
 import { TemporalClientService } from '../../generic/temporal/temporal-client.service.js';
 
 @Injectable()
-export class OrderWorkflowOutboxRelay implements OnModuleInit, OnApplicationBootstrap {
+export class OrderWorkflowOutboxRelay implements OnApplicationBootstrap {
   private readonly logger = new Logger(OrderWorkflowOutboxRelay.name);
-  private readonly cleanupJobName = 'order-workflow-outbox-cleanup';
   private readonly batchSize = 100;
-  private readonly startedRetentionDays = 7;
   private readonly startTimeoutMs = 10000;
   private readonly relayIntervalName = 'order-workflow-outbox-relay';
   private relaying = false;
@@ -22,18 +18,9 @@ export class OrderWorkflowOutboxRelay implements OnModuleInit, OnApplicationBoot
   constructor(
     private readonly outbox: OrderWorkflowOutboxRepository,
     private readonly temporal: TemporalClientService,
-    private readonly maintenance: MaintenanceJobRegistryService,
     private readonly environment: EnvironmentService,
     @Optional() private readonly scheduler?: SchedulerRegistry,
   ) {}
-
-  onModuleInit(): void {
-    this.maintenance.register({
-      name: this.cleanupJobName,
-      repeat: { pattern: CronExpression.EVERY_DAY_AT_3AM },
-      handle: () => this.deleteStarted(),
-    });
-  }
 
   onApplicationBootstrap(): void {
     this.scheduler?.addInterval(this.relayIntervalName, setInterval(() => void this.relay(), this.environment.get('OUTBOX_RELAY_INTERVAL_MS')));
@@ -53,11 +40,6 @@ export class OrderWorkflowOutboxRelay implements OnModuleInit, OnApplicationBoot
     } finally {
       this.relaying = false;
     }
-  }
-
-  async deleteStarted(): Promise<void> {
-    const deleted = await this.outbox.deleteStartedBefore(subDays(new Date(), this.startedRetentionDays));
-    this.logger.log(`deleted ${deleted} started workflow outbox rows`);
   }
 
   @Transactional()

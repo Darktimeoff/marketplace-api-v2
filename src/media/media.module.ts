@@ -9,13 +9,13 @@ import { MediaStorageService } from './service/media-storage.service.js';
 import { MediaResponseService } from './service/media-response.service.js';
 import { MediaPartPlanService } from './service/media-part-plan.service.js';
 import { MediaService } from './service/media.service.js';
-import { MediaOrphanCleanupService } from './service/media-orphan-cleanup.service.js';
+import { MediaOrphanCleanupCron } from './cron/media-orphan-cleanup.cron.js';
 import { MediaUploadRequestCommandHandler } from './command-handler/media-upload-request.command-handler.js';
 import { MediaUploadCompleteCommandHandler } from './command-handler/media-upload-complete.command-handler.js';
 import { MediaUploadPartsCommandHandler } from './command-handler/media-upload-parts.command-handler.js';
 import { MediaController } from './controller/media.controller.js';
 import { MediaMessage } from './message/media.message.js';
-import { MediaClaimReleaseService } from './service/media-claim-release.service.js';
+import { MediaClaimReleaseCron } from './cron/media-claim-release.cron.js';
 import { MediaClaimCommandHandler } from './command-handler/media-claim.command-handler.js';
 import { MediaClaimConfirmCommandHandler } from './command-handler/media-claim-confirm.command-handler.js';
 import { MediaProductEventsGateway } from './gateway/media-product-events.gateway.js';
@@ -29,9 +29,9 @@ import { MediaProductEventsGateway } from './gateway/media-product-events.gatewa
     MediaResponseService,
     MediaPartPlanService,
     MediaService,
-    MediaOrphanCleanupService,
+    MediaOrphanCleanupCron,
     MediaMessage,
-    MediaClaimReleaseService,
+    MediaClaimReleaseCron,
     MediaClaimCommandHandler,
     MediaClaimConfirmCommandHandler,
     MediaProductEventsGateway,

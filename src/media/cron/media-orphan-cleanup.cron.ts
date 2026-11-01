@@ -3,11 +3,11 @@ import { CronExpression } from '@nestjs/schedule';
 import { subHours } from 'date-fns';
 import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-job-registry.service.js';
 import { MediaRepository } from '../repository/media.repository.js';
-import { MediaStorageService } from './media-storage.service.js';
+import { MediaStorageService } from '../service/media-storage.service.js';
 
 @Injectable()
-export class MediaOrphanCleanupService implements OnModuleInit {
-  private readonly logger = new Logger(MediaOrphanCleanupService.name);
+export class MediaOrphanCleanupCron implements OnModuleInit {
+  private readonly logger = new Logger(MediaOrphanCleanupCron.name);
   private readonly cleanupJobName = 'media-orphan-cleanup';
   private readonly pendingTtlHours = 24;
   private readonly batchSize = 100;

@@ -4,8 +4,8 @@ import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-j
 import { MediaRepository } from '../repository/media.repository.js';
 
 @Injectable()
-export class MediaClaimReleaseService implements OnModuleInit {
-  private readonly logger = new Logger(MediaClaimReleaseService.name);
+export class MediaClaimReleaseCron implements OnModuleInit {
+  private readonly logger = new Logger(MediaClaimReleaseCron.name);
   private readonly releaseJobName = 'media-claim-release';
 
   constructor(

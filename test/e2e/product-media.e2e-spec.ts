@@ -8,7 +8,7 @@ import { ProductCreatedEvent } from '@marketplace/messaging-contracts';
 import { Media } from '../../src/media/entity/media.entity.js';
 import { ProductMedia } from '../../src/product/entity/product-media.entity.js';
 import { ProductOutbox } from '../../src/product/entity/product-outbox.entity.js';
-import { MediaClaimReleaseService } from '../../src/media/service/media-claim-release.service.js';
+import { MediaClaimReleaseCron } from '../../src/media/cron/media-claim-release.cron.js';
 import { MediaClaimCommandHandler } from '../../src/media/command-handler/media-claim.command-handler.js';
 import { RoleEnum } from '../../src/identity/enum/role.enum.js';
 import { aBrandWithTranslation, aCategoryWithTranslation } from '../support/builders.js';
@@ -141,7 +141,7 @@ describe('Product media (e2e)', () => {
     expect((await mediaRow(photo)).claimExpiresAt).not.toBeNull();
 
     await dataSource.query(`UPDATE "Media" SET "claimExpiresAt" = now() - interval '1 second' WHERE "publicId" = $1`, [photo]);
-    await app.get(MediaClaimReleaseService).releaseExpired();
+    await app.get(MediaClaimReleaseCron).releaseExpired();
 
     expect(await mediaRow(photo)).toMatchObject({ attachedToId: null, claimExpiresAt: null });
     await create(token, await aBody([photo])).expect(201);

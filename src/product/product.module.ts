@@ -13,6 +13,7 @@ import { ProductController } from './controller/product.controller.js';
 import { ProductMessage } from './message/product.message.js';
 import { ProductResponseService } from './service/product-response.service.js';
 import { ProductOutboxRelay } from './relay/product-outbox.relay.js';
+import { ProductOutboxCleanupCron } from './cron/product-outbox-cleanup.cron.js';
 import { MediaClient } from './client/media.client.js';
 import { MEDIA_CLIENT } from './constant/product-client.constant.js';
 import { MediaModule } from '../media/media.module.js';
@@ -33,6 +34,7 @@ import { BrandModule } from '../brand/brand.module.js';
     ProductMessage,
     ProductResponseService,
     ProductOutboxRelay,
+    ProductOutboxCleanupCron,
     { provide: MEDIA_CLIENT, useClass: MediaClient },
   ],
 })

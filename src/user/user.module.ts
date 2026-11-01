@@ -6,6 +6,7 @@ import { Address } from './entity/address.entity.js';
 import { UserOutbox } from './entity/user-outbox.entity.js';
 import { UserOutboxRepository } from './repository/user-outbox.repository.js';
 import { UserOutboxRelay } from './relay/user-outbox.relay.js';
+import { UserOutboxCleanupCron } from './cron/user-outbox-cleanup.cron.js';
 import { UserMessage } from './message/user.message.js';
 import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { UserRepository } from './repository/user.repository.js';
@@ -14,6 +15,6 @@ import { UserIdentityEventsGateway } from './gateway/user-identity-events.gatewa
 
 @Module({
   imports: [QueueModule, TypeOrmModule.forFeature([User, Address, UserOutbox]), KafkaModule],
-  providers: [UserRepository, UserOutboxRepository, UserCreateCommandHandler, UserIdentityEventsGateway, UserOutboxRelay, UserMessage],
+  providers: [UserRepository, UserOutboxRepository, UserCreateCommandHandler, UserIdentityEventsGateway, UserOutboxRelay, UserOutboxCleanupCron, UserMessage],
 })
 export class UserModule {}

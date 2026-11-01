@@ -8,7 +8,7 @@ import { HeadObjectCommand, ListMultipartUploadsCommand, NotFound } from '@aws-s
 import { MediaStatusEnum } from '@marketplace/contracts-core';
 import { AppModule } from '../../src/app.module.js';
 import { Media } from '../../src/media/entity/media.entity.js';
-import { MediaOrphanCleanupService } from '../../src/media/service/media-orphan-cleanup.service.js';
+import { MediaOrphanCleanupCron } from '../../src/media/cron/media-orphan-cleanup.cron.js';
 import { StorageClientService } from '../../src/generic/storage/storage-client.service.js';
 import { truncateAllTables } from '../support/isolation.js';
 
@@ -224,7 +224,7 @@ describe('Media (e2e)', () => {
     const videoKey = await storageKeyOf(abandonedVideo);
     await dataSource.query(`UPDATE "Media" SET "createdAt" = now() - interval '25 hours' WHERE "publicId" = ANY($1)`, [[abandonedImage.id, abandonedVideo.id]]);
 
-    await app.get(MediaOrphanCleanupService).deleteOrphans();
+    await app.get(MediaOrphanCleanupCron).deleteOrphans();
 
     const remaining = await dataSource.getRepository(Media).find();
     expect(remaining.map(({ publicId }) => publicId)).toEqual([fresh.id]);

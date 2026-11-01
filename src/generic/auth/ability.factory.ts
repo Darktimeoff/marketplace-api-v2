@@ -14,8 +14,10 @@ export class AbilityFactory {
 
     if (identity.role === RoleEnum.admin || identity.role === RoleEnum.owner) {
       can('read', 'Order');
+      can('read', 'Media');
     } else {
       can('read', 'Order', { ownerIdentityPublicId: identity.identityPublicId });
+      can('read', 'Media', { ownerIdentityPublicId: identity.identityPublicId });
     }
 
     if (identity.role === RoleEnum.seller || identity.role === RoleEnum.admin || identity.role === RoleEnum.owner) {

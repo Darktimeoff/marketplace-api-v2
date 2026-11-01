@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import {
+  AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   ListPartsCommand,
+  NoSuchUpload,
   NotFound,
   PutObjectCommand,
   UploadPartCommand,
@@ -11,7 +15,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { StorageClientService } from '../../generic/storage/storage-client.service.js';
-import { MEDIA_CACHE_CONTROL, MEDIA_UPLOAD_URL_TTL_SECONDS } from '../constant/media-upload.constant.js';
+import { MEDIA_CACHE_CONTROL, MEDIA_DOWNLOAD_URL_TTL_SECONDS, MEDIA_UPLOAD_URL_TTL_SECONDS } from '../constant/media-upload.constant.js';
 import type { Media } from '../entity/media.entity.js';
 import type { MediaPresignedUploadInterface } from '../interface/media-presigned-upload.interface.js';
 import type { MediaStoredObjectInterface } from '../interface/media-stored-object.interface.js';
@@ -110,6 +114,26 @@ export class MediaStorageService {
         },
       }),
     );
+  }
+
+  presignDownload(media: Media): Promise<string> {
+    return getSignedUrl(this.storage.client, new GetObjectCommand({ Bucket: this.storage.bucket, Key: media.storageKey }), {
+      expiresIn: MEDIA_DOWNLOAD_URL_TTL_SECONDS,
+    });
+  }
+
+  async abortMultipartUpload(storageKey: Media['storageKey'], uploadId: string): Promise<void> {
+    try {
+      await this.storage.client.send(new AbortMultipartUploadCommand({ Bucket: this.storage.bucket, Key: storageKey, UploadId: uploadId }));
+    } catch (error) {
+      if (!(error instanceof NoSuchUpload)) {
+        throw error;
+      }
+    }
+  }
+
+  async deleteObject(storageKey: Media['storageKey']): Promise<void> {
+    await this.storage.client.send(new DeleteObjectCommand({ Bucket: this.storage.bucket, Key: storageKey }));
   }
 
   async head(storageKey: Media['storageKey']): Promise<MediaStoredObjectInterface | null> {

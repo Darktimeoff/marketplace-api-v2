@@ -5,6 +5,7 @@ import { SecretManagerModule } from "../secret-manager/secret-manager.module.js"
 import { SecretManagerService } from "../secret-manager/secret-manager.service.js";
 import { getRabbitMqConnectionUri } from "./util/get-rabbitmq-connection-uri.util.js";
 import { RabbitMqReturnListenerService } from "./rabbitmq-return-listener.service.js";
+import { RabbitMqRpcService } from "./rabbitmq-rpc.service.js";
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { RabbitMqReturnListenerService } from "./rabbitmq-return-listener.servic
       }),
     }),
   ],
-  providers: [RabbitMqReturnListenerService],
-  exports: [RabbitMQModule],
+  providers: [RabbitMqReturnListenerService, RabbitMqRpcService],
+  exports: [RabbitMQModule, RabbitMqRpcService],
 })
 export class RabbitMqModule {}

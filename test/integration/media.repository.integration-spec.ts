@@ -158,4 +158,35 @@ describe('MediaRepository', () => {
 
     expect(found.map((item) => item.id)).toEqual([old.id, older.id]);
   });
+
+  describe('unattached cleanup', () => {
+    it('finds ready media never attached before the cutoff, and rows already marked deleted', async () => {
+      const unattached = await aMedia();
+      const marked = await aMedia();
+      const reserved = await aMedia();
+      const attached = await aMedia({ attachedToType: PRODUCT, attachedToId: randomUUID(), attachedAt: new Date() });
+      const pending = await aMedia({ status: MediaStatusEnum.PENDING });
+      await aMedia();
+      await claim([reserved.publicId], randomUUID());
+      await testModule.dataSource.query(`UPDATE "Media" SET "createdAt" = now() - interval '2 days' WHERE "id" = ANY($1)`, [[unattached.id, reserved.id, attached.id, pending.id]]);
+      await testModule.dataSource.query(`UPDATE "Media" SET "deletedAt" = now() WHERE "id" = $1`, [marked.id]);
+
+      const found = await media.findUnattachedReadyCreatedBefore(new Date(Date.now() - 24 * 3_600_000), 10);
+
+      expect(found.map((item) => item.id)).toEqual([unattached.id, marked.id]);
+    });
+
+    it('marks only unattached media, and a marked one can no longer be claimed', async () => {
+      const unattached = await aMedia();
+      const claimed = await aMedia();
+      await claim([claimed.publicId], randomUUID());
+
+      expect(await media.markDeletedIfUnattached(claimed.id)).toBe(false);
+      expect(await media.markDeletedIfUnattached(unattached.id)).toBe(true);
+      expect(await media.markDeletedIfUnattached(unattached.id)).toBe(true);
+
+      expect((await claim([unattached.publicId], randomUUID())).status).toBe(MediaClaimStatusEnum.REJECTED);
+      expect((await reload(claimed)).deletedAt).toBeNull();
+    });
+  });
 });

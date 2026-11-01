@@ -34,6 +34,32 @@ export class MediaRepository {
     });
   }
 
+  findUnattachedReadyCreatedBefore(createdBefore: Date, limit: number): Promise<Media[]> {
+    return this.txHost.tx
+      .getRepository(Media)
+      .createQueryBuilder('media')
+      .withDeleted()
+      .where('media.status = :status', { status: MediaStatusEnum.READY })
+      .andWhere('media.attachedToId IS NULL')
+      .andWhere('(media.createdAt < :createdBefore OR media.deletedAt IS NOT NULL)', { createdBefore })
+      .orderBy('media.id', 'ASC')
+      .limit(limit)
+      .getMany();
+  }
+
+  async markDeletedIfUnattached(id: Media['id']): Promise<boolean> {
+    const [, affected] = await this.txHost.tx.query(
+      `UPDATE "Media"
+          SET "deletedAt" = COALESCE("deletedAt", now())
+        WHERE "id" = $1
+          AND "status" = $2
+          AND "attachedToId" IS NULL`,
+      [id, MediaStatusEnum.READY],
+    );
+
+    return (affected as number) > 0;
+  }
+
   async deleteById(id: Media['id']): Promise<void> {
     await this.txHost.tx.getRepository(Media).delete({ id });
   }

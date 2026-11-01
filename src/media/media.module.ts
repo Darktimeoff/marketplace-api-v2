@@ -17,6 +17,7 @@ import { MediaUploadPartsCommandHandler } from './command-handler/media-upload-p
 import { MediaController } from './controller/media.controller.js';
 import { MediaMessage } from './message/media.message.js';
 import { MediaClaimReleaseCron } from './cron/media-claim-release.cron.js';
+import { MediaUnattachedCleanupCron } from './cron/media-unattached-cleanup.cron.js';
 import { MediaClaimCommandHandler } from './command-handler/media-claim.command-handler.js';
 import { MediaClaimConfirmCommandHandler } from './command-handler/media-claim-confirm.command-handler.js';
 import { MediaProductEventsConsumer } from './consumer/media-product-events.consumer.js';
@@ -33,6 +34,7 @@ import { MediaProductEventsConsumer } from './consumer/media-product-events.cons
     MediaOrphanCleanupCron,
     MediaMessage,
     MediaClaimReleaseCron,
+    MediaUnattachedCleanupCron,
     MediaClaimCommandHandler,
     MediaClaimConfirmCommandHandler,
     MediaProductEventsConsumer,

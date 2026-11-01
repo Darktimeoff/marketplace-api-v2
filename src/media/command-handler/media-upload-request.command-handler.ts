@@ -5,6 +5,7 @@ import { MediaStatusEnum, type MediaUploadResponseInterface } from '@marketplace
 import { MediaRepository } from '../repository/media.repository.js';
 import { MediaStorageService } from '../service/media-storage.service.js';
 import { MediaResponseService } from '../service/media-response.service.js';
+import { MediaPartPlanService } from '../service/media-part-plan.service.js';
 import { MEDIA_UPLOAD_TYPES } from '../constant/media-upload.constant.js';
 import { MediaUploadInput } from '../input/media-upload.input.js';
 import type { Media } from '../entity/media.entity.js';
@@ -17,6 +18,7 @@ export class MediaUploadRequestCommandHandler {
     private readonly media: MediaRepository,
     private readonly storage: MediaStorageService,
     private readonly responses: MediaResponseService,
+    private readonly plan: MediaPartPlanService,
   ) {}
 
   async execute(input: MediaUploadInput, ownerIdentityPublicId: string, idempotencyKey: string | null): Promise<MediaUploadResponseInterface> {
@@ -32,7 +34,12 @@ export class MediaUploadRequestCommandHandler {
       throw new ConflictException('Media is already uploaded');
     }
 
-    this.logger.log(`upload requested media=${media.publicId} key=${media.storageKey} size=${media.sizeBytes}`);
+    this.logger.log(`upload requested media=${media.publicId} key=${media.storageKey} size=${media.sizeBytes} multipart=${media.uploadId !== null}`);
+
+    if (media.uploadId) {
+      return this.responses.toMultipartUpload(media, this.plan.partSize(media.sizeBytes), this.plan.partCount(media.sizeBytes));
+    }
+
     return this.responses.toUpload(media, await this.storage.presignUpload(media));
   }
 
@@ -52,14 +59,16 @@ export class MediaUploadRequestCommandHandler {
     }
 
     const type = MEDIA_UPLOAD_TYPES[input.mimeType];
+    const storageKey = `media/${ownerIdentityPublicId}/${randomUUID()}.${type.extension}`;
+    const uploadId = this.plan.isMultipart(input.sizeBytes) ? await this.storage.createMultipartUpload(storageKey, input.mimeType) : null;
 
     return this.media.create({
       ownerIdentityPublicId,
       kind: type.kind,
-      storageKey: `media/${ownerIdentityPublicId}/${randomUUID()}.${type.extension}`,
+      storageKey,
       mimeType: input.mimeType,
       sizeBytes: input.sizeBytes,
-      uploadId: null,
+      uploadId,
       idempotencyKey,
     });
   }

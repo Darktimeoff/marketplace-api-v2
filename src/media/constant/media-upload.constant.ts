@@ -14,3 +14,11 @@ export const MEDIA_UPLOAD_TYPES: Record<string, MediaUploadTypeInterface> = {
 export const MEDIA_UPLOAD_URL_TTL_SECONDS = 300;
 
 export const MEDIA_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
+export const STORAGE_MIN_PART_SIZE_BYTES = 5 * MIB;
+
+export const STORAGE_MAX_PART_COUNT = 10_000;
+
+export const MEDIA_MULTIPART_THRESHOLD_BYTES = 2 * STORAGE_MIN_PART_SIZE_BYTES;
+
+export const MEDIA_PART_URLS_PER_REQUEST = 100;

@@ -19,3 +19,4 @@ export * from './media/enum/media-status.enum.js';
 export * from './media/request/media-upload.request.js';
 export * from './media/response/media.response.js';
 export * from './media/response/media-upload.response.js';
+export * from './media/response/media-upload-parts.response.js';

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { MediaKindEnum } from '@marketplace/contracts-core';
-import { MEDIA_IMAGE_VARIANTS, MEDIA_WEBP_QUALITY } from '../constant/media-variant.constant.js';
+import { MEDIA_IMAGE_FORMATS, MEDIA_IMAGE_MAX_PIXELS, MEDIA_IMAGE_VARIANTS, MEDIA_WEBP_QUALITY } from '../constant/media-variant.constant.js';
 import { MediaUnprocessableException } from '../exception/media-unprocessable.exception.js';
 import type { MediaEncodedInterface } from '../interface/media-encoded.interface.js';
 import type { MediaEncodedVariantInterface } from '../interface/media-encoded-variant.interface.js';
@@ -32,11 +32,20 @@ export class MediaImageVariantService implements MediaVariantEncoderInterface {
   }
 
   private async orientedWidth(sourcePath: string): Promise<number> {
-    try {
-      const metadata = await sharp(sourcePath).metadata();
-      return metadata.autoOrient.width;
-    } catch (error) {
-      throw new MediaUnprocessableException(sourcePath, error instanceof Error ? error.message : String(error));
+    const metadata = await sharp(sourcePath)
+      .metadata()
+      .catch((error: unknown) => {
+        throw new MediaUnprocessableException(sourcePath, error instanceof Error ? error.message : String(error));
+      });
+
+    if (!MEDIA_IMAGE_FORMATS.includes(metadata.format)) {
+      throw new MediaUnprocessableException(sourcePath, `format ${metadata.format} is not allowed`);
     }
+
+    if (metadata.width * metadata.height > MEDIA_IMAGE_MAX_PIXELS) {
+      throw new MediaUnprocessableException(sourcePath, `${metadata.width}x${metadata.height} is over ${MEDIA_IMAGE_MAX_PIXELS} pixels`);
+    }
+
+    return metadata.autoOrient.width;
   }
 }

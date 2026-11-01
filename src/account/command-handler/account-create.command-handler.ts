@@ -6,7 +6,7 @@ import { Account } from '../entity/account.entity.js';
 export class AccountCreateCommandHandler {
   constructor(private readonly accounts: AccountRepository) {}
 
-  execute(customerId: Account['customerId']): Promise<boolean> {
-    return this.accounts.createIfAbsent(customerId);
+  execute(publicId: Account['publicId']): Promise<boolean> {
+    return this.accounts.createIfAbsent(publicId);
   }
 }

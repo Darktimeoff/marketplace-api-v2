@@ -15,6 +15,8 @@ const order = {
   lines: [{ offerId: 3, quantity: 2, unitPrice: '100.00', unitDiscountPrice: '80.00' }],
 } as unknown as Order;
 
+const buyerPublicId = '9c82efe4-36c4-4767-b525-42e95cdbc5a3';
+
 describe('OrderPlaceMessageService', () => {
   const messages = new OrderPlaceMessageService();
 
@@ -66,19 +68,19 @@ describe('OrderPlaceMessageService', () => {
       subject: order.publicId,
       data: { items: [{ offerId: 3, quantity: 2 }] },
     });
-    expect(messages.toAccountCustomerChargeRequest(order.publicId, 4, '160.00')).toMatchObject({
+    expect(messages.toAccountCustomerChargeRequest(order.publicId, buyerPublicId, '160.00')).toMatchObject({
       type: 'account.customer.charge',
-      data: { customerId: 4, amount: '160.00' },
+      data: { customerPublicId: buyerPublicId, amount: '160.00' },
     });
   });
 
   it('builds the compensations as requests keyed by the order publicId, the refund pointing at the charge', () => {
-    expect(messages.toAccountCustomerRefundRequest(order.publicId, 4, '160.00')).toMatchObject({
+    expect(messages.toAccountCustomerRefundRequest(order.publicId, buyerPublicId, '160.00')).toMatchObject({
       specversion: '1.0',
       id: order.publicId,
       type: 'account.customer.refund',
       subject: order.publicId,
-      data: { customerId: 4, amount: '160.00', chargeId: order.publicId },
+      data: { customerPublicId: buyerPublicId, amount: '160.00', chargeId: order.publicId },
     });
     expect(messages.toStockReleaseRequest(order.publicId)).toMatchObject({
       id: order.publicId,

@@ -6,6 +6,7 @@ import { OrderStatusEnum } from '@marketplace/contracts-core';
 import { AccountCustomerChargeRequest, AccountCustomerRefundRequest, StockReleaseRequest, StockReserveRequest } from '@marketplace/messaging-contracts';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
+import { OrderBuyerRepository } from '../repository/order-buyer.repository.js';
 import { OrderPlaceMessageService } from '../service/order-place-message.service.js';
 import { CacheEvict } from '../../generic/cache/decorator/cache-evict.decorator.js';
 import { orderCacheKey } from '../cache-key/order.cache-key.js';
@@ -26,6 +27,7 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
     private readonly orderRepository: OrderRepository,
     private readonly outbox: OrderOutboxRepository,
     private readonly messages: OrderPlaceMessageService,
+    private readonly buyers: OrderBuyerRepository,
   ) {}
 
   async reserveStock(orderPublicId: string, items: OrderPlaceItemInterface[]): Promise<void> {
@@ -53,10 +55,11 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
   }
 
   async chargeCustomer({ orderPublicId, userId, totalAmount }: OrderPlaceChargeInterface): Promise<void> {
+    const buyer = await this.buyers.findByUserIdOrFail(userId);
     const { data } = await this.amqpConnection.request<AccountCustomerChargeRequest.ResponseMessageType>({
       exchange: AccountCustomerChargeRequest.TOPIC,
       routingKey: AccountCustomerChargeRequest.TYPE,
-      payload: this.messages.toAccountCustomerChargeRequest(orderPublicId, userId, totalAmount),
+      payload: this.messages.toAccountCustomerChargeRequest(orderPublicId, buyer.identityPublicId, totalAmount),
       timeout: this.rpcTimeoutMs,
       expiration: this.rpcTimeoutMs,
     });
@@ -67,10 +70,11 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
   }
 
   async refundCustomer({ orderPublicId, userId, totalAmount }: OrderPlaceChargeInterface): Promise<void> {
+    const buyer = await this.buyers.findByUserIdOrFail(userId);
     await this.amqpConnection.request<AccountCustomerRefundRequest.ResponseMessageType>({
       exchange: AccountCustomerRefundRequest.TOPIC,
       routingKey: AccountCustomerRefundRequest.TYPE,
-      payload: this.messages.toAccountCustomerRefundRequest(orderPublicId, userId, totalAmount),
+      payload: this.messages.toAccountCustomerRefundRequest(orderPublicId, buyer.identityPublicId, totalAmount),
       timeout: this.rpcTimeoutMs,
       expiration: this.rpcTimeoutMs,
     });

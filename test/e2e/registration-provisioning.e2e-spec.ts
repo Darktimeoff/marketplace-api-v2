@@ -113,7 +113,7 @@ describe('Registration provisioning over Kafka (e2e)', () => {
     await request(app.getHttpServer()).post('/auth/register').send({ email, password: 'correct-horse' }).expect(201);
     const identity = await dataSource.getRepository(Identity).findOneByOrFail({ email });
     const user = await waitFor(async () => (await dataSource.getRepository(User).findOneBy({ publicId: identity.publicId })) ?? undefined, 'the user');
-    const account = await waitFor(async () => (await dataSource.getRepository(Account).findOneBy({ customerId: user.id })) ?? undefined, 'the account');
+    const account = await waitFor(async () => (await dataSource.getRepository(Account).findOneBy({ publicId: user.publicId })) ?? undefined, 'the account');
     return { identity, user, account };
   }
 
@@ -172,7 +172,7 @@ describe('Registration provisioning over Kafka (e2e)', () => {
     const user = await waitFor(async () => (await dataSource.getRepository(User).findOneBy({ publicId: identity.publicId })) ?? undefined, 'the user');
 
     expect(user).toMatchObject({ email: null, phoneNumber: fullNumber });
-    await waitFor(async () => (await dataSource.getRepository(Account).findOneBy({ customerId: user.id })) ?? undefined, 'the account');
+    await waitFor(async () => (await dataSource.getRepository(Account).findOneBy({ publicId: user.publicId })) ?? undefined, 'the account');
   });
 
   it('creates one user and one account when identity.registered is delivered again', async () => {
@@ -185,7 +185,7 @@ describe('Registration provisioning over Kafka (e2e)', () => {
 
     await waitFor(() => (execute.mock.settledResults.filter(({ type }) => type === 'fulfilled').length >= 2 ? true : undefined), 'both redeliveries');
     expect(await dataSource.getRepository(User).countBy({ publicId: identity.publicId })).toBe(1);
-    expect(await dataSource.getRepository(Account).countBy({ customerId: user.id })).toBe(1);
+    expect(await dataSource.getRepository(Account).countBy({ publicId: user.publicId })).toBe(1);
     expect(await dataSource.getRepository(UserOutbox).countBy({ aggregateId: user.publicId })).toBe(1);
   });
 
@@ -194,7 +194,7 @@ describe('Registration provisioning over Kafka (e2e)', () => {
 
     const { user, account } = await registerAndProvision();
 
-    expect(account.customerId).toBe(user.id);
+    expect(account.publicId).toBe(user.publicId);
   });
 
   it.each([

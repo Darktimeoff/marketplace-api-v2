@@ -42,7 +42,7 @@ describe('Order realtime over Kafka (e2e)', () => {
 
   async function placeOrder(balance: string): Promise<{ orderId: number; userId: number }> {
     const buyer = await aBuyer(app, dataSource);
-    await dataSource.query(`INSERT INTO "Account" ("customerId", "balance") VALUES ($1, $2)`, [buyer.id, balance]);
+    await dataSource.query(`INSERT INTO "Account" ("publicId", "balance") VALUES ($1, $2)`, [buyer.identityPublicId, balance]);
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
     const response = await request(app.getHttpServer())

@@ -45,8 +45,8 @@ describe('Order create (e2e)', () => {
     await app.close();
   });
 
-  async function fund(customerId: number, balance: string): Promise<void> {
-    await dataSource.query(`INSERT INTO "Account" ("customerId", "balance") VALUES ($1, $2)`, [customerId, balance]);
+  async function fund(publicId: string, balance: string): Promise<void> {
+    await dataSource.query(`INSERT INTO "Account" ("publicId", "balance") VALUES ($1, $2)`, [publicId, balance]);
   }
 
   function aBody(items: { offerId: number; quantity: number }[]) {
@@ -75,8 +75,8 @@ describe('Order create (e2e)', () => {
     return (idempotencyKey ? post.set('Idempotency-Key', idempotencyKey) : post).send(body);
   }
 
-  function balanceOf(customerId: number): Promise<string | undefined> {
-    return dataSource.getRepository(Account).findOneBy({ customerId }).then((account) => account?.balance);
+  function balanceOf(publicId: string): Promise<string | undefined> {
+    return dataSource.getRepository(Account).findOneBy({ publicId }).then((account) => account?.balance);
   }
 
   function offerById(id: number): Promise<SellerOffer> {
@@ -141,7 +141,7 @@ describe('Order create (e2e)', () => {
 
   it('pays the order, snapshots the recipient, reserves stock and charges the user', async () => {
     const buyer = await newBuyer();
-    await fund(buyer.id, '1000.00');
+    await fund(buyer.identityPublicId, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', discountPrice: '80.00', onHandQuantity: 5 });
 
     const response = await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 2 }])).expect(202);
@@ -174,7 +174,7 @@ describe('Order create (e2e)', () => {
       expect.objectContaining({ offerId: offer.id, quantity: 2, status: StockReservationStatusEnum.RESERVED }),
     ]);
 
-    expect(await balanceOf(buyer.id)).toBe('840.00');
+    expect(await balanceOf(buyer.identityPublicId)).toBe('840.00');
 
     const rows = await publishedOutboxRows(2);
     expect(rows.map(({ type }) => type)).toEqual(['order.created', 'order.paid']);
@@ -210,14 +210,14 @@ describe('Order create (e2e)', () => {
         paidAt: expect.any(String),
       },
     });
-    expect(await dataSource.getRepository(Transaction).findBy({ customerId: buyer.id })).toEqual([
+    expect(await dataSource.getRepository(Transaction).findBy({ account: { publicId: buyer.identityPublicId } })).toEqual([
       expect.objectContaining({ amount: '160.00', type: TransactionTypeEnum.PAYMENT, status: TransactionStatusEnum.SUCCESS }),
     ]);
   });
 
   it('sums several lines and stores a missing building as null', async () => {
     const buyer = await newBuyer();
-    await fund(buyer.id, '1000.00');
+    await fund(buyer.identityPublicId, '1000.00');
     const first = await aSellerOffer(dataSource.manager, { price: '50.00', onHandQuantity: 5 });
     const second = await aSellerOffer(dataSource.manager, { price: '30.00', discountPrice: '20.00', onHandQuantity: 5 });
     const body = aBody([{ offerId: second.id, quantity: 3 }, { offerId: first.id, quantity: 1 }]);
@@ -230,12 +230,12 @@ describe('Order create (e2e)', () => {
     expect(order.status).toBe(OrderStatusEnum.paid);
     expect(order.orderRecipient.address.building).toBeNull();
     expect(order.lines).toHaveLength(2);
-    expect(await balanceOf(buyer.id)).toBe('890.00');
+    expect(await balanceOf(buyer.identityPublicId)).toBe('890.00');
   });
 
   it('cancels the order when stock is insufficient and charges nothing', async () => {
     const buyer = await newBuyer();
-    await fund(buyer.id, '1000.00');
+    await fund(buyer.identityPublicId, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 1 });
 
     await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 2 }])).expect(202);
@@ -243,7 +243,7 @@ describe('Order create (e2e)', () => {
     expect((await settledOrder()).status).toBe(OrderStatusEnum.canceled);
     expect(await offerById(offer.id)).toMatchObject({ onHandQuantity: 1, reservedQuantity: 0 });
     expect(await dataSource.getRepository(StockReservation).count()).toBe(0);
-    expect(await balanceOf(buyer.id)).toBe('1000.00');
+    expect(await balanceOf(buyer.identityPublicId)).toBe('1000.00');
     expect(await dataSource.getRepository(Transaction).count()).toBe(0);
     const order = await onlyOrder();
     expect(await publishedOutboxRows(2)).toEqual([
@@ -254,7 +254,7 @@ describe('Order create (e2e)', () => {
 
   it('marks the order failed_payment and releases the stock when the balance is too low', async () => {
     const buyer = await newBuyer();
-    await fund(buyer.id, '50.00');
+    await fund(buyer.identityPublicId, '50.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
     await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(202);
@@ -265,7 +265,7 @@ describe('Order create (e2e)', () => {
     expect(await dataSource.getRepository(StockReservation).findBy({ orderPublicId: order.publicId })).toEqual([
       expect.objectContaining({ status: StockReservationStatusEnum.RELEASED }),
     ]);
-    expect(await balanceOf(buyer.id)).toBe('50.00');
+    expect(await balanceOf(buyer.identityPublicId)).toBe('50.00');
     expect(await dataSource.getRepository(Transaction).count()).toBe(0);
     expect(await publishedOutboxRows(2)).toEqual([
       expect.objectContaining({ type: 'order.created' }),
@@ -285,7 +285,7 @@ describe('Order create (e2e)', () => {
       return send(options);
     });
     const buyer = await newBuyer();
-    await fund(buyer.id, '50.00');
+    await fund(buyer.identityPublicId, '50.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
     await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(202);
@@ -316,16 +316,16 @@ describe('Order create (e2e)', () => {
       return reply;
     });
     const buyer = await newBuyer();
-    await fund(buyer.id, '1000.00');
+    await fund(buyer.identityPublicId, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
     await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(202);
 
     const order = await settledOrder();
     expect(order.status).toBe(OrderStatusEnum.canceled);
-    expect(await balanceOf(buyer.id)).toBe('1000.00');
+    expect(await balanceOf(buyer.identityPublicId)).toBe('1000.00');
     expect(await offerById(offer.id)).toMatchObject({ reservedQuantity: 0 });
-    const transactions = await dataSource.getRepository(Transaction).find({ where: { customerId: buyer.id }, order: { id: 'ASC' } });
+    const transactions = await dataSource.getRepository(Transaction).find({ where: { account: { publicId: buyer.identityPublicId } }, order: { id: 'ASC' } });
     expect(transactions.map(({ type, amount, status }) => ({ type, amount, status }))).toEqual([
       { type: TransactionTypeEnum.PAYMENT, amount: '100.00', status: TransactionStatusEnum.SUCCESS },
       { type: TransactionTypeEnum.REFUND, amount: '100.00', status: TransactionStatusEnum.SUCCESS },
@@ -338,7 +338,7 @@ describe('Order create (e2e)', () => {
 
   it('returns 404 for an unknown offer and leaves nothing behind', async () => {
     const buyer = await newBuyer();
-    await fund(buyer.id, '1000.00');
+    await fund(buyer.identityPublicId, '1000.00');
 
     await placeOrder(buyer, aBody([{ offerId: 999999, quantity: 1 }])).expect(404);
 
@@ -350,8 +350,8 @@ describe('Order create (e2e)', () => {
   it('sells the last unit only once under concurrent orders', async () => {
     const first = await newBuyer();
     const second = await newBuyer();
-    await fund(first.id, '1000.00');
-    await fund(second.id, '1000.00');
+    await fund(first.identityPublicId, '1000.00');
+    await fund(second.identityPublicId, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 1 });
 
     const responses = await Promise.all([
@@ -368,7 +368,7 @@ describe('Order create (e2e)', () => {
   describe('Idempotency-Key', () => {
     it('places one order for concurrent requests with the same key', async () => {
       const buyer = await newBuyer();
-      await fund(buyer.id, '1000.00');
+      await fund(buyer.identityPublicId, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
       const key = randomUUID();
       const body = aBody([{ offerId: offer.id, quantity: 1 }]);
@@ -380,13 +380,13 @@ describe('Order create (e2e)', () => {
       const [order] = await settledOrders(1);
       expect(order).toMatchObject({ publicId: responses[0].body.publicId, idempotencyKey: key, status: OrderStatusEnum.paid });
       expect(await dataSource.getRepository(OrderRecipient).count()).toBe(1);
-      expect(await balanceOf(buyer.id)).toBe('900.00');
+      expect(await balanceOf(buyer.identityPublicId)).toBe('900.00');
       expect((await publishedOutboxRows(2)).map(({ type }) => type)).toEqual(['order.created', 'order.paid']);
     });
 
     it('returns the same order when the request is retried after it settled', async () => {
       const buyer = await newBuyer();
-      await fund(buyer.id, '1000.00');
+      await fund(buyer.identityPublicId, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
       const key = randomUUID();
       const body = aBody([{ offerId: offer.id, quantity: 1 }]);
@@ -397,12 +397,12 @@ describe('Order create (e2e)', () => {
 
       expect(retry.body).toMatchObject({ id: first.body.id, publicId: first.body.publicId, status: OrderStatusEnum.paid });
       expect(await dataSource.getRepository(Order).count()).toBe(1);
-      expect(await balanceOf(buyer.id)).toBe('900.00');
+      expect(await balanceOf(buyer.identityPublicId)).toBe('900.00');
     });
 
     it('places two orders for the same body with different keys or without a key', async () => {
       const buyer = await newBuyer();
-      await fund(buyer.id, '1000.00');
+      await fund(buyer.identityPublicId, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
       const body = aBody([{ offerId: offer.id, quantity: 1 }]);
 
@@ -417,8 +417,8 @@ describe('Order create (e2e)', () => {
     it('scopes the key to the user', async () => {
       const first = await newBuyer();
       const second = await newBuyer();
-      await fund(first.id, '1000.00');
-      await fund(second.id, '1000.00');
+      await fund(first.identityPublicId, '1000.00');
+      await fund(second.identityPublicId, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
       const key = randomUUID();
 
@@ -450,15 +450,15 @@ describe('Order create (e2e)', () => {
     it('ignores a userId in the body and places the order for the token owner', async () => {
       const buyer = await newBuyer();
       const victim = await newBuyer();
-      await fund(buyer.id, '1000.00');
-      await fund(victim.id, '1000.00');
+      await fund(buyer.identityPublicId, '1000.00');
+      await fund(victim.identityPublicId, '1000.00');
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
       await placeOrder(buyer, { ...aBody([{ offerId: offer.id, quantity: 1 }]), userId: victim.id }).expect(202);
 
       const order = await settledOrder();
       expect(order).toMatchObject({ userId: buyer.id, ownerIdentityPublicId: buyer.identityPublicId, status: OrderStatusEnum.paid });
-      expect(await balanceOf(victim.id)).toBe('1000.00');
+      expect(await balanceOf(victim.identityPublicId)).toBe('1000.00');
     });
 
     it('answers 409 while the buyer is not provisioned yet', async () => {

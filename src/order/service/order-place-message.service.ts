@@ -84,7 +84,7 @@ export class OrderPlaceMessageService {
     }
   }
 
-  toAccountCustomerRefundRequest(orderPublicId: string, customerId: number, amount: string): AccountCustomerRefundRequest.MessageType {
+  toAccountCustomerRefundRequest(orderPublicId: string, customerPublicId: string, amount: string): AccountCustomerRefundRequest.MessageType {
     return {
       specversion: '1.0',
       id: orderPublicId,
@@ -95,7 +95,7 @@ export class OrderPlaceMessageService {
       subject: orderPublicId,
       correlationid: orderPublicId,
       data: {
-        customerId,
+        customerPublicId,
         amount,
         chargeId: orderPublicId,
       },
@@ -132,7 +132,7 @@ export class OrderPlaceMessageService {
     }
   }
 
-  toAccountCustomerChargeRequest(id: string, customerId: Order['userId'], amount: string): AccountCustomerChargeRequest.MessageType {
+  toAccountCustomerChargeRequest(id: string, customerPublicId: string, amount: string): AccountCustomerChargeRequest.MessageType {
     return {
       specversion: '1.0',
       id,
@@ -142,7 +142,7 @@ export class OrderPlaceMessageService {
       datacontenttype: 'application/json',
       subject: id,
       correlationid: id,
-      data: { customerId, amount },
+      data: { customerPublicId, amount },
     }
   }
 }

@@ -37,6 +37,7 @@ import { AddMedia1792000000000 } from '../../src/migrations/1792000000000-AddMed
 import { AddMediaAttachment1792000000100 } from '../../src/migrations/1792000000100-AddMediaAttachment.js';
 import { AddProductMedia1792000000200 } from '../../src/migrations/1792000000200-AddProductMedia.js';
 import { UnifyUserIdentity1793000000000 } from '../../src/migrations/1793000000000-UnifyUserIdentity.js';
+import { AccountIdentifiers1793000000100 } from '../../src/migrations/1793000000100-AccountIdentifiers.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
@@ -105,6 +106,7 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   AddMediaAttachment1792000000100,
   AddProductMedia1792000000200,
   UnifyUserIdentity1793000000000,
+  AccountIdentifiers1793000000100,
 ];
 
 export const testEntities = [

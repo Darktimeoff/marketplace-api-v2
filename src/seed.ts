@@ -337,13 +337,16 @@ async function seed(): Promise<void> {
     // (домен "amount"), направление денег кодирует type = PAYMENT.
     const paidStatuses = [OrderStatusEnum.paid, OrderStatusEnum.shipped, OrderStatusEnum.delivered, OrderStatusEnum.completed];
 
-    await AppDataSource.query(`INSERT INTO "Account" ("customerId") VALUES ($1) ON CONFLICT ("customerId") DO NOTHING`, [buyer.id]);
+    const [account]: { id: number }[] = await AppDataSource.query(
+      `INSERT INTO "Account" ("publicId") VALUES ($1) ON CONFLICT ("publicId") DO UPDATE SET "publicId" = EXCLUDED."publicId" RETURNING "id"`,
+      [buyer.publicId],
+    );
 
     await ensure(
       transactions,
-      { customerId: buyer.id, amount: total.toFixed(2), type: TransactionTypeEnum.PAYMENT } as FindOptionsWhere<Transaction>,
+      { accountId: account.id, amount: total.toFixed(2), type: TransactionTypeEnum.PAYMENT } as FindOptionsWhere<Transaction>,
       {
-        customerId: buyer.id,
+        accountId: account.id,
         amount: total.toFixed(2),
         type: TransactionTypeEnum.PAYMENT,
         status: paidStatuses.includes(order.status) ? TransactionStatusEnum.SUCCESS : TransactionStatusEnum.PENDING,
@@ -352,12 +355,15 @@ async function seed(): Promise<void> {
   }
 
   await AppDataSource.query(
-    `INSERT INTO "Account" ("customerId", "balance")
-     SELECT "customerId", COALESCE(SUM(CASE WHEN "type" IN ('DEPOSIT', 'REFUND') THEN "amount" ELSE -"amount" END) FILTER (WHERE "status" = 'SUCCESS'), 0)
-       FROM "Transaction"
-      WHERE "deletedAt" IS NULL
-      GROUP BY "customerId"
-     ON CONFLICT ("customerId") DO UPDATE SET "balance" = EXCLUDED."balance"`,
+    `UPDATE "Account"
+        SET "balance" = "totals"."balance"
+       FROM (
+             SELECT "accountId", COALESCE(SUM(CASE WHEN "type" IN ('DEPOSIT', 'REFUND') THEN "amount" ELSE -"amount" END) FILTER (WHERE "status" = 'SUCCESS'), 0) AS "balance"
+               FROM "Transaction"
+              WHERE "deletedAt" IS NULL
+              GROUP BY "accountId"
+            ) AS "totals"
+      WHERE "Account"."id" = "totals"."accountId"`,
   );
 }
 

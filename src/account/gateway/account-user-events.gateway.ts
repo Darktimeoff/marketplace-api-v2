@@ -34,7 +34,14 @@ export class AccountUserEventsGateway implements OnModuleInit {
       throw new KafkaRejectedMessageException(parsed.error.message);
     }
 
-    const created = await this.accountCreate.execute(parsed.data.data.userId);
-    this.logger.log(`${created ? 'created' : 'skipped existing'} account for user=${parsed.data.data.userId} id=${parsed.data.id}`);
+    const { publicId } = parsed.data.data;
+
+    if (!publicId) {
+      this.logger.debug(`skipped id=${parsed.data.id}: event predates the person publicId, the account was back-filled by migration`);
+      return;
+    }
+
+    const created = await this.accountCreate.execute(publicId);
+    this.logger.log(`${created ? 'created' : 'skipped existing'} account for person=${publicId} id=${parsed.data.id}`);
   }
 }

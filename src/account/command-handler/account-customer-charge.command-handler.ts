@@ -11,9 +11,11 @@ export class AccountCustomerChargeCommandHandler {
   constructor(private readonly repository: AccountRepository) {}
 
   @Transactional()
-  async execute({ amount, customerId }: AccountCustomerChargeRequest.DataInterface) {
-    if (!await this.repository.debit(customerId, Number(amount).toFixed(2))) {
-      const balance = await this.repository.findBalance(customerId);
+  async execute({ amount, customerPublicId }: AccountCustomerChargeRequest.DataInterface) {
+    const accountId = await this.repository.debit(customerPublicId, Number(amount).toFixed(2));
+
+    if (accountId === null) {
+      const balance = await this.repository.findBalance(customerPublicId);
 
       if (balance === null) {
         throw new AccountCustomerChargeRejectedException('customer_not_found')
@@ -23,7 +25,7 @@ export class AccountCustomerChargeCommandHandler {
     }
 
     await this.repository.create({
-      customerId,
+      accountId,
       amount: Number(amount).toFixed(2),
       type: TransactionTypeEnum.PAYMENT,
       status: TransactionStatusEnum.SUCCESS,

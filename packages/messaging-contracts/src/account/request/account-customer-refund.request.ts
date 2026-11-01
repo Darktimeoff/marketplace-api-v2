@@ -10,7 +10,7 @@ export namespace AccountCustomerRefundRequest {
   export const RESPONSE_SOURCE = SourceEnum.ACCOUNT;
 
   export interface DataInterface {
-    customerId: number;
+    customerPublicId: string;
     amount: string;
     chargeId: string;
   }

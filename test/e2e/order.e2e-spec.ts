@@ -36,16 +36,17 @@ describe('Order (e2e)', () => {
     await app.close();
   });
 
-  async function fundBuyer(customerId: number, amount: string): Promise<void> {
-    await dataSource.query(
-      `INSERT INTO "Account" ("customerId", "balance") VALUES ($1, $2)
-       ON CONFLICT ("customerId") DO UPDATE SET "balance" = "Account"."balance" + EXCLUDED."balance"`,
-      [customerId, amount],
+  async function fundBuyer(publicId: string, amount: string): Promise<void> {
+    const [account]: { id: number }[] = await dataSource.query(
+      `INSERT INTO "Account" ("publicId", "balance") VALUES ($1, $2)
+       ON CONFLICT ("publicId") DO UPDATE SET "balance" = "Account"."balance" + EXCLUDED."balance"
+       RETURNING "id"`,
+      [publicId, amount],
     );
     const transactions = dataSource.manager.getRepository(Transaction);
     await transactions.save(
       transactions.create({
-        customerId,
+        accountId: account.id,
         amount,
         type: TransactionTypeEnum.DEPOSIT,
         status: TransactionStatusEnum.SUCCESS,
@@ -59,7 +60,7 @@ describe('Order (e2e)', () => {
   }
 
   async function aPlacedOrder(owner: TestBuyerInterface): Promise<number> {
-    await fundBuyer(owner.id, '1000.00');
+    await fundBuyer(owner.identityPublicId, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '50.00', onHandQuantity: 5 });
     const response = await request(app.getHttpServer())
       .post('/order')
@@ -79,7 +80,7 @@ describe('Order (e2e)', () => {
 
   it('creates an order and reads it back over HTTP', async () => {
     const buyer = await aBuyer(app, dataSource);
-    await fundBuyer(buyer.id, '1000.00');
+    await fundBuyer(buyer.identityPublicId, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, {
       price: '50.00',
       onHandQuantity: 5,

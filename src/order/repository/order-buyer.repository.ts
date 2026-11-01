@@ -21,6 +21,10 @@ export class OrderBuyerRepository {
     return result.raw.length > 0;
   }
 
+  findByUserIdOrFail(userId: OrderBuyer['userId']): Promise<OrderBuyer> {
+    return this.txHost.tx.getRepository(OrderBuyer).findOneByOrFail({ userId });
+  }
+
   findByIdentityPublicId(identityPublicId: OrderBuyer['identityPublicId']): Promise<OrderBuyer | null> {
     return this.txHost.tx.getRepository(OrderBuyer).findOneBy({ identityPublicId });
   }

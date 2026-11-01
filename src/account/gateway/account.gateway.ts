@@ -88,8 +88,7 @@ export class AccountGateway {
   }
 
   private isValidMovement(data: Partial<AccountCustomerChargeRequest.DataInterface> | undefined): boolean {
-    return Number.isSafeInteger(data?.customerId)
-      && Number(data?.customerId) > 0
+    return isUUID(data?.customerPublicId)
       && typeof data?.amount === 'string'
       && /^\d{1,10}(\.\d{1,2})?$/.test(data.amount)
       && Number(data.amount) > 0

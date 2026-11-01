@@ -47,58 +47,58 @@ describe('Account refund (e2e)', () => {
     };
   }
 
-  async function charge(chargeId: string, customerId: number, amount: string): Promise<AccountCustomerChargeRequest.ResponseDataType> {
+  async function charge(chargeId: string, customerPublicId: string, amount: string): Promise<AccountCustomerChargeRequest.ResponseDataType> {
     const { data } = await amqpConnection.request<AccountCustomerChargeRequest.ResponseMessageType>({
       exchange: AccountCustomerChargeRequest.TOPIC,
       routingKey: AccountCustomerChargeRequest.TYPE,
-      payload: envelope(chargeId, AccountCustomerChargeRequest.TYPE, { customerId, amount }),
+      payload: envelope(chargeId, AccountCustomerChargeRequest.TYPE, { customerPublicId, amount }),
       timeout: 5000,
     });
     return data;
   }
 
-  async function refund(chargeId: string, customerId: number, amount: string): Promise<AccountCustomerRefundRequest.ResponseDataType> {
+  async function refund(chargeId: string, customerPublicId: string, amount: string): Promise<AccountCustomerRefundRequest.ResponseDataType> {
     const { data } = await amqpConnection.request<AccountCustomerRefundRequest.ResponseMessageType>({
       exchange: AccountCustomerRefundRequest.TOPIC,
       routingKey: AccountCustomerRefundRequest.TYPE,
-      payload: envelope(chargeId, AccountCustomerRefundRequest.TYPE, { customerId, amount, chargeId }),
+      payload: envelope(chargeId, AccountCustomerRefundRequest.TYPE, { customerPublicId, amount, chargeId }),
       timeout: 5000,
     });
     return data;
   }
 
-  async function fundedCustomer(balance: string): Promise<number> {
+  async function fundedCustomer(balance: string): Promise<string> {
     const customer = await aUser(dataSource.manager);
-    await dataSource.query(`INSERT INTO "Account" ("customerId", "balance") VALUES ($1, $2)`, [customer.id, balance]);
-    return customer.id;
+    await dataSource.query(`INSERT INTO "Account" ("publicId", "balance") VALUES ($1, $2)`, [customer.publicId, balance]);
+    return customer.publicId;
   }
 
-  function balanceOf(customerId: number): Promise<string | undefined> {
-    return dataSource.getRepository(Account).findOneBy({ customerId }).then((account) => account?.balance);
+  function balanceOf(publicId: string): Promise<string | undefined> {
+    return dataSource.getRepository(Account).findOneBy({ publicId }).then((account) => account?.balance);
   }
 
   it('refunds an applied charge once', async () => {
-    const customerId = await fundedCustomer('100.00');
+    const customerPublicId = await fundedCustomer('100.00');
     const chargeId = randomUUID();
 
-    expect(await charge(chargeId, customerId, '40.00')).toEqual({ status: 'success' });
-    expect(await refund(chargeId, customerId, '40.00')).toEqual({ status: 'refunded' });
-    expect(await refund(chargeId, customerId, '40.00')).toEqual({ status: 'refunded' });
+    expect(await charge(chargeId, customerPublicId, '40.00')).toEqual({ status: 'success' });
+    expect(await refund(chargeId, customerPublicId, '40.00')).toEqual({ status: 'refunded' });
+    expect(await refund(chargeId, customerPublicId, '40.00')).toEqual({ status: 'refunded' });
 
-    expect(await balanceOf(customerId)).toBe('100.00');
-    expect((await dataSource.getRepository(Transaction).findBy({ customerId })).map(({ type }) => type).toSorted()).toEqual(
+    expect(await balanceOf(customerPublicId)).toBe('100.00');
+    expect((await dataSource.getRepository(Transaction).findBy({ account: { publicId: customerPublicId } })).map(({ type }) => type).toSorted()).toEqual(
       [TransactionTypeEnum.PAYMENT, TransactionTypeEnum.REFUND].toSorted(),
     );
   });
 
   it('answers not_charged for a refund before its charge and never applies the late charge', async () => {
-    const customerId = await fundedCustomer('100.00');
+    const customerPublicId = await fundedCustomer('100.00');
     const chargeId = randomUUID();
 
-    expect(await refund(chargeId, customerId, '40.00')).toEqual({ status: 'not_charged' });
-    await charge(chargeId, customerId, '40.00');
+    expect(await refund(chargeId, customerPublicId, '40.00')).toEqual({ status: 'not_charged' });
+    await charge(chargeId, customerPublicId, '40.00');
 
-    expect(await balanceOf(customerId)).toBe('100.00');
-    expect(await dataSource.getRepository(Transaction).countBy({ customerId })).toBe(0);
+    expect(await balanceOf(customerPublicId)).toBe('100.00');
+    expect(await dataSource.getRepository(Transaction).countBy({ account: { publicId: customerPublicId } })).toBe(0);
   });
 });

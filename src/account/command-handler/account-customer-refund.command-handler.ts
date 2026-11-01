@@ -15,14 +15,14 @@ export class AccountCustomerRefundCommandHandler {
   ) {}
 
   @Transactional()
-  async execute({ customerId, amount, chargeId }: AccountCustomerRefundRequest.DataInterface): Promise<boolean> {
+  async execute({ customerPublicId, amount, chargeId }: AccountCustomerRefundRequest.DataInterface): Promise<boolean> {
     if (await this.inbox.markProcessed(AccountInboxConsumerEnum.CUSTOMER_CHARGE, chargeId)) {
       return false;
     }
 
-    await this.repository.credit(customerId, Number(amount).toFixed(2));
+    const accountId = await this.repository.credit(customerPublicId, Number(amount).toFixed(2));
     await this.repository.create({
-      customerId,
+      accountId,
       amount: Number(amount).toFixed(2),
       type: TransactionTypeEnum.REFUND,
       status: TransactionStatusEnum.SUCCESS,

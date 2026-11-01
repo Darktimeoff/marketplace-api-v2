@@ -32,13 +32,14 @@ The integer `id` never leaves its context: not in HTTP, not in events, not in Ra
 
 ### 1.2 account
 
-- [ ] **Migration `AccountIdentifiers`:**
+- [x] **Migration `AccountIdentifiers`:**
   - `Account`: add `id` identity, add `publicId uuid` and backfill `"publicId" = User."publicId"` by `customerId = User.id` (a one-off cross-context read, which only migrations may do). The PK moves to `id`; add unique `Account_publicId_key`.
   - `Transaction`: add `accountId` and backfill from `Account.id` by `customerId`; drop `Transaction_customerId_fkey`, the index and `customerId`; add `Transaction_accountId_fkey` (`RESTRICT`) and `Transaction_accountId_idx`.
-- [ ] **Consumer:** `account-user-events.gateway` switches from `userId` to `publicId` (tolerant reader, as in 1.1).
-- [ ] **Contracts:** `AccountCustomerChargeRequest` / `AccountCustomerRefundRequest`: `customerId: number` → `customerPublicId: string`.
-- [ ] **Code:** the entities, `account.repository` (`debit` / `credit` / `findBalance` / `createIfAbsent` by `publicId`, `ON CONFLICT ("publicId")`), the charge / refund / create command handlers, `account.gateway` (uuid validation instead of `isSafeInteger`), `account-user-events.gateway` + schema (tolerant reader), `seed.ts`.
-- [ ] **Tests:** `account-refund.e2e`, `order-create.e2e`, `order.e2e`, `order-realtime.e2e`, `registration-provisioning.e2e`. A new integration test of `debit` by `publicId` that keeps the balance guard.
+- [x] **Consumer:** `account-user-events.gateway` switches from `userId` to `publicId` (tolerant reader, as in 1.1).
+- [x] **Contracts:** `AccountCustomerChargeRequest` / `AccountCustomerRefundRequest`: `customerId: number` → `customerPublicId: string`.
+- [x] **Code:** the entities, `account.repository` (`debit` / `credit` / `findBalance` / `createIfAbsent` by `publicId`, `ON CONFLICT ("publicId")`), the charge / refund / create command handlers, `account.gateway` (uuid validation instead of `isSafeInteger`), `account-user-events.gateway` + schema (tolerant reader), `seed.ts`.
+- [x] **Tests:** `account-refund.e2e`, `order-create.e2e`, `order.e2e`, `order-realtime.e2e`, `registration-provisioning.e2e`. A new integration test of `debit` by `publicId` that keeps the balance guard.
+- [x] **Order sender:** until 1.3 the workflow input still carries `userId`; the charge / refund activities map it to the person uuid through order's own `OrderBuyer`, so in-flight workflows are untouched.
 
 ### 1.3 order buyer + order
 

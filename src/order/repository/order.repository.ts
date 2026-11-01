@@ -21,12 +21,6 @@ export class OrderRepository {
     return this.txHost.tx.getRepository(Order).findOneBy({ buyerId, idempotencyKey });
   }
 
-  async updateStatusById(id: Order['id'], status: OrderStatusEnum): Promise<Order> {
-    const orders = this.txHost.tx.getRepository(Order);
-    await orders.update(id, { status });
-    return this.findByIdOrFail(id);
-  }
-
   async updatePendingStatusByPublicId(publicId: Order['publicId'], status: OrderStatusEnum): Promise<Order | null> {
     const result = await this.txHost.tx
       .getRepository(Order)
@@ -45,12 +39,5 @@ export class OrderRepository {
       where: { publicId },
       relations: { lines: true, orderRecipient: true, buyer: true },
     });
-  }
-
-  async findByIdOrFail(id: Order['id']): Promise<Order> {
-    return await this.txHost.tx.getRepository(Order).findOneOrFail({
-      where: { id },
-      relations: { lines: true, orderRecipient: true, buyer: true },
-    })
   }
 }

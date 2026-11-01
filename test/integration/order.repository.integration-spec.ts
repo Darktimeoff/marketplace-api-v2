@@ -76,7 +76,7 @@ describe('OrderRepository', () => {
     ).rejects.toThrow(/violates foreign key constraint/);
   });
 
-  it('findByIdOrFail joins items and orderRecipient in one read', async () => {
+  it('findByPublicIdOrFail joins items, orderRecipient and buyer in one read', async () => {
     const recipient = await anOrderRecipient(testModule.dataSource.manager);
     const offer = await aSellerOffer(testModule.dataSource.manager, {
       price: '50.00',
@@ -100,14 +100,15 @@ describe('OrderRepository', () => {
       },
     ]);
 
-    const found = await repository.findByIdOrFail(order.id);
+    const found = await repository.findByPublicIdOrFail(order.publicId);
 
     expect(found.orderRecipient.id).toBe(recipient.id);
+    expect(found.buyer.id).toBe(order.buyerId);
     expect(found.lines).toHaveLength(1);
     expect(found.lines[0].offerPublicId).toBe(offer.publicId);
   });
 
-  it('findByIdOrFail rejects for a missing id', async () => {
-    await expect(repository.findByIdOrFail(999999)).rejects.toThrow();
+  it('findByPublicIdOrFail rejects for a missing order', async () => {
+    await expect(repository.findByPublicIdOrFail(randomUUID())).rejects.toThrow();
   });
 });

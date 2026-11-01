@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MediaClaimStatusEnum, MediaKindEnum } from '@marketplace/contracts-core';
+import { MediaClaimStatusEnum, MediaKindEnum, MediaVariantNameEnum } from '@marketplace/contracts-core';
 import { MediaMessage } from '../../src/media/message/media.message.js';
 import type { Media } from '../../src/media/entity/media.entity.js';
 
@@ -48,6 +48,26 @@ describe('MediaMessage', () => {
       aggregateId: media.publicId,
       type: 'media.variants.generate',
       payload: { mediaPublicId: media.publicId },
+    });
+  });
+
+  it('announces generated variants as a kafka event keyed by the media', () => {
+    const media = aMedia('44444444-4444-4444-8444-444444444444');
+    const variants = [{ mediaId: 1, name: MediaVariantNameEnum.W320, mimeType: 'image/webp', storageKey: 'media/owner/4/w320.webp', width: 320, height: 160, sizeBytes: 900 }];
+
+    expect(new MediaMessage().toVariantsGeneratedOutbox(media, variants, 'LggS', new Date('2026-11-01T10:00:00.000Z'))).toEqual({
+      id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      broker: 'kafka',
+      topic: 'media.events',
+      aggregateType: 'Media',
+      aggregateId: media.publicId,
+      type: 'media.variants.generated',
+      payload: {
+        mediaPublicId: media.publicId,
+        thumbHash: 'LggS',
+        variants: [{ name: MediaVariantNameEnum.W320, mimeType: 'image/webp', storageKey: 'media/owner/4/w320.webp', width: 320, height: 160 }],
+        generatedAt: '2026-11-01T10:00:00.000Z',
+      },
     });
   });
 });

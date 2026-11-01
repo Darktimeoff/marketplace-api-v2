@@ -10,6 +10,7 @@ export * from './order/event/order-paid.event.js';
 export * from './order/event/order-failed.event.js';
 export * from './media/rpc/media-claim.rpc.js';
 export * from './media/job/media-variants-generate.job.js';
+export * from './media/event/media-variants-generated.event.js';
 export * from './product/event/product-created.event.js';
 export * from './seller-offer/rpc/seller-offer-price.rpc.js';
 export * from './account/rpc/account-customer-charge.rpc.js';

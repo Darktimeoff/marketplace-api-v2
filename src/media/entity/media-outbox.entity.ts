@@ -1,4 +1,5 @@
 import { Check, Column, CreateDateColumn, Entity, Index, PrimaryColumn } from 'typeorm';
+import type { TopicEnum } from '@marketplace/messaging-contracts';
 import { MediaQueueEnum } from '../enum/media-queue.enum.js';
 import { MediaOutboxAggregateTypeEnum } from '../enum/media-outbox-aggregate-type.enum.js';
 import { MessageBrokerEnum } from '../../generic/messaging/enum/message-broker.enum.js';
@@ -16,7 +17,7 @@ export class MediaOutbox {
   broker: MessageBrokerEnum;
 
   @Column({ type: 'varchar', length: 249 })
-  topic: MediaQueueEnum;
+  topic: TopicEnum | MediaQueueEnum;
 
   @Column({ type: 'varchar', length: 64 })
   aggregateType: MediaOutboxAggregateTypeEnum;

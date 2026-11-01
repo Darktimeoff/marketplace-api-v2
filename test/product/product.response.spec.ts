@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MediaKindEnum } from '@marketplace/contracts-core';
+import { MediaKindEnum, MediaVariantNameEnum } from '@marketplace/contracts-core';
 import { ProductResponse } from '../../src/product/response/product.response.js';
 import type { EnvironmentService } from '../../src/generic/environment/environment.module.js';
 import type { Product } from '../../src/product/entity/product.entity.js';
@@ -26,10 +26,25 @@ describe('ProductResponse', () => {
       categoryPublicId: 'c-public',
       brandPublicId: 'b-public',
       media: [
-        { id: 'm-1', position: 0, kind: MediaKindEnum.IMAGE, mimeType: 'image/png', url: 'https://cdn.marketplace.example/media/o/1.png' },
-        { id: 'm-2', position: 1, kind: MediaKindEnum.VIDEO, mimeType: 'video/mp4', url: 'https://cdn.marketplace.example/media/o/2.mp4' },
+        { id: 'm-1', position: 0, kind: MediaKindEnum.IMAGE, mimeType: 'image/png', url: 'https://cdn.marketplace.example/media/o/1.png', thumbHash: null, variants: [] },
+        { id: 'm-2', position: 1, kind: MediaKindEnum.VIDEO, mimeType: 'video/mp4', url: 'https://cdn.marketplace.example/media/o/2.mp4', thumbHash: null, variants: [] },
       ],
       createdAt: product.createdAt,
+    });
+  });
+
+  it('answers the generated variants with CDN URLs and the thumbhash placeholder', () => {
+    const withVariants = [
+      {
+        ...media[0],
+        thumbHash: 'LggSBwD4lniJiHePhFeHp4iId4IIKIoA',
+        variants: [{ name: MediaVariantNameEnum.W320, mimeType: 'image/webp', storageKey: 'media/o/1/w320.webp', width: 320, height: 192 }],
+      },
+    ] as ProductMedia[];
+
+    expect(aService('https://cdn.marketplace.example').toProduct(product, category, brand, withVariants).media[0]).toMatchObject({
+      thumbHash: 'LggSBwD4lniJiHePhFeHp4iId4IIKIoA',
+      variants: [{ name: MediaVariantNameEnum.W320, mimeType: 'image/webp', url: 'https://cdn.marketplace.example/media/o/1/w320.webp', width: 320, height: 192 }],
     });
   });
 

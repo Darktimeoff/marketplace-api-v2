@@ -22,14 +22,23 @@ import { QueueModule } from '../generic/queue/queue.module.js';
 import { CategoryModule } from '../category/category.module.js';
 import { BrandModule } from '../brand/brand.module.js';
 import { MessagingModule } from '../generic/messaging/messaging.module.js';
+import { ProductMediaVariant } from './entity/product-media-variant.entity.js';
+import { ProductMediaVariantRepository } from './repository/product-media-variant.repository.js';
+import { ProductMediaVariantsSaveCommandHandler } from './command-handler/product-media-variants-save.command-handler.js';
+import { ProductMediaEventsConsumer } from './consumer/product-media-events.consumer.js';
+import { ProductService } from './service/product.service.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Product, ProductTranslation, ProductMedia, ProductOutbox]), MediaModule, KafkaModule, MessagingModule, QueueModule, CategoryModule, BrandModule],
+  imports: [TypeOrmModule.forFeature([Product, ProductTranslation, ProductMedia, ProductMediaVariant, ProductOutbox]), MediaModule, KafkaModule, MessagingModule, QueueModule, CategoryModule, BrandModule],
   controllers: [ProductController],
   providers: [
     ProductRepository,
     ProductTranslationRepository,
     ProductMediaRepository,
+    ProductMediaVariantRepository,
+    ProductMediaVariantsSaveCommandHandler,
+    ProductMediaEventsConsumer,
+    ProductService,
     ProductOutboxRepository,
     ProductCreateCommandHandler,
     ProductMessage,

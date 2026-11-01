@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { MediaClaimStatusEnum } from '@marketplace/contracts-core';
-import { MediaVariantsGenerateJob, type MediaClaimRpc } from '@marketplace/messaging-contracts';
+import { MediaVariantsGeneratedEvent, MediaVariantsGenerateJob, type MediaClaimRpc } from '@marketplace/messaging-contracts';
+import { randomUUID } from 'node:crypto';
+import type { MediaVariantCreateEntityInterface } from '../entity/media-variant.entity.js';
 import type { Media } from '../entity/media.entity.js';
 import type { MediaOutboxCreateEntityInterface } from '../entity/media-outbox.entity.js';
 import { MediaQueueEnum } from '../enum/media-queue.enum.js';
@@ -38,4 +40,27 @@ export class MediaMessage {
     };
   }
 
+
+  toVariantsGeneratedOutbox(media: Media, variants: MediaVariantCreateEntityInterface[], thumbHash: string, generatedAt: Date): MediaOutboxCreateEntityInterface {
+    return {
+      id: randomUUID(),
+      broker: MessageBrokerEnum.KAFKA,
+      topic: MediaVariantsGeneratedEvent.TOPIC,
+      aggregateType: MediaOutboxAggregateTypeEnum.MEDIA,
+      aggregateId: media.publicId,
+      type: MediaVariantsGeneratedEvent.TYPE,
+      payload: {
+        mediaPublicId: media.publicId,
+        thumbHash,
+        variants: variants.map((variant) => ({
+          name: variant.name,
+          mimeType: variant.mimeType,
+          storageKey: variant.storageKey,
+          width: variant.width,
+          height: variant.height,
+        }) satisfies MediaVariantsGeneratedEvent.VariantInterface),
+        generatedAt: generatedAt.toISOString(),
+      } satisfies MediaVariantsGeneratedEvent.DataInterface,
+    };
+  }
 }

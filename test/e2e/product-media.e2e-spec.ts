@@ -115,6 +115,10 @@ describe('Product media (e2e)', () => {
     const response = await create(token, await aBody(ids)).expect(201);
 
     const product = response.body;
+    expect(product.media.map(({ thumbHash, variants }: { thumbHash: string | null; variants: unknown[] }) => ({ thumbHash, variants }))).toEqual([
+      { thumbHash: null, variants: [] },
+      { thumbHash: null, variants: [] },
+    ]);
     expect(product.media.map(({ id, position }: { id: string; position: number }) => ({ id, position }))).toEqual([
       { id: ids[0], position: 0 },
       { id: ids[1], position: 1 },
@@ -151,6 +155,28 @@ describe('Product media (e2e)', () => {
     expect(medium).toMatchObject({ width: 800, height: 480 });
     expect(await contentTypeOf(small.storageKey)).toBe('image/webp');
     expect(thumbHashToApproximateAspectRatio(Buffer.from(original.thumbHash!, 'base64'))).toBeCloseTo(1000 / 600, 0);
+
+    const read = await vi.waitFor(
+      async () => {
+        const body = (await request(app.getHttpServer()).get(`/product/${product.publicId}`).expect(200)).body;
+        expect(body.media.map((item: { variants: { name: string }[] }) => item.variants.map(({ name }) => name))).toEqual([
+          [MediaVariantNameEnum.W320, MediaVariantNameEnum.W800],
+          [MediaVariantNameEnum.W320, MediaVariantNameEnum.W800],
+        ]);
+        return body;
+      },
+      { timeout: 30000, interval: 200 },
+    );
+    expect(read.media[0]).toMatchObject({
+      id: ids[0],
+      position: 0,
+      thumbHash: original.thumbHash,
+      variants: [
+        { name: MediaVariantNameEnum.W320, mimeType: 'image/webp', url: `http://localhost:8088/${small.storageKey}`, width: 320, height: 192 },
+        { name: MediaVariantNameEnum.W800, mimeType: 'image/webp', url: `http://localhost:8088/${medium.storageKey}`, width: 800, height: 480 },
+      ],
+    });
+    await request(app.getHttpServer()).get(`/product/${randomUUID()}`).expect(404);
   });
 
   it('refuses media of another seller, media attached elsewhere and media without bytes', async () => {

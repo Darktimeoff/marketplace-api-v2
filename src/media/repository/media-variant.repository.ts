@@ -11,7 +11,8 @@ export class MediaVariantRepository {
     return this.txHost.tx.getRepository(MediaVariant).existsBy({ mediaId });
   }
 
-  async createManyIgnoringExisting(input: MediaVariantCreateEntityInterface[]): Promise<void> {
-    await this.txHost.tx.getRepository(MediaVariant).createQueryBuilder().insert().values(input).orIgnore().execute();
+  async createManyIgnoringExisting(input: MediaVariantCreateEntityInterface[]): Promise<MediaVariant['id'][]> {
+    const result = await this.txHost.tx.getRepository(MediaVariant).createQueryBuilder().insert().values(input).orIgnore().returning(['id']).execute();
+    return (result.raw as { id: number }[]).map((row) => row.id);
   }
 }

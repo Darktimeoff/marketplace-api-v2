@@ -23,6 +23,14 @@ export class ProductResponse {
         kind: item.kind,
         mimeType: item.mimeType,
         url: `${baseUrl}/${item.storageKey}`,
+        thumbHash: item.thumbHash ?? null,
+        variants: (item.variants ?? []).map((variant) => ({
+          name: variant.name,
+          mimeType: variant.mimeType,
+          url: `${baseUrl}/${variant.storageKey}`,
+          width: variant.width,
+          height: variant.height,
+        })),
       })),
       createdAt: product.createdAt,
     };

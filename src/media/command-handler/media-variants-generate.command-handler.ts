@@ -9,6 +9,8 @@ import { MediaVariantRepository } from '../repository/media-variant.repository.j
 import { MediaStorageService } from '../service/media-storage.service.js';
 import { MediaVariantEncoderResolverService } from '../service/media-variant-encoder-resolver.service.js';
 import { MediaThumbHashService } from '../service/media-thumbhash.service.js';
+import { MediaOutboxRepository } from '../repository/media-outbox.repository.js';
+import { MediaMessage } from '../message/media.message.js';
 import type { Media } from '../entity/media.entity.js';
 import type { MediaVariantCreateEntityInterface } from '../entity/media-variant.entity.js';
 import type { MediaEncodedVariantInterface } from '../interface/media-encoded-variant.interface.js';
@@ -23,6 +25,8 @@ export class MediaVariantsGenerateCommandHandler {
     private readonly storage: MediaStorageService,
     private readonly encoders: MediaVariantEncoderResolverService,
     private readonly thumbHashes: MediaThumbHashService,
+    private readonly outbox: MediaOutboxRepository,
+    private readonly messages: MediaMessage,
   ) {}
 
   async execute(mediaPublicId: Media['publicId']): Promise<void> {
@@ -59,8 +63,15 @@ export class MediaVariantsGenerateCommandHandler {
 
   @Transactional()
   private async save(media: Media, encoded: MediaEncodedVariantInterface[], thumbHash: string): Promise<void> {
-    await this.variants.createManyIgnoringExisting(encoded.map((variant) => this.toVariant(media, variant)));
+    const variants = encoded.map((variant) => this.toVariant(media, variant));
+    const inserted = await this.variants.createManyIgnoringExisting(variants);
+
+    if (inserted.length === 0) {
+      return;
+    }
+
     await this.media.setThumbHash(media.id, thumbHash);
+    await this.outbox.create(this.messages.toVariantsGeneratedOutbox(media, variants, thumbHash, new Date()));
   }
 
   private toVariant(media: Media, variant: MediaEncodedVariantInterface): MediaVariantCreateEntityInterface {

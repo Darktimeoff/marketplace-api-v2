@@ -45,6 +45,7 @@ import { OrderLineOfferPublicId1793000000500 } from '../../src/migrations/179300
 import { AddMediaVariant1794000000000 } from '../../src/migrations/1794000000000-AddMediaVariant.js';
 import { AddMediaOutbox1794000000100 } from '../../src/migrations/1794000000100-AddMediaOutbox.js';
 import { AddOutboxBroker1794000000200 } from '../../src/migrations/1794000000200-AddOutboxBroker.js';
+import { AddProductMediaVariant1794000000300 } from '../../src/migrations/1794000000300-AddProductMediaVariant.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
@@ -74,6 +75,7 @@ import { Media } from '../../src/media/entity/media.entity.js';
 import { MediaVariant } from '../../src/media/entity/media-variant.entity.js';
 import { MediaOutbox } from '../../src/media/entity/media-outbox.entity.js';
 import { ProductMedia } from '../../src/product/entity/product-media.entity.js';
+import { ProductMediaVariant } from '../../src/product/entity/product-media-variant.entity.js';
 import { ProductOutbox } from '../../src/product/entity/product-outbox.entity.js';
 
 export const testMigrations: (new () => MigrationInterface)[] = [
@@ -123,6 +125,7 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   AddMediaVariant1794000000000,
   AddMediaOutbox1794000000100,
   AddOutboxBroker1794000000200,
+  AddProductMediaVariant1794000000300,
 ];
 
 export const testEntities = [
@@ -155,5 +158,6 @@ export const testEntities = [
   MediaVariant,
   MediaOutbox,
   ProductMedia,
+  ProductMediaVariant,
   ProductOutbox,
 ];

@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
 import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
 import { OrderRepository } from '../repository/order.repository.js';
@@ -15,8 +15,9 @@ import {
   OrderLine,
   type OrderLineCreateEntityInterface,
 } from '../entity/order-line.entity.js';
-import { SellerOfferService } from '../../seller-offer/service/seller-offer.service.js';
-import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
+import type { SellerOfferPriceRpc } from '@marketplace/messaging-contracts';
+import { SELLER_OFFER_CLIENT } from '../constant/order-client.constant.js';
+import type { SellerOfferClientInterface } from '../client/seller-offer.client.interface.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
 import { OrderPlaceMessage } from '../message/order-place.message.js';
 import { OrderWorkflowOutboxRepository } from '../repository/order-workflow-outbox.repository.js';
@@ -35,7 +36,7 @@ export class OrderPlaceCommandHandler {
     private readonly orderRepository: OrderRepository,
     private readonly orderRecipientRepository: OrderRecipientRepository,
     private readonly orderLineRepository: OrderLineRepository,
-    private readonly offers: SellerOfferService,
+    @Inject(SELLER_OFFER_CLIENT) private readonly sellerOffers: SellerOfferClientInterface,
     private readonly outbox: OrderOutboxRepository,
     private readonly workflowOutbox: OrderWorkflowOutboxRepository,
     private readonly buyers: OrderBuyerRepository,
@@ -63,11 +64,11 @@ export class OrderPlaceCommandHandler {
       }
     }
 
-    const offers = await this.offers.findByPublicIds(input.items.map((item) => item.offerPublicId));
+    const { offers } = await this.sellerOffers.findPrices({ offerPublicIds: input.items.map((item) => item.offerPublicId) });
 
     const recipient = await this.createRecipient(input.recipient);
 
-    const offersByPublicId = new Map(offers.map((offer) => [offer.publicId, offer]));
+    const offersByPublicId = new Map(offers.map((offer) => [offer.offerPublicId, offer]));
     const pricedItems = input.items.map((item) =>
       this.toPriceItemOrFail(item, offersByPublicId),
     );
@@ -134,7 +135,7 @@ export class OrderPlaceCommandHandler {
 
   private toPriceItemOrFail(
     item: OrderCreateItemInput,
-    offersByPublicId: Map<string, SellerOffer>,
+    offersByPublicId: Map<string, SellerOfferPriceRpc.OfferPriceInterface>,
   ): PricedOrderLine {
     const offer = offersByPublicId.get(item.offerPublicId);
     if (!offer) {

@@ -28,6 +28,8 @@ import { OrdersController } from './controller/orders.controller.js';
 import { OrderNotifyService } from './service/order-notify.service.js';
 import { OrderAccessService } from './service/order-access.service.js';
 import { SellerOfferModule } from "../seller-offer/seller-offer.module.js";
+import { SellerOfferClient } from "./client/seller-offer.client.js";
+import { SELLER_OFFER_CLIENT } from "./constant/order-client.constant.js";
 import { AccountModule } from "../account/account.module.js";
 import { OrderAccessGuard } from "./guard/order-access.guard.js";
 import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
@@ -50,6 +52,7 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
   ],
   controllers: [OrderController, OrdersController],
   providers: [
+    { provide: SELLER_OFFER_CLIENT, useClass: SellerOfferClient },
     OrderRepository,
     OrderRecipientRepository,
     OrderLineRepository,

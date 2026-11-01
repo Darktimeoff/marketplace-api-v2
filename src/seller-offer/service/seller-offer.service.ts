@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { SellerOfferRepository } from '../repository/seller-offer.repository.js';
-import { SellerOffer } from '../entity/seller-offer.entity.js';
+import type { SellerOfferPriceRpc } from '@marketplace/messaging-contracts';
+import { SellerOfferMessage } from '../message/seller-offer.message.js';
 
 @Injectable()
 export class SellerOfferService {
-  constructor(private readonly sellerOfferRepository: SellerOfferRepository) {}
+  constructor(
+    private readonly sellerOfferRepository: SellerOfferRepository,
+    private readonly messages: SellerOfferMessage,
+  ) {}
 
-  findByPublicIds(publicIds: SellerOffer['publicId'][]): Promise<SellerOffer[]> {
-    return this.sellerOfferRepository.findByPublicIds(publicIds);
+  async findPrices(request: SellerOfferPriceRpc.RequestInterface): Promise<SellerOfferPriceRpc.ResponseInterface> {
+    return this.messages.toPrices(await this.sellerOfferRepository.findByPublicIds(request.offerPublicIds));
   }
 }

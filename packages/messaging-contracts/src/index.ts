@@ -14,3 +14,4 @@ export * from './order/event/order-paid.event.js';
 export * from './order/event/order-failed.event.js';
 export * from './media/rpc/media-claim.rpc.js';
 export * from './product/event/product-created.event.js';
+export * from './seller-offer/rpc/seller-offer-price.rpc.js';

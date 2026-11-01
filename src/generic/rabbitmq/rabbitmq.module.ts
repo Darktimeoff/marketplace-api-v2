@@ -5,6 +5,7 @@ import { SecretManagerModule } from "../secret-manager/secret-manager.module.js"
 import { SecretManagerService } from "../secret-manager/secret-manager.service.js";
 import { TopicEnum } from "@marketplace/messaging-contracts";
 import { getRabbitMqConnectionUri } from "./util/get-rabbitmq-connection-uri.util.js";
+import { RabbitMqReturnListenerService } from "./rabbitmq-return-listener.service.js";
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { getRabbitMqConnectionUri } from "./util/get-rabbitmq-connection-uri.uti
       }),
     }),
   ],
+  providers: [RabbitMqReturnListenerService],
   exports: [RabbitMQModule],
 })
 export class RabbitMqModule {}

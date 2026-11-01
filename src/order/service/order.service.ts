@@ -1,9 +1,7 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { subject } from '@casl/ability';
 import type { AppAbilityType } from '../../generic/auth/app-ability.type.js';
 import { EntityNotFoundError } from 'typeorm';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { ConfirmChannel, ConsumeMessage } from 'amqplib';
 import { OrderRepository } from '../repository/order.repository.js';
 import { Order } from '../entity/order.entity.js';
 import { Cacheable } from '../../generic/cache/decorator/cacheable.decorator.js';
@@ -13,22 +11,13 @@ import type { OrderResponseInterface } from '@marketplace/contracts-core';
 import { OrderResponse } from '../response/order.response.js';
 
 @Injectable()
-export class OrderService implements OnModuleInit {
+export class OrderService {
   private readonly logger = new Logger(OrderService.name)
   
   constructor(
     private readonly orderRepository: OrderRepository,
-    private readonly amqpConnection: AmqpConnection,
     private readonly responses: OrderResponse,
   ) { }
-
-  async onModuleInit() {
-    await this.amqpConnection.managedChannel.addSetup(async (channel: ConfirmChannel) => {
-        channel.on('return', (msg: ConsumeMessage) => {
-          this.logger.error(`unroutable ${msg.fields.exchange}/${msg.fields.routingKey}`);
-        });
-      });
-  }
 
   async findReadableByPublicId(publicId: Order['publicId'], ability: AppAbilityType): Promise<OrderResponseInterface> {
     const order = await this.findByPublicId(publicId);

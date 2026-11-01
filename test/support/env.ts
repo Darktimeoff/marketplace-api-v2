@@ -58,3 +58,11 @@ if (connection.redisCacheUrl && connection.redisQueueUrl) {
   process.env.REDIS_CACHE_URL = connection.redisCacheUrl;
   process.env.REDIS_QUEUE_URL = connection.redisQueueUrl;
 }
+
+if (connection.storage) {
+  process.env.STORAGE_ENDPOINT = connection.storage.endpoint;
+  process.env.STORAGE_REGION = 'us-east-1';
+  process.env.STORAGE_BUCKET = connection.storage.bucket;
+  process.env.STORAGE_ACCESS_KEY = connection.storage.accessKey;
+  process.env.STORAGE_SECRET_KEY = connection.storage.secretKey;
+}

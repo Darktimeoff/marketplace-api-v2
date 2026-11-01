@@ -8,6 +8,8 @@ import {
 import { DataSource } from 'typeorm';
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 import { createServer } from 'node:net';
+import { CreateBucketCommand } from '@aws-sdk/client-s3';
+import { createStorageClient } from '../../src/generic/storage/create-storage-client.js';
 import { testEntities, testMigrations } from './migrations.js';
 
 export interface TestBrokerConnection {
@@ -29,6 +31,14 @@ export interface TestDbConnection {
   temporalAddress?: string;
   redisCacheUrl?: string;
   redisQueueUrl?: string;
+  storage?: TestStorageConnection;
+}
+
+export interface TestStorageConnection {
+  endpoint: string;
+  accessKey: string;
+  secretKey: string;
+  bucket: string;
 }
 
 export function stateFilePath(suite: string, set = 1): string {
@@ -40,6 +50,7 @@ interface ContainerSetOptionsInterface {
   withKafka?: boolean;
   withTemporal?: boolean;
   withRedis?: boolean;
+  withStorage?: boolean;
   sets?: number;
 }
 
@@ -64,18 +75,19 @@ export function createDbLifecycle(suite: string, { sets = 1, ...options }: Conta
 }
 
 async function startSet(
-  { withBroker = false, withKafka = false, withTemporal = false, withRedis = false }: ContainerSetOptionsInterface,
+  { withBroker = false, withKafka = false, withTemporal = false, withRedis = false, withStorage = false }: ContainerSetOptionsInterface,
   started: StartedTestContainer[],
 ): Promise<TestDbConnection> {
-  const [postgres, broker, kafka, temporal, redis] = await Promise.all([
+  const [postgres, broker, kafka, temporal, redis, storage] = await Promise.all([
     startPostgres(started),
     withBroker ? startBroker(started) : undefined,
     withKafka ? startKafka(started) : undefined,
     withTemporal ? startTemporal(started) : undefined,
     withRedis ? startRedisPair(started) : undefined,
+    withStorage ? startStorage(started) : undefined,
   ]);
 
-  return { ...postgres, broker, ...kafka, temporalAddress: temporal, ...redis };
+  return { ...postgres, broker, ...kafka, temporalAddress: temporal, ...redis, storage };
 }
 
 async function startPostgres(started: StartedTestContainer[]): Promise<TestDbConnection> {
@@ -165,6 +177,31 @@ function startRedis(args: string[]): Promise<StartedTestContainer> {
 
 function redisUrl(container: StartedTestContainer): string {
   return `redis://default:${REDIS_TEST_PASSWORD}@${container.getHost()}:${container.getMappedPort(6379)}`;
+}
+
+const STORAGE_TEST_USER = 'test';
+const STORAGE_TEST_PASSWORD = 'test-storage-password';
+const STORAGE_TEST_BUCKET = 'marketplace-media-test';
+
+async function startStorage(started: StartedTestContainer[]): Promise<TestStorageConnection> {
+  const minio = await new GenericContainer('pgsty/minio:RELEASE.2026-08-04T00-00-00Z')
+    .withCommand(['server', '/data'])
+    .withEnvironment({ MINIO_ROOT_USER: STORAGE_TEST_USER, MINIO_ROOT_PASSWORD: STORAGE_TEST_PASSWORD })
+    .withExposedPorts(9000)
+    .withWaitStrategy(Wait.forHttp('/minio/health/ready', 9000))
+    .start();
+  started.push(minio);
+
+  const storage = {
+    endpoint: `http://${minio.getHost()}:${minio.getMappedPort(9000)}`,
+    accessKey: STORAGE_TEST_USER,
+    secretKey: STORAGE_TEST_PASSWORD,
+    bucket: STORAGE_TEST_BUCKET,
+  };
+  const client = createStorageClient({ region: 'us-east-1', endpoint: storage.endpoint, accessKeyId: storage.accessKey, secretAccessKey: storage.secretKey });
+  await client.send(new CreateBucketCommand({ Bucket: storage.bucket }));
+  client.destroy();
+  return storage;
 }
 
 function freePort(): Promise<number> {

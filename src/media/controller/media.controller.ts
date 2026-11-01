@@ -33,6 +33,7 @@ export class MediaController {
   }
 
   @ResponseDto(MediaUploadDto)
+  @HttpCode(HttpStatus.OK)
   @CheckAbility('create', 'Media')
   @Post('upload')
   requestUpload(

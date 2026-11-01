@@ -14,10 +14,8 @@ export class UserMessageService {
       aggregateId: user.publicId,
       type: UserCreatedEvent.TYPE,
       payload: {
+        publicId: user.publicId,
         userId: user.id,
-        userPublicId: user.publicId,
-        identityId: user.identityId,
-        identityPublicId: user.identityPublicId,
         email: user.email,
         phoneNumber: user.phoneNumber,
         firstName: user.firstName,

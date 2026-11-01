@@ -8,7 +8,6 @@ describe('UserMessageService', () => {
     const user = {
       id: 12,
       publicId: '345db97f-3775-4a03-ac88-3499486dfbaf',
-      identityId: 10,
       email: 'jane@example.com',
       phoneNumber: null,
       firstName: null,
@@ -24,9 +23,8 @@ describe('UserMessageService', () => {
       aggregateId: user.publicId,
       type: 'user.created',
       payload: {
+        publicId: user.publicId,
         userId: 12,
-        userPublicId: user.publicId,
-        identityId: 10,
         email: 'jane@example.com',
         phoneNumber: null,
         firstName: null,

@@ -19,7 +19,7 @@ export class UserCreateCommandHandler {
       return;
     }
 
-    const user = await this.users.findByIdentityIdOrFail(input.identityId);
+    const user = await this.users.findByPublicIdOrFail(input.publicId);
     await this.outbox.create(this.messages.toUserCreatedOutbox(user));
   }
 }

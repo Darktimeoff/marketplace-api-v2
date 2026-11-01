@@ -20,7 +20,7 @@ export class UserRepository {
     return result.raw.length > 0;
   }
 
-  findByIdentityIdOrFail(identityId: User['identityId']): Promise<User> {
-    return this.txHost.tx.getRepository(User).findOneOrFail({ where: { identityId } });
+  findByPublicIdOrFail(publicId: User['publicId']): Promise<User> {
+    return this.txHost.tx.getRepository(User).findOneOrFail({ where: { publicId } });
   }
 }

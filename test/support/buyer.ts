@@ -14,10 +14,10 @@ export interface TestBuyerInterface {
 
 export async function aBuyer(app: INestApplicationContext, dataSource: DataSource, role: RoleEnum = RoleEnum.user): Promise<TestBuyerInterface> {
   const user = await aUser(dataSource.manager);
-  await dataSource.getRepository(OrderBuyer).insert({ identityPublicId: user.identityPublicId, userId: user.id });
-  await dataSource.getRepository(Identity).update({ id: user.identityId }, { role });
-  const identity = await dataSource.getRepository(Identity).findOneByOrFail({ id: user.identityId });
+  await dataSource.getRepository(OrderBuyer).insert({ identityPublicId: user.publicId, userId: user.id });
+  await dataSource.getRepository(Identity).update({ publicId: user.publicId }, { role });
+  const identity = await dataSource.getRepository(Identity).findOneByOrFail({ publicId: user.publicId });
   const { accessToken } = await app.get(TokenService).createTokenPair(identity);
 
-  return { id: user.id, identityPublicId: user.identityPublicId, token: accessToken };
+  return { id: user.id, identityPublicId: user.publicId, token: accessToken };
 }

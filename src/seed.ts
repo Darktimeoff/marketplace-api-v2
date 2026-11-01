@@ -146,7 +146,7 @@ async function seed(): Promise<void> {
       await identities.update({ id: identity.id }, { passwordHash: seedPasswordHash });
     }
 
-    let user = await users.findOne({ where: { identityId: identity.id } });
+    let user = await users.findOne({ where: { publicId: identity.publicId } });
 
     if (!user) {
       const address = await addresses.save(
@@ -159,8 +159,7 @@ async function seed(): Promise<void> {
 
       user = await users.save(
         users.create({
-          identityId: identity.id,
-          identityPublicId: identity.publicId,
+          publicId: identity.publicId,
           email: identity.email,
           phoneNumber: identity.loginPhone.fullNumber,
           firstName: isSeller ? `Seller${i + 1}` : `Buyer${i - SELLERS + 1}`,

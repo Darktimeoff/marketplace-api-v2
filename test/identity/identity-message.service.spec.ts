@@ -20,8 +20,7 @@ describe('IdentityMessageService', () => {
       aggregateId: identity.publicId,
       type: 'identity.registered',
       payload: {
-        identityId: 9,
-        identityPublicId: identity.publicId,
+        publicId: identity.publicId,
         email: 'jane@example.com',
         phoneNumber: '+380501234567',
         role: 'user',

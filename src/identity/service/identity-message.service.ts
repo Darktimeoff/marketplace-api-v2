@@ -14,8 +14,7 @@ export class IdentityMessageService {
       aggregateId: identity.publicId,
       type: IdentityRegisteredEvent.TYPE,
       payload: {
-        identityId: identity.id,
-        identityPublicId: identity.publicId,
+        publicId: identity.publicId,
         email: identity.email,
         phoneNumber: identity.loginPhone.fullNumber,
         role: identity.role,

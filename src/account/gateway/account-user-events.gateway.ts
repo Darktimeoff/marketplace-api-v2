@@ -35,6 +35,6 @@ export class AccountUserEventsGateway implements OnModuleInit {
     }
 
     const created = await this.accountCreate.execute(parsed.data.data.userId);
-    this.logger.log(`${created ? 'created' : 'skipped existing'} account for user=${parsed.data.data.userPublicId} id=${parsed.data.id}`);
+    this.logger.log(`${created ? 'created' : 'skipped existing'} account for user=${parsed.data.data.userId} id=${parsed.data.id}`);
   }
 }

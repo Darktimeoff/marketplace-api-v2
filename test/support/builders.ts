@@ -38,8 +38,7 @@ export async function aUser(
 
   return users.save(
     users.create({
-      identityId: identity.id,
-      identityPublicId: identity.publicId,
+      publicId: identity.publicId,
       firstName: 'Test',
       lastName: `User${seq}`,
       ...overrides,

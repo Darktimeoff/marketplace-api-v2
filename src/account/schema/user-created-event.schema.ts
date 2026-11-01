@@ -7,6 +7,5 @@ export const userCreatedEventSchema = z.object({
   type: z.literal(UserCreatedEvent.TYPE),
   data: z.object({
     userId: z.int().positive(),
-    userPublicId: z.uuid(),
   }),
 });

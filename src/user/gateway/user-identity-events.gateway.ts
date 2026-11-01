@@ -34,8 +34,8 @@ export class UserIdentityEventsGateway implements OnModuleInit {
       throw new KafkaRejectedMessageException(parsed.error.message);
     }
 
-    const { identityId, identityPublicId, email, phoneNumber } = parsed.data.data;
-    await this.userCreate.execute({ identityId, identityPublicId, email, phoneNumber });
-    this.logger.log(`created user for identity=${parsed.data.data.identityPublicId} id=${parsed.data.id}`);
+    const { publicId, email, phoneNumber } = parsed.data.data;
+    await this.userCreate.execute({ publicId, email, phoneNumber });
+    this.logger.log(`created user for person=${publicId} id=${parsed.data.id}`);
   }
 }

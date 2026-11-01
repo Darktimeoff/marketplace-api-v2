@@ -39,6 +39,7 @@ import { TemporalModule } from "../generic/temporal/temporal.module.js";
 import { CacheModule } from "../generic/cache/cache.module.js";
 import { OrderPlaceActivity } from "./activity/order-place.activity.js";
 import { OrderPlaceWorker } from "./worker/order-place.worker.js";
+import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
     CacheModule,
     TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient, OrderOutbox, OrderWorkflowOutbox, OrderBuyer]),
     SellerOfferModule,
+    RabbitMqModule,
     AccountModule,
   ],
   controllers: [OrderController, OrdersController],

@@ -8,6 +8,7 @@ import { HeadObjectCommand, ListMultipartUploadsCommand, NotFound } from '@aws-s
 import { MediaStatusEnum } from '@marketplace/contracts-core';
 import { AppModule } from '../../src/app.module.js';
 import { Media } from '../../src/media/entity/media.entity.js';
+import { MediaOutbox } from '../../src/media/entity/media-outbox.entity.js';
 import { MediaOrphanCleanupCron } from '../../src/media/cron/media-orphan-cleanup.cron.js';
 import { MediaUnattachedCleanupCron } from '../../src/media/cron/media-unattached-cleanup.cron.js';
 import { StorageClientService } from '../../src/generic/storage/storage-client.service.js';
@@ -95,6 +96,12 @@ describe('Media (e2e)', () => {
       throw error;
     }
   }
+
+  it('does not ask for variants of an upload nobody has attached yet', async () => {
+    await aReadyImage(await aToken());
+
+    expect(await dataSource.getRepository(MediaOutbox).count()).toBe(0);
+  });
 
   describe('single upload', () => {
     it('signs a PUT for a server-made key and becomes ready only after the bytes arrive', async () => {

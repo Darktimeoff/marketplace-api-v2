@@ -90,8 +90,8 @@ export class MediaRepository {
     return ids.length > 0 ? this.txHost.tx.getRepository(Media).findBy({ id: In(ids) }) : [];
   }
 
-  async confirmClaim(publicIds: Media['publicId'][], attachedToType: MediaAttachmentTypeEnum, attachedToId: string): Promise<number> {
-    const [, affected] = await this.txHost.tx.query(
+  async confirmClaim(publicIds: Media['publicId'][], attachedToType: MediaAttachmentTypeEnum, attachedToId: string): Promise<Media['publicId'][]> {
+    const [rows] = await this.txHost.tx.query(
       `UPDATE "Media"
           SET "attachedToType" = $2,
               "attachedToId" = $3,
@@ -100,11 +100,12 @@ export class MediaRepository {
         WHERE "publicId" = ANY($1::uuid[])
           AND "status" = $4
           AND "deletedAt" IS NULL
-          AND ("attachedToId" IS NULL OR ("attachedToType" = $2 AND "attachedToId" = $3))`,
+          AND ("attachedToId" IS NULL OR ("attachedToType" = $2 AND "attachedToId" = $3))
+    RETURNING "publicId"`,
       [publicIds, attachedToType, attachedToId, MediaStatusEnum.READY],
     );
 
-    return affected as number;
+    return (rows as { publicId: string }[]).map((row) => row.publicId);
   }
 
   async releaseExpiredClaims(): Promise<number> {

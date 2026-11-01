@@ -7,12 +7,15 @@ import { Media } from '../../src/media/entity/media.entity.js';
 import { MediaRepository } from '../../src/media/repository/media.repository.js';
 import { MediaMessage } from '../../src/media/message/media.message.js';
 import { MediaClaimCommandHandler } from '../../src/media/command-handler/media-claim.command-handler.js';
+import { MediaClaimConfirmCommandHandler } from '../../src/media/command-handler/media-claim-confirm.command-handler.js';
+import { MediaOutbox } from '../../src/media/entity/media-outbox.entity.js';
+import { MediaOutboxRepository } from '../../src/media/repository/media-outbox.repository.js';
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Media])],
-  providers: [MediaRepository, MediaMessage, MediaClaimCommandHandler],
+  imports: [TypeOrmModule.forFeature([Media, MediaOutbox])],
+  providers: [MediaRepository, MediaOutboxRepository, MediaMessage, MediaClaimCommandHandler, MediaClaimConfirmCommandHandler],
 })
 class MediaTestModule {}
 
@@ -113,7 +116,7 @@ describe('MediaRepository', () => {
       const productId = randomUUID();
       await claim([photo.publicId], productId);
 
-      expect(await media.confirmClaim([photo.publicId], PRODUCT, productId)).toBe(1);
+      expect(await media.confirmClaim([photo.publicId], PRODUCT, productId)).toEqual([photo.publicId]);
       expect(await reload(photo)).toMatchObject({ attachedToId: productId, claimExpiresAt: null });
     });
 
@@ -121,7 +124,7 @@ describe('MediaRepository', () => {
       const photo = await aMedia();
       const productId = randomUUID();
 
-      expect(await media.confirmClaim([photo.publicId], PRODUCT, productId)).toBe(1);
+      expect(await media.confirmClaim([photo.publicId], PRODUCT, productId)).toEqual([photo.publicId]);
       expect(await reload(photo)).toMatchObject({ attachedToType: PRODUCT, attachedToId: productId, claimExpiresAt: null });
     });
 
@@ -129,8 +132,22 @@ describe('MediaRepository', () => {
       const otherProduct = randomUUID();
       const photo = await aMedia({ attachedToType: PRODUCT, attachedToId: otherProduct, attachedAt: new Date() });
 
-      expect(await media.confirmClaim([photo.publicId], PRODUCT, randomUUID())).toBe(0);
+      expect(await media.confirmClaim([photo.publicId], PRODUCT, randomUUID())).toEqual([]);
       expect(await reload(photo)).toMatchObject({ attachedToId: otherProduct });
+    });
+
+    it('asks for variants of confirmed media once, even when product.created is delivered twice', async () => {
+      const photo = await aMedia();
+      const taken = await aMedia({ attachedToType: PRODUCT, attachedToId: randomUUID(), attachedAt: new Date() });
+      const productId = randomUUID();
+      await claim([photo.publicId], productId);
+      const confirm = testModule.app.get(MediaClaimConfirmCommandHandler);
+
+      await confirm.execute([photo.publicId, taken.publicId], PRODUCT, productId);
+      await confirm.execute([photo.publicId, taken.publicId], PRODUCT, productId);
+
+      const rows = await testModule.dataSource.getRepository(MediaOutbox).find();
+      expect(rows.map(({ id, payload }) => ({ id, payload }))).toEqual([{ id: photo.publicId, payload: { mediaPublicId: photo.publicId } }]);
     });
   });
 

@@ -37,4 +37,14 @@ describe('MediaMessage', () => {
 
     expect(Object.keys(claimed).toSorted()).toEqual(['id', 'kind', 'mimeType', 'sizeBytes', 'storageKey']);
   });
+  it('asks for variants with a work-queue outbox row keyed by the media, carrying only its public id', () => {
+    const media = aMedia('33333333-3333-4333-8333-333333333333');
+
+    expect(new MediaMessage().toVariantsGenerateOutbox(media.publicId)).toEqual({
+      id: media.publicId,
+      queue: 'media.variants',
+      type: 'media.variants.generate',
+      payload: { mediaPublicId: media.publicId },
+    });
+  });
 });

@@ -6,6 +6,7 @@ import { DataSource } from 'typeorm';
 import { LanguageEnum, MediaAttachmentTypeEnum } from '@marketplace/contracts-core';
 import { ProductCreatedEvent } from '@marketplace/messaging-contracts';
 import { Media } from '../../src/media/entity/media.entity.js';
+import { MediaOutbox } from '../../src/media/entity/media-outbox.entity.js';
 import { ProductMedia } from '../../src/product/entity/product-media.entity.js';
 import { ProductOutbox } from '../../src/product/entity/product-outbox.entity.js';
 import { MediaClaimReleaseCron } from '../../src/media/cron/media-claim-release.cron.js';
@@ -98,6 +99,10 @@ describe('Product media (e2e)', () => {
         }
       },
       { timeout: 20000, interval: 100 },
+    );
+    const variantRequests = await dataSource.getRepository(MediaOutbox).find({ order: { createdAt: 'ASC' } });
+    expect(variantRequests.map(({ id, type, payload }) => ({ id, type, payload })).sort((a, b) => a.id.localeCompare(b.id))).toEqual(
+      [...ids].sort().map((id) => ({ id, type: 'media.variants.generate', payload: { mediaPublicId: id } })),
     );
   });
 

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayNotEmpty, ArrayUnique, IsEnum, IsInt, IsOptional, IsPositive, IsString, Matches, MaxLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, ArrayUnique, IsArray, IsEnum, IsInt, IsOptional, IsPositive, IsString, IsUUID, Matches, MaxLength, ValidateNested } from 'class-validator';
 import { LanguageEnum, type ProductCreateRequestInterface, type ProductCreateTranslationRequestInterface } from '@marketplace/contracts-core';
 
 export class ProductCreateTranslationInput implements ProductCreateTranslationRequestInterface {
@@ -30,4 +30,11 @@ export class ProductCreateInput implements ProductCreateRequestInterface {
   @ValidateNested({ each: true })
   @Type(() => ProductCreateTranslationInput)
   translations: ProductCreateTranslationInput[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ArrayUnique()
+  @IsUUID('all', { each: true })
+  mediaIds?: string[];
 }

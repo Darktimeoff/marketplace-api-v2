@@ -33,6 +33,9 @@ import { AddUserIdentityPublicId1791000000170 } from '../../src/migrations/17910
 import { AddOrderBuyer1791000000180 } from '../../src/migrations/1791000000180-AddOrderBuyer.js';
 import { AddOrderOwner1791000000190 } from '../../src/migrations/1791000000190-AddOrderOwner.js';
 import { AddIdentityExternalAccount1791000000200 } from '../../src/migrations/1791000000200-AddIdentityExternalAccount.js';
+import { AddMedia1792000000000 } from '../../src/migrations/1792000000000-AddMedia.js';
+import { AddMediaAttachment1792000000100 } from '../../src/migrations/1792000000100-AddMediaAttachment.js';
+import { AddProductMedia1792000000200 } from '../../src/migrations/1792000000200-AddProductMedia.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
@@ -58,6 +61,9 @@ import { StockReservation } from '../../src/seller-offer/entity/stock-reservatio
 import { Order } from '../../src/order/entity/order.entity.js';
 import { OrderLine } from '../../src/order/entity/order-line.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
+import { Media } from '../../src/media/entity/media.entity.js';
+import { ProductMedia } from '../../src/product/entity/product-media.entity.js';
+import { ProductOutbox } from '../../src/product/entity/product-outbox.entity.js';
 
 export const testMigrations: (new () => MigrationInterface)[] = [
   InitSchema1788889879820,
@@ -94,6 +100,9 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   AddOrderBuyer1791000000180,
   AddOrderOwner1791000000190,
   AddIdentityExternalAccount1791000000200,
+  AddMedia1792000000000,
+  AddMediaAttachment1792000000100,
+  AddProductMedia1792000000200,
 ];
 
 export const testEntities = [
@@ -122,4 +131,7 @@ export const testEntities = [
   Order,
   OrderLine,
   OrderRecipient,
+  Media,
+  ProductMedia,
+  ProductOutbox,
 ];

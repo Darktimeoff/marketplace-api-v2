@@ -34,6 +34,8 @@ process.env.REFRESH_TOKEN_PEPPER = 'test-refresh-token-pepper';
 process.env.OUTBOX_RELAY_INTERVAL_MS = '100';
 process.env.GOOGLE_CLIENT_ID = 'test-google-client';
 process.env.GOOGLE_CLIENT_SECRET = 'test-google-secret';
+process.env.STORAGE_ACCESS_KEY = 'test-storage-access-key';
+process.env.STORAGE_SECRET_KEY = 'test-storage-secret-key';
 
 if (connection.kafkaBrokers) {
   process.env.KAFKA_BROKERS = connection.kafkaBrokers;

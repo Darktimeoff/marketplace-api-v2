@@ -9,7 +9,7 @@ import type { Media } from '../entity/media.entity.js';
 import type { MediaPresignedUploadInterface } from '../interface/media-presigned-upload.interface.js';
 
 @Injectable()
-export class MediaResponseService {
+export class MediaResponse {
   toMedia(media: Media): MediaResponseInterface {
     return {
       id: media.publicId,

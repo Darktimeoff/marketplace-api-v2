@@ -9,7 +9,7 @@ import { ProductTranslationRepository } from '../repository/product-translation.
 import { ProductMediaRepository } from '../repository/product-media.repository.js';
 import { ProductOutboxRepository } from '../repository/product-outbox.repository.js';
 import { ProductMessage } from '../message/product.message.js';
-import { ProductResponseService } from '../service/product-response.service.js';
+import { ProductResponse } from '../response/product.response.js';
 import { ProductCreateInput } from '../input/product-create.input.js';
 import { MEDIA_CLIENT } from '../constant/product-client.constant.js';
 import type { MediaClientInterface } from '../client/media.client.interface.js';
@@ -30,7 +30,7 @@ export class ProductCreateCommandHandler {
     private readonly productMedia: ProductMediaRepository,
     private readonly outbox: ProductOutboxRepository,
     private readonly messages: ProductMessage,
-    private readonly responses: ProductResponseService,
+    private readonly responses: ProductResponse,
     private readonly categories: CategoryRepository,
     private readonly brands: BrandRepository,
     @Inject(MEDIA_CLIENT) private readonly mediaClient: MediaClientInterface,

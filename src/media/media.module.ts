@@ -6,7 +6,7 @@ import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { Media } from './entity/media.entity.js';
 import { MediaRepository } from './repository/media.repository.js';
 import { MediaStorageService } from './service/media-storage.service.js';
-import { MediaResponseService } from './service/media-response.service.js';
+import { MediaResponse } from './response/media.response.js';
 import { MediaPartPlanService } from './service/media-part-plan.service.js';
 import { MediaService } from './service/media.service.js';
 import { MediaOrphanCleanupCron } from './cron/media-orphan-cleanup.cron.js';
@@ -26,7 +26,7 @@ import { MediaProductEventsGateway } from './gateway/media-product-events.gatewa
   providers: [
     MediaRepository,
     MediaStorageService,
-    MediaResponseService,
+    MediaResponse,
     MediaPartPlanService,
     MediaService,
     MediaOrphanCleanupCron,

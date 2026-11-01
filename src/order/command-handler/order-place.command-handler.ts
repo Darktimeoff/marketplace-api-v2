@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
-import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
+import { CurrencyEnum, OrderStatusEnum, type OrderResponseInterface } from '@marketplace/contracts-core';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
 import { OrderLineRepository } from '../repository/order-line.repository.js';
@@ -20,6 +20,7 @@ import { SELLER_OFFER_CLIENT } from '../constant/order-client.constant.js';
 import type { SellerOfferClientInterface } from '../client/seller-offer.client.interface.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
 import { OrderPlaceMessage } from '../message/order-place.message.js';
+import { OrderResponse } from '../response/order.response.js';
 import { OrderWorkflowOutboxRepository } from '../repository/order-workflow-outbox.repository.js';
 import { OrderBuyerRepository } from '../repository/order-buyer.repository.js';
 import type { OrderBuyer } from '../entity/order-buyer.entity.js';
@@ -41,16 +42,17 @@ export class OrderPlaceCommandHandler {
     private readonly workflowOutbox: OrderWorkflowOutboxRepository,
     private readonly buyers: OrderBuyerRepository,
     private readonly messages: OrderPlaceMessage,
+    private readonly responses: OrderResponse,
   ) {}
 
-  async execute(input: OrderCreateInput, identityPublicId: string, idempotencyKey: string | null = null): Promise<Order> {
+  async execute(input: OrderCreateInput, identityPublicId: string, idempotencyKey: string | null = null): Promise<OrderResponseInterface> {
     const buyer = await this.buyers.findByPublicId(identityPublicId);
 
     if (!buyer) {
       throw new ConflictException('Buyer account is still being set up, try again shortly');
     }
 
-    return this.createPending(input, buyer, idempotencyKey);
+    return this.responses.toOrder(await this.createPending(input, buyer, idempotencyKey));
   }
 
   @Transactional()

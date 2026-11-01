@@ -3,7 +3,7 @@ import { IsDate, IsEnum, IsString, IsUUID } from 'class-validator';
 import { CurrencyEnum, OrderStatusEnum, type OrderResponseInterface } from '@marketplace/contracts-core';
 
 export class OrderDto implements OrderResponseInterface {
-  @Expose({ name: 'publicId' })
+  @Expose()
   @IsUUID()
   id: string;
 

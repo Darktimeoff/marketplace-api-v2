@@ -18,7 +18,7 @@ import { CheckAbility } from '../../generic/auth/decorator/check-ability.decorat
 import { CurrentAbility } from '../../generic/auth/decorator/current-ability.decorator.js';
 import { Identity } from '../../generic/auth/decorator/identity.decorator.js';
 import type { AppAbilityType } from '../../generic/auth/app-ability.type.js';
-import type { Order } from '../entity/order.entity.js';
+import type { OrderResponseInterface } from '@marketplace/contracts-core';
 
 @Controller('order')
 export class OrderController {
@@ -35,14 +35,14 @@ export class OrderController {
     @Body() input: OrderCreateInput,
     @Identity('identityPublicId') identityPublicId: string,
     @IdempotencyKey(new ParseUUIDPipe({ optional: true })) idempotencyKey?: string,
-  ): Promise<Order> {
+  ): Promise<OrderResponseInterface> {
     return this.orderPlace.execute(input, identityPublicId, idempotencyKey ?? null);
   }
 
   @ResponseDto(OrderDto)
   @CheckAbility('read', 'Order')
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentAbility() ability: AppAbilityType): Promise<Order> {
+  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentAbility() ability: AppAbilityType): Promise<OrderResponseInterface> {
     return this.orderService.findReadableByPublicId(id, ability);
   }
 }

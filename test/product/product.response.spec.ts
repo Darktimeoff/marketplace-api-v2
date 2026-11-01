@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { MediaKindEnum } from '@marketplace/contracts-core';
-import { ProductResponseService } from '../../src/product/service/product-response.service.js';
+import { ProductResponse } from '../../src/product/response/product.response.js';
 import type { EnvironmentService } from '../../src/generic/environment/environment.module.js';
 import type { Product } from '../../src/product/entity/product.entity.js';
 import type { ProductMedia } from '../../src/product/entity/product-media.entity.js';
 import type { Category } from '../../src/category/entity/category.entity.js';
 import type { Brand } from '../../src/brand/entity/brand.entity.js';
 
-function aService(baseUrl: string): ProductResponseService {
-  return new ProductResponseService({ get: () => baseUrl } as unknown as EnvironmentService);
+function aService(baseUrl: string): ProductResponse {
+  return new ProductResponse({ get: () => baseUrl } as unknown as EnvironmentService);
 }
 
 const category = { id: 1, publicId: 'c-public' } as Category;
@@ -19,7 +19,7 @@ const media = [
   { mediaPublicId: 'm-2', position: 1, kind: MediaKindEnum.VIDEO, mimeType: 'video/mp4', storageKey: 'media/o/2.mp4' },
 ] as ProductMedia[];
 
-describe('ProductResponseService', () => {
+describe('ProductResponse', () => {
   it('builds media URLs on the CDN base from the copied storage key', () => {
     expect(aService('https://cdn.marketplace.example').toProduct(product, category, brand, media)).toEqual({
       publicId: 'p-public',

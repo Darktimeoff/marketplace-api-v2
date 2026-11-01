@@ -7,7 +7,7 @@ import type { Category } from '../../category/entity/category.entity.js';
 import type { Brand } from '../../brand/entity/brand.entity.js';
 
 @Injectable()
-export class ProductResponseService {
+export class ProductResponse {
   constructor(private readonly environment: EnvironmentService) {}
 
   toProduct(product: Product, category: Category, brand: Brand, media: ProductMedia[]): ProductResponseInterface {

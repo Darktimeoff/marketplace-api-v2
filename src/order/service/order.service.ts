@@ -9,6 +9,8 @@ import { Order } from '../entity/order.entity.js';
 import { Cacheable } from '../../generic/cache/decorator/cacheable.decorator.js';
 import { ORDER_CACHE_JITTER_SECONDS, ORDER_CACHE_TTL_SECONDS } from '../constant/order-cache.constant.js';
 import { orderCacheKey } from '../cache-key/order.cache-key.js';
+import type { OrderResponseInterface } from '@marketplace/contracts-core';
+import { OrderResponse } from '../response/order.response.js';
 
 @Injectable()
 export class OrderService implements OnModuleInit {
@@ -16,7 +18,8 @@ export class OrderService implements OnModuleInit {
   
   constructor(
     private readonly orderRepository: OrderRepository,
-    private readonly amqpConnection: AmqpConnection
+    private readonly amqpConnection: AmqpConnection,
+    private readonly responses: OrderResponse,
   ) { }
 
   async onModuleInit() {
@@ -27,7 +30,7 @@ export class OrderService implements OnModuleInit {
       });
   }
 
-  async findReadableByPublicId(publicId: Order['publicId'], ability: AppAbilityType): Promise<Order> {
+  async findReadableByPublicId(publicId: Order['publicId'], ability: AppAbilityType): Promise<OrderResponseInterface> {
     const order = await this.findByPublicId(publicId);
 
     if (!ability.can('read', subject('Order', { buyerPublicId: order.buyer.publicId }))) {
@@ -35,7 +38,7 @@ export class OrderService implements OnModuleInit {
       throw new ForbiddenException('This order belongs to someone else');
     }
 
-    return order;
+    return this.responses.toOrder(order);
   }
 
   @Cacheable({ key: orderCacheKey, ttlSeconds: ORDER_CACHE_TTL_SECONDS, jitterSeconds: ORDER_CACHE_JITTER_SECONDS })

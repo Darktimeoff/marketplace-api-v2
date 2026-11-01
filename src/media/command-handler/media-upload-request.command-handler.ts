@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { MediaStatusEnum, type MediaUploadResponseInterface } from '@marketplace/contracts-core';
 import { MediaRepository } from '../repository/media.repository.js';
 import { MediaStorageService } from '../service/media-storage.service.js';
-import { MediaResponseService } from '../service/media-response.service.js';
+import { MediaResponse } from '../response/media.response.js';
 import { MediaPartPlanService } from '../service/media-part-plan.service.js';
 import { MEDIA_UPLOAD_TYPES } from '../constant/media-upload.constant.js';
 import { MediaUploadInput } from '../input/media-upload.input.js';
@@ -17,7 +17,7 @@ export class MediaUploadRequestCommandHandler {
   constructor(
     private readonly media: MediaRepository,
     private readonly storage: MediaStorageService,
-    private readonly responses: MediaResponseService,
+    private readonly responses: MediaResponse,
     private readonly plan: MediaPartPlanService,
   ) {}
 

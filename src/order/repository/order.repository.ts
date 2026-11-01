@@ -13,37 +13,31 @@ export class OrderRepository {
     return orders.save(orders.create(input));
   }
 
-  async lockIdempotencyKey(userId: Order['userId'], idempotencyKey: string): Promise<void> {
-    await this.txHost.tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`order:${userId}:${idempotencyKey}`]);
+  async lockIdempotencyKey(buyerId: Order['buyerId'], idempotencyKey: string): Promise<void> {
+    await this.txHost.tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`order:${buyerId}:${idempotencyKey}`]);
   }
 
-  findByIdempotencyKey(userId: Order['userId'], idempotencyKey: string): Promise<Order | null> {
-    return this.txHost.tx.getRepository(Order).findOneBy({ userId, idempotencyKey });
+  findByIdempotencyKey(buyerId: Order['buyerId'], idempotencyKey: string): Promise<Order | null> {
+    return this.txHost.tx.getRepository(Order).findOneBy({ buyerId, idempotencyKey });
   }
 
-  async updateStatusById(id: Order['id'], status: OrderStatusEnum): Promise<Order> {
-    const orders = this.txHost.tx.getRepository(Order);
-    await orders.update(id, { status });
-    return this.findByIdOrFail(id);
-  }
-
-  async updatePendingStatusById(id: Order['id'], status: OrderStatusEnum): Promise<Order | null> {
+  async updatePendingStatusByPublicId(publicId: Order['publicId'], status: OrderStatusEnum): Promise<Order | null> {
     const result = await this.txHost.tx
       .getRepository(Order)
       .createQueryBuilder()
       .update()
       .set({ status })
-      .where({ id, status: OrderStatusEnum.pending_payment })
+      .where({ publicId, status: OrderStatusEnum.pending_payment })
       .returning(['id'])
       .execute();
 
-    return result.raw.length > 0 ? this.findByIdOrFail(id) : null;
+    return result.raw.length > 0 ? this.findByPublicIdOrFail(publicId) : null;
   }
 
-  async findByIdOrFail(id: Order['id']): Promise<Order> {
-    return await this.txHost.tx.getRepository(Order).findOneOrFail({
-      where: { id },
-      relations: { lines: true, orderRecipient: true },
-    })
+  findByPublicIdOrFail(publicId: Order['publicId']): Promise<Order> {
+    return this.txHost.tx.getRepository(Order).findOneOrFail({
+      where: { publicId },
+      relations: { lines: true, orderRecipient: true, buyer: true },
+    });
   }
 }

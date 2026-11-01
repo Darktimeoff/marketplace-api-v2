@@ -1,14 +1,19 @@
 import { Check, Column, CreateDateColumn, Entity, Index, PrimaryColumn } from 'typeorm';
 import { TopicEnum } from '@marketplace/messaging-contracts';
 import { IdentityOutboxAggregateTypeEnum } from '../enum/identity-outbox-aggregate-type.enum.js';
+import { MessageBrokerEnum } from '../../generic/messaging/enum/message-broker.enum.js';
 
 @Entity('IdentityOutbox')
 @Index('IdentityOutbox_unpublished_idx', ['createdAt'], { where: '"publishedAt" IS NULL' })
+@Check('IdentityOutbox_broker_known', `"broker" IN ('kafka', 'rabbitmq')`)
 @Check('IdentityOutbox_attempts_nonneg', `"attempts" >= 0`)
 @Check('IdentityOutbox_publishedAt_order', `"publishedAt" IS NULL OR "publishedAt" >= "createdAt"`)
 export class IdentityOutbox {
   @PrimaryColumn({ type: 'uuid', primaryKeyConstraintName: 'IdentityOutbox_pkey' })
   id: string;
+
+  @Column({ type: 'varchar', length: 16 })
+  broker: MessageBrokerEnum;
 
   @Column({ type: 'varchar', length: 249 })
   topic: TopicEnum;
@@ -39,4 +44,4 @@ export class IdentityOutbox {
 }
 
 export interface IdentityOutboxCreateEntityInterface
-  extends Pick<IdentityOutbox, 'id' | 'topic' | 'aggregateType' | 'aggregateId' | 'type' | 'payload'> {}
+  extends Pick<IdentityOutbox, 'id' | 'broker' | 'topic' | 'aggregateType' | 'aggregateId' | 'type' | 'payload'> {}

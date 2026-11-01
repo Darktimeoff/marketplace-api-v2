@@ -1,50 +1,42 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { subject } from '@casl/ability';
 import type { AppAbilityType } from '../../generic/auth/app-ability.type.js';
 import { EntityNotFoundError } from 'typeorm';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { ConfirmChannel, ConsumeMessage } from 'amqplib';
 import { OrderRepository } from '../repository/order.repository.js';
 import { Order } from '../entity/order.entity.js';
 import { Cacheable } from '../../generic/cache/decorator/cacheable.decorator.js';
 import { ORDER_CACHE_JITTER_SECONDS, ORDER_CACHE_TTL_SECONDS } from '../constant/order-cache.constant.js';
 import { orderCacheKey } from '../cache-key/order.cache-key.js';
+import type { OrderResponseInterface } from '@marketplace/contracts-core';
+import { OrderResponse } from '../response/order.response.js';
 
 @Injectable()
-export class OrderService implements OnModuleInit {
+export class OrderService {
   private readonly logger = new Logger(OrderService.name)
   
   constructor(
     private readonly orderRepository: OrderRepository,
-    private readonly amqpConnection: AmqpConnection
+    private readonly responses: OrderResponse,
   ) { }
 
-  async onModuleInit() {
-    await this.amqpConnection.managedChannel.addSetup(async (channel: ConfirmChannel) => {
-        channel.on('return', (msg: ConsumeMessage) => {
-          this.logger.error(`unroutable ${msg.fields.exchange}/${msg.fields.routingKey}`);
-        });
-      });
-  }
+  async findReadableByPublicId(publicId: Order['publicId'], ability: AppAbilityType): Promise<OrderResponseInterface> {
+    const order = await this.findByPublicId(publicId);
 
-  async findReadableById(id: Order['id'], ability: AppAbilityType): Promise<Order> {
-    const order = await this.findById(id);
-
-    if (!ability.can('read', subject('Order', { ownerIdentityPublicId: order.ownerIdentityPublicId }))) {
+    if (!ability.can('read', subject('Order', { buyerPublicId: order.buyer.publicId }))) {
       this.logger.warn(`forbidden read of order=${order.publicId}`);
       throw new ForbiddenException('This order belongs to someone else');
     }
 
-    return order;
+    return this.responses.toOrder(order);
   }
 
   @Cacheable({ key: orderCacheKey, ttlSeconds: ORDER_CACHE_TTL_SECONDS, jitterSeconds: ORDER_CACHE_JITTER_SECONDS })
-  async findById(id: Order['id']): Promise<Order> {
+  async findByPublicId(publicId: Order['publicId']): Promise<Order> {
     try {
-      return await this.orderRepository.findByIdOrFail(id);
+      return await this.orderRepository.findByPublicIdOrFail(publicId);
     } catch (error) {
       if (error instanceof EntityNotFoundError) {
-        throw new NotFoundException(`Order with id ${id} not found`);
+        throw new NotFoundException(`Order with id ${publicId} not found`);
       }
 
       throw error;

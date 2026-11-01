@@ -21,7 +21,7 @@ export class MediaService {
       throw new NotFoundException('Media not found');
     }
 
-    if (!ability.can('read', subject('Media', { ownerIdentityPublicId: media.ownerIdentityPublicId }))) {
+    if (!ability.can('read', subject('Media', { ownerPublicId: media.ownerPublicId }))) {
       this.logger.warn(`forbidden read of media=${media.publicId}`);
       throw new ForbiddenException('This media belongs to someone else');
     }

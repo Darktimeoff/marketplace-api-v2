@@ -21,7 +21,7 @@ export interface OrderCreateRecipientRequestInterface {
 }
 
 export interface OrderCreateItemRequestInterface {
-  offerId: number;
+  offerPublicId: string;
   quantity: number;
 }
 

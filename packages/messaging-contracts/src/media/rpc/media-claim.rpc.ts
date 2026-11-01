@@ -9,7 +9,7 @@ export namespace MediaClaimRpc {
   }
 
   export interface RequestInterface {
-    ownerIdentityPublicId: string;
+    ownerPublicId: string;
     mediaIds: string[];
     attachTo: AttachToInterface;
   }

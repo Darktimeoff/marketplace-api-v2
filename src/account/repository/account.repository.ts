@@ -8,43 +8,46 @@ import { Account } from '../entity/account.entity.js';
 export class AccountRepository {
   constructor(private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>) { }
 
-  async debit(customerId: Account['customerId'], amount: string): Promise<boolean> {
-    const [rows]: [{ customerId: number }[], number] = await this.txHost.tx.query(
+  async debit(publicId: Account['publicId'], amount: string): Promise<Account['id'] | null> {
+    const [rows]: [{ id: number }[], number] = await this.txHost.tx.query(
       `UPDATE "Account"
           SET "balance" = "balance" - $2
-        WHERE "customerId" = $1
+        WHERE "publicId" = $1
           AND "balance" >= $2
-    RETURNING "customerId"`,
-      [customerId, amount],
+    RETURNING "id"`,
+      [publicId, amount],
     );
 
-    return rows.length > 0;
+    return rows[0]?.id ?? null;
   }
 
-  async credit(customerId: Account['customerId'], amount: string): Promise<void> {
-    await this.txHost.tx.query(
-      `INSERT INTO "Account" ("customerId", "balance")
+  async credit(publicId: Account['publicId'], amount: string): Promise<Account['id']> {
+    const [row]: { id: number }[] = await this.txHost.tx.query(
+      `INSERT INTO "Account" ("publicId", "balance")
        VALUES ($1, $2)
-       ON CONFLICT ("customerId") DO UPDATE SET "balance" = "Account"."balance" + EXCLUDED."balance"`,
-      [customerId, amount],
+       ON CONFLICT ("publicId") DO UPDATE SET "balance" = "Account"."balance" + EXCLUDED."balance"
+       RETURNING "id"`,
+      [publicId, amount],
     );
+
+    return row.id;
   }
 
-  async createIfAbsent(customerId: Account['customerId']): Promise<boolean> {
+  async createIfAbsent(publicId: Account['publicId']): Promise<boolean> {
     const result = await this.txHost.tx
       .getRepository(Account)
       .createQueryBuilder()
       .insert()
-      .values({ customerId })
+      .values({ publicId })
       .orIgnore()
-      .returning(['customerId'])
+      .returning(['id'])
       .execute();
 
     return result.raw.length > 0;
   }
 
-  async findBalance(customerId: Account['customerId']): Promise<number | null> {
-    const account = await this.txHost.tx.getRepository(Account).findOne({ where: { customerId } });
+  async findBalance(publicId: Account['publicId']): Promise<number | null> {
+    const account = await this.txHost.tx.getRepository(Account).findOne({ where: { publicId } });
     return account ? Number(account.balance) : null;
   }
 

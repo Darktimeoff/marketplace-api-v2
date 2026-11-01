@@ -2,7 +2,7 @@ import { ConflictException, Injectable, Logger, NotFoundException } from '@nestj
 import { MediaStatusEnum, type MediaUploadPartsResponseInterface } from '@marketplace/contracts-core';
 import { MediaRepository } from '../repository/media.repository.js';
 import { MediaStorageService } from '../service/media-storage.service.js';
-import { MediaResponseService } from '../service/media-response.service.js';
+import { MediaResponse } from '../response/media.response.js';
 import { MediaPartPlanService } from '../service/media-part-plan.service.js';
 import { MEDIA_PART_URLS_PER_REQUEST, MEDIA_UPLOAD_URL_TTL_SECONDS } from '../constant/media-upload.constant.js';
 
@@ -13,12 +13,12 @@ export class MediaUploadPartsCommandHandler {
   constructor(
     private readonly media: MediaRepository,
     private readonly storage: MediaStorageService,
-    private readonly responses: MediaResponseService,
+    private readonly responses: MediaResponse,
     private readonly plan: MediaPartPlanService,
   ) {}
 
-  async execute(publicId: string, ownerIdentityPublicId: string): Promise<MediaUploadPartsResponseInterface> {
-    const media = await this.media.findOwned(publicId, ownerIdentityPublicId);
+  async execute(publicId: string, ownerPublicId: string): Promise<MediaUploadPartsResponseInterface> {
+    const media = await this.media.findOwned(publicId, ownerPublicId);
 
     if (!media) {
       throw new NotFoundException('Media not found');

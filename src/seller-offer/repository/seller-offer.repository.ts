@@ -8,8 +8,8 @@ import { SellerOffer } from '../entity/seller-offer.entity.js';
 export class SellerOfferRepository {
   constructor(private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>) {}
 
-  findByIds(ids: SellerOffer['id'][]): Promise<SellerOffer[]> {
+  findByPublicIds(publicIds: SellerOffer['publicId'][]): Promise<SellerOffer[]> {
     const sellerOffers = this.txHost.tx.getRepository(SellerOffer);
-    return sellerOffers.findBy({ id: In(ids) });
+    return sellerOffers.findBy({ publicId: In(publicIds) });
   }
 }

@@ -36,6 +36,16 @@ import { AddIdentityExternalAccount1791000000200 } from '../../src/migrations/17
 import { AddMedia1792000000000 } from '../../src/migrations/1792000000000-AddMedia.js';
 import { AddMediaAttachment1792000000100 } from '../../src/migrations/1792000000100-AddMediaAttachment.js';
 import { AddProductMedia1792000000200 } from '../../src/migrations/1792000000200-AddProductMedia.js';
+import { UnifyUserIdentity1793000000000 } from '../../src/migrations/1793000000000-UnifyUserIdentity.js';
+import { AccountIdentifiers1793000000100 } from '../../src/migrations/1793000000100-AccountIdentifiers.js';
+import { OrderBuyerIdentifiers1793000000200 } from '../../src/migrations/1793000000200-OrderBuyerIdentifiers.js';
+import { PersonOwners1793000000300 } from '../../src/migrations/1793000000300-PersonOwners.js';
+import { OfferVariantPublicId1793000000400 } from '../../src/migrations/1793000000400-OfferVariantPublicId.js';
+import { OrderLineOfferPublicId1793000000500 } from '../../src/migrations/1793000000500-OrderLineOfferPublicId.js';
+import { AddMediaVariant1794000000000 } from '../../src/migrations/1794000000000-AddMediaVariant.js';
+import { AddMediaOutbox1794000000100 } from '../../src/migrations/1794000000100-AddMediaOutbox.js';
+import { AddOutboxBroker1794000000200 } from '../../src/migrations/1794000000200-AddOutboxBroker.js';
+import { AddProductMediaVariant1794000000300 } from '../../src/migrations/1794000000300-AddProductMediaVariant.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
@@ -62,7 +72,10 @@ import { Order } from '../../src/order/entity/order.entity.js';
 import { OrderLine } from '../../src/order/entity/order-line.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
 import { Media } from '../../src/media/entity/media.entity.js';
+import { MediaVariant } from '../../src/media/entity/media-variant.entity.js';
+import { MediaOutbox } from '../../src/media/entity/media-outbox.entity.js';
 import { ProductMedia } from '../../src/product/entity/product-media.entity.js';
+import { ProductMediaVariant } from '../../src/product/entity/product-media-variant.entity.js';
 import { ProductOutbox } from '../../src/product/entity/product-outbox.entity.js';
 
 export const testMigrations: (new () => MigrationInterface)[] = [
@@ -103,6 +116,16 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   AddMedia1792000000000,
   AddMediaAttachment1792000000100,
   AddProductMedia1792000000200,
+  UnifyUserIdentity1793000000000,
+  AccountIdentifiers1793000000100,
+  OrderBuyerIdentifiers1793000000200,
+  PersonOwners1793000000300,
+  OfferVariantPublicId1793000000400,
+  OrderLineOfferPublicId1793000000500,
+  AddMediaVariant1794000000000,
+  AddMediaOutbox1794000000100,
+  AddOutboxBroker1794000000200,
+  AddProductMediaVariant1794000000300,
 ];
 
 export const testEntities = [
@@ -132,6 +155,9 @@ export const testEntities = [
   OrderLine,
   OrderRecipient,
   Media,
+  MediaVariant,
+  MediaOutbox,
   ProductMedia,
+  ProductMediaVariant,
   ProductOutbox,
 ];

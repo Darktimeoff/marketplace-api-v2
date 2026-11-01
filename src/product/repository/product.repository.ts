@@ -11,4 +11,8 @@ export class ProductRepository {
     const products = this.txHost.tx.getRepository(Product);
     return products.save(products.create(input));
   }
+
+  findByPublicIdWithCatalog(publicId: Product['publicId']): Promise<Product | null> {
+    return this.txHost.tx.getRepository(Product).findOne({ where: { publicId }, relations: { category: true, brand: true } });
+  }
 }

@@ -1,6 +1,6 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
-import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
+import { CurrencyEnum, OrderStatusEnum, type OrderResponseInterface } from '@marketplace/contracts-core';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
 import { OrderLineRepository } from '../repository/order-line.repository.js';
@@ -15,10 +15,12 @@ import {
   OrderLine,
   type OrderLineCreateEntityInterface,
 } from '../entity/order-line.entity.js';
-import { SellerOfferService } from '../../seller-offer/service/seller-offer.service.js';
-import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
+import type { SellerOfferPriceRpc } from '@marketplace/messaging-contracts';
+import { SELLER_OFFER_CLIENT } from '../constant/order-client.constant.js';
+import type { SellerOfferClientInterface } from '../client/seller-offer.client.interface.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
-import { OrderPlaceMessageService } from '../service/order-place-message.service.js';
+import { OrderPlaceMessage } from '../message/order-place.message.js';
+import { OrderResponse } from '../response/order.response.js';
 import { OrderWorkflowOutboxRepository } from '../repository/order-workflow-outbox.repository.js';
 import { OrderBuyerRepository } from '../repository/order-buyer.repository.js';
 import type { OrderBuyer } from '../entity/order-buyer.entity.js';
@@ -35,45 +37,42 @@ export class OrderPlaceCommandHandler {
     private readonly orderRepository: OrderRepository,
     private readonly orderRecipientRepository: OrderRecipientRepository,
     private readonly orderLineRepository: OrderLineRepository,
-    private readonly offers: SellerOfferService,
+    @Inject(SELLER_OFFER_CLIENT) private readonly sellerOffers: SellerOfferClientInterface,
     private readonly outbox: OrderOutboxRepository,
     private readonly workflowOutbox: OrderWorkflowOutboxRepository,
     private readonly buyers: OrderBuyerRepository,
-    private readonly messages: OrderPlaceMessageService,
+    private readonly messages: OrderPlaceMessage,
+    private readonly responses: OrderResponse,
   ) {}
 
-  async execute(input: OrderCreateInput, identityPublicId: string, idempotencyKey: string | null = null): Promise<Order> {
-    const buyer = await this.buyers.findByIdentityPublicId(identityPublicId);
+  async execute(input: OrderCreateInput, identityPublicId: string, idempotencyKey: string | null = null): Promise<OrderResponseInterface> {
+    const buyer = await this.buyers.findByPublicId(identityPublicId);
 
     if (!buyer) {
       throw new ConflictException('Buyer account is still being set up, try again shortly');
     }
 
-    return this.createPending(input, buyer, idempotencyKey);
+    return this.responses.toOrder(await this.createPending(input, buyer, idempotencyKey));
   }
 
   @Transactional()
   private async createPending(input: OrderCreateInput, buyer: OrderBuyer, idempotencyKey: string | null): Promise<Order> {
     if (idempotencyKey) {
-      await this.orderRepository.lockIdempotencyKey(buyer.userId, idempotencyKey);
-      const placed = await this.orderRepository.findByIdempotencyKey(buyer.userId, idempotencyKey);
+      await this.orderRepository.lockIdempotencyKey(buyer.id, idempotencyKey);
+      const placed = await this.orderRepository.findByIdempotencyKey(buyer.id, idempotencyKey);
 
       if (placed) {
         return placed;
       }
     }
 
-    const orderProductIds = input.items
-      .map((item) => item.offerId)
-      .toSorted();
-
-    const offers = await this.offers.findByIds(orderProductIds);
+    const { offers } = await this.sellerOffers.findPrices({ offerPublicIds: input.items.map((item) => item.offerPublicId) });
 
     const recipient = await this.createRecipient(input.recipient);
 
-    const offersById = new Map(offers.map((offer) => [offer.id, offer]));
+    const offersByPublicId = new Map(offers.map((offer) => [offer.offerPublicId, offer]));
     const pricedItems = input.items.map((item) =>
-      this.toPriceItemOrFail(item, offersById),
+      this.toPriceItemOrFail(item, offersByPublicId),
     );
 
     const order = await this.createOrder(
@@ -85,8 +84,8 @@ export class OrderPlaceCommandHandler {
     );
 
     await this.createItems(pricedItems, order.id);
-    await this.outbox.create(this.messages.toOrderCreatedOutbox(order));
-    await this.workflowOutbox.create(this.messages.toOrderPlaceWorkflowOutbox(order, input.items));
+    await this.outbox.create(this.messages.toOrderCreatedOutbox(order, buyer));
+    await this.workflowOutbox.create(this.messages.toOrderPlaceWorkflowOutbox(order, buyer, input.items));
 
     return order;
   }
@@ -117,8 +116,7 @@ export class OrderPlaceCommandHandler {
     );
 
     return this.orderRepository.create({
-      userId: buyer.userId,
-      ownerIdentityPublicId: buyer.identityPublicId,
+      buyerId: buyer.id,
       orderRecipientId,
       totalAmount: totalAmount.toFixed(2),
       discountAmount: discountAmount.toFixed(2),
@@ -139,12 +137,12 @@ export class OrderPlaceCommandHandler {
 
   private toPriceItemOrFail(
     item: OrderCreateItemInput,
-    offersById: Map<number, SellerOffer>,
+    offersByPublicId: Map<string, SellerOfferPriceRpc.OfferPriceInterface>,
   ): PricedOrderLine {
-    const offer = offersById.get(item.offerId);
+    const offer = offersByPublicId.get(item.offerPublicId);
     if (!offer) {
       throw new NotFoundException(
-        `Product with this id ${item.offerId} not existed, please try again`,
+        `Product with this id ${item.offerPublicId} not existed, please try again`,
       );
     }
 
@@ -154,7 +152,7 @@ export class OrderPlaceCommandHandler {
 
     return {
       item: {
-        offerId: item.offerId,
+        offerPublicId: item.offerPublicId,
         quantity: item.quantity,
         unitPrice: offer.price,
         unitDiscountPrice: offer.discountPrice,

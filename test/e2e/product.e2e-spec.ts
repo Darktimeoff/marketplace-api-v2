@@ -41,7 +41,7 @@ describe('Product (e2e)', () => {
     const suffix = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
     const category = await aCategoryWithTranslation(dataSource.manager, { slug: `kitchen-${suffix}`, name: 'Kitchen' });
     const brand = await aBrandWithTranslation(dataSource.manager, { slug: `acme-${suffix}`, name: 'Acme' });
-    return { categoryId: category.id, brandId: brand.id, translations: [{ language: LanguageEnum.en, title: 'Kettle' }, { language: LanguageEnum.ua, title: 'Чайник', description: 'Електричний' }] };
+    return { categoryPublicId: category.publicId, brandPublicId: brand.publicId, translations: [{ language: LanguageEnum.en, title: 'Kettle' }, { language: LanguageEnum.ua, title: 'Чайник', description: 'Електричний' }] };
   }
 
   function create(body: object, token?: string) {
@@ -66,7 +66,7 @@ describe('Product (e2e)', () => {
 
     const response = await create(body, await tokenFor(RoleEnum.seller)).expect(201);
 
-    expect(response.body).toMatchObject({ publicId: expect.any(String), categoryId: body.categoryId, brandId: body.brandId });
+    expect(response.body).toMatchObject({ publicId: expect.any(String), categoryPublicId: body.categoryPublicId, brandPublicId: body.brandPublicId });
     const [product] = await dataSource.getRepository(Product).find({ relations: { translations: true } });
     expect(product.translations.map(({ language, title }) => ({ language, title })).toSorted((a, b) => a.language.localeCompare(b.language))).toEqual([
       { language: LanguageEnum.en, title: 'Kettle' },
@@ -90,7 +90,7 @@ describe('Product (e2e)', () => {
   it('answers 404 for an unknown category and leaves nothing behind', async () => {
     const body = await aBody();
 
-    await create({ ...body, categoryId: 999999 }, await tokenFor(RoleEnum.seller)).expect(404);
+    await create({ ...body, categoryPublicId: '00000000-0000-4000-8000-000000000001' }, await tokenFor(RoleEnum.seller)).expect(404);
 
     expect(await dataSource.getRepository(Product).count()).toBe(0);
     expect(await dataSource.getRepository(ProductTranslation).count()).toBe(0);

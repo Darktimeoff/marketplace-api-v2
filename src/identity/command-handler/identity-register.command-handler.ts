@@ -8,7 +8,7 @@ import { TokenService } from '../service/token.service.js';
 import { IdentityRegisterInput } from '../input/identity-register.input.js';
 import { RoleEnum } from '../enum/role.enum.js';
 import { IdentityOutboxRepository } from '../repository/identity-outbox.repository.js';
-import { IdentityMessageService } from '../service/identity-message.service.js';
+import { IdentityMessage } from '../message/identity.message.js';
 
 const UNIQUE_VIOLATION = '23505';
 
@@ -19,7 +19,7 @@ export class IdentityRegisterCommandHandler {
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
     private readonly outbox: IdentityOutboxRepository,
-    private readonly messages: IdentityMessageService,
+    private readonly messages: IdentityMessage,
   ) {}
 
   async execute(input: IdentityRegisterInput): Promise<IdentityTokenResponseInterface> {

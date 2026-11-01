@@ -22,3 +22,4 @@ export * from './media/response/media-upload.response.js';
 export * from './media/response/media-upload-parts.response.js';
 export * from './media/enum/media-attachment-type.enum.js';
 export * from './media/enum/media-claim-status.enum.js';
+export * from './media/enum/media-variant-name.enum.js';

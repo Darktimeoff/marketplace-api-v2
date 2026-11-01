@@ -38,8 +38,7 @@ export async function aUser(
 
   return users.save(
     users.create({
-      identityId: identity.id,
-      identityPublicId: identity.publicId,
+      publicId: identity.publicId,
       firstName: 'Test',
       lastName: `User${seq}`,
       ...overrides,
@@ -79,7 +78,7 @@ export async function aSellerOffer(
     Pick<
       SellerOffer,
       | 'sellerId'
-      | 'variantId'
+      | 'variantPublicId'
       | 'sellerSku'
       | 'price'
       | 'discountPrice'
@@ -96,9 +95,9 @@ export async function aSellerOffer(
   const sellers = manager.getRepository(Seller);
   const offers = manager.getRepository(SellerOffer);
 
-  let variantId = overrides.variantId;
+  let variantPublicId = overrides.variantPublicId;
 
-  if (variantId === undefined) {
+  if (variantPublicId === undefined) {
     const [brand, category] = await Promise.all([
       brands.save(brands.create({ slug: `brand-${seq}` })),
       categories.save(categories.create({ slug: `category-${seq}` })),
@@ -117,7 +116,7 @@ export async function aSellerOffer(
       }),
     );
 
-    variantId = variant.id;
+    variantPublicId = variant.publicId;
   }
 
   let sellerId = overrides.sellerId;
@@ -125,7 +124,7 @@ export async function aSellerOffer(
   if (sellerId === undefined) {
     const sellerUser = await aUser(manager);
     const seller = await sellers.save(
-      sellers.create({ userId: sellerUser.id }),
+      sellers.create({ ownerPublicId: sellerUser.publicId }),
     );
 
     sellerId = seller.id;
@@ -133,7 +132,7 @@ export async function aSellerOffer(
 
   return offers.save(
     offers.create({
-      variantId,
+      variantPublicId,
       sellerId,
       sellerSku: overrides.sellerSku ?? `SKU-${seq}`,
       price: overrides.price ?? '100.00',

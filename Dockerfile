@@ -16,6 +16,8 @@ FROM node:24-alpine AS runner
 
 WORKDIR /app
 
+RUN apk add --no-cache ffmpeg
+
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 COPY --from=builder /app/dist ./dist

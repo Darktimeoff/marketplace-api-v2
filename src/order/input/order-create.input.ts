@@ -4,7 +4,7 @@ import {
   IsDefined,
   IsEnum,
   IsInt,
-  IsPositive,
+  IsUUID,
   IsOptional,
   IsString,
   Matches,
@@ -66,9 +66,8 @@ export class OrderCreateRecipientInput implements OrderCreateRecipientRequestInt
 }
 
 export class OrderCreateItemInput implements OrderCreateItemRequestInterface {
-  @IsInt()
-  @IsPositive()
-  offerId: number;
+  @IsUUID()
+  offerPublicId: string;
 
   @IsInt()
   @Min(1)

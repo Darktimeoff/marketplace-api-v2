@@ -7,8 +7,8 @@ export interface ProductCreateTranslationRequestInterface {
 }
 
 export interface ProductCreateRequestInterface {
-  categoryId: number;
-  brandId: number;
+  categoryPublicId: string;
+  brandPublicId: string;
   translations: ProductCreateTranslationRequestInterface[];
   mediaIds?: string[];
 }

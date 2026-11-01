@@ -3,11 +3,11 @@ import type { MongoAbility } from '@casl/ability';
 export type AppActionType = 'create' | 'read';
 
 export interface OrderSubjectInterface {
-  ownerIdentityPublicId: string | null;
+  buyerPublicId: string;
 }
 
 export interface MediaSubjectInterface {
-  ownerIdentityPublicId: string;
+  ownerPublicId: string;
 }
 
 export type AppSubjectType =

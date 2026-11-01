@@ -146,7 +146,7 @@ async function seed(): Promise<void> {
       await identities.update({ id: identity.id }, { passwordHash: seedPasswordHash });
     }
 
-    let user = await users.findOne({ where: { identityId: identity.id } });
+    let user = await users.findOne({ where: { publicId: identity.publicId } });
 
     if (!user) {
       const address = await addresses.save(
@@ -159,8 +159,7 @@ async function seed(): Promise<void> {
 
       user = await users.save(
         users.create({
-          identityId: identity.id,
-          identityPublicId: identity.publicId,
+          publicId: identity.publicId,
           email: identity.email,
           phoneNumber: identity.loginPhone.fullNumber,
           firstName: isSeller ? `Seller${i + 1}` : `Buyer${i - SELLERS + 1}`,
@@ -189,8 +188,8 @@ async function seed(): Promise<void> {
   for (const sellerUser of sellers) {
     const seller = await ensure(
       sellerRepo,
-      { userId: sellerUser.id } as FindOptionsWhere<Seller>,
-      { userId: sellerUser.id },
+      { ownerPublicId: sellerUser.publicId } as FindOptionsWhere<Seller>,
+      { ownerPublicId: sellerUser.publicId },
     );
 
     sellerRows.push(seller);
@@ -260,7 +259,7 @@ async function seed(): Promise<void> {
       {
         sellerId: seller.id,
         sellerSku,
-        variantId: variant.id,
+        variantPublicId: variant.publicId,
         price: (100 + i * 25).toFixed(2),
         currency: CurrencyEnum.UAH,
         discountPrice: i % 3 === 0 ? (90 + i * 25).toFixed(2) : null,
@@ -308,10 +307,15 @@ async function seed(): Promise<void> {
     const items = [offerRows[i % offerRows.length], offerRows[(i + 3) % offerRows.length]];
     const total = items.reduce((sum, offer) => sum + Number(offer.price), 0);
 
+    const [orderBuyer]: { id: number }[] = await AppDataSource.query(
+      `INSERT INTO "OrderBuyer" ("publicId") VALUES ($1) ON CONFLICT ("publicId") DO UPDATE SET "publicId" = EXCLUDED."publicId" RETURNING "id"`,
+      [buyer.publicId],
+    );
+
     const order = await orders.save(
       orders.create({
         publicId,
-        userId: buyer.id,
+        buyerId: orderBuyer.id,
         orderRecipientId: recipient.id,
         status: statuses[i % statuses.length],
         totalAmount: total.toFixed(2),
@@ -323,10 +327,10 @@ async function seed(): Promise<void> {
     for (const [position, offer] of items.entries()) {
       await ensure(
         orderLines,
-        { orderId: order.id, offerId: offer.id } as FindOptionsWhere<OrderLine>,
+        { orderId: order.id, offerPublicId: offer.publicId } as FindOptionsWhere<OrderLine>,
         {
           orderId: order.id,
-          offerId: offer.id,
+          offerPublicId: offer.publicId,
           quantity: position + 1,
           unitPrice: offer.price,
           unitDiscountPrice: offer.discountPrice,
@@ -338,13 +342,16 @@ async function seed(): Promise<void> {
     // (домен "amount"), направление денег кодирует type = PAYMENT.
     const paidStatuses = [OrderStatusEnum.paid, OrderStatusEnum.shipped, OrderStatusEnum.delivered, OrderStatusEnum.completed];
 
-    await AppDataSource.query(`INSERT INTO "Account" ("customerId") VALUES ($1) ON CONFLICT ("customerId") DO NOTHING`, [buyer.id]);
+    const [account]: { id: number }[] = await AppDataSource.query(
+      `INSERT INTO "Account" ("publicId") VALUES ($1) ON CONFLICT ("publicId") DO UPDATE SET "publicId" = EXCLUDED."publicId" RETURNING "id"`,
+      [buyer.publicId],
+    );
 
     await ensure(
       transactions,
-      { customerId: buyer.id, amount: total.toFixed(2), type: TransactionTypeEnum.PAYMENT } as FindOptionsWhere<Transaction>,
+      { accountId: account.id, amount: total.toFixed(2), type: TransactionTypeEnum.PAYMENT } as FindOptionsWhere<Transaction>,
       {
-        customerId: buyer.id,
+        accountId: account.id,
         amount: total.toFixed(2),
         type: TransactionTypeEnum.PAYMENT,
         status: paidStatuses.includes(order.status) ? TransactionStatusEnum.SUCCESS : TransactionStatusEnum.PENDING,
@@ -353,12 +360,15 @@ async function seed(): Promise<void> {
   }
 
   await AppDataSource.query(
-    `INSERT INTO "Account" ("customerId", "balance")
-     SELECT "customerId", COALESCE(SUM(CASE WHEN "type" IN ('DEPOSIT', 'REFUND') THEN "amount" ELSE -"amount" END) FILTER (WHERE "status" = 'SUCCESS'), 0)
-       FROM "Transaction"
-      WHERE "deletedAt" IS NULL
-      GROUP BY "customerId"
-     ON CONFLICT ("customerId") DO UPDATE SET "balance" = EXCLUDED."balance"`,
+    `UPDATE "Account"
+        SET "balance" = "totals"."balance"
+       FROM (
+             SELECT "accountId", COALESCE(SUM(CASE WHEN "type" IN ('DEPOSIT', 'REFUND') THEN "amount" ELSE -"amount" END) FILTER (WHERE "status" = 'SUCCESS'), 0) AS "balance"
+               FROM "Transaction"
+              WHERE "deletedAt" IS NULL
+              GROUP BY "accountId"
+            ) AS "totals"
+      WHERE "Account"."id" = "totals"."accountId"`,
   );
 }
 

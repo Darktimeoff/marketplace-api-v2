@@ -1,4 +1,4 @@
-import { StockReserveRequest } from "@marketplace/messaging-contracts";
+import { StockReserveRpc } from "@marketplace/messaging-contracts";
 import { Injectable } from "@nestjs/common";
 import { Transactional } from "@nestjs-cls/transactional";
 import { SellerOfferRepository } from "../repository/seller-offer.repository.js";
@@ -12,11 +12,24 @@ export class SellerOfferStockReserveCommandHandler {
     private readonly reservations: StockReservationRepository,
   ) {}
 
+  async execute(request: StockReserveRpc.RequestInterface): Promise<StockReserveRpc.ResponseType> {
+    try {
+      await this.reserve(request);
+      return { status: 'reserved' };
+    } catch (e) {
+      if (e instanceof StockReservationRejectedException) {
+        return { status: 'rejected', reason: e.reason, items: e.items };
+      }
+
+      throw e;
+    }
+  }
+
   @Transactional()
-  async execute(orderPublicId: string, { items }: StockReserveRequest.DataInterface): Promise<void> {
-    const offers = await this.offers.findByIds(items.map((item) => item.offerId));
-    const offerIds = new Set(offers.map((offer) => offer.id));
-    const missing = items.filter((item) => !offerIds.has(item.offerId));
+  private async reserve({ orderPublicId, items }: StockReserveRpc.RequestInterface): Promise<void> {
+    const offers = await this.offers.findByPublicIds(items.map((item) => item.offerPublicId));
+    const offersByPublicId = new Map(offers.map((offer) => [offer.publicId, offer]));
+    const missing = items.filter((item) => !offersByPublicId.has(item.offerPublicId));
 
     if (missing.length > 0) {
       throw new StockReservationRejectedException(
@@ -26,7 +39,7 @@ export class SellerOfferStockReserveCommandHandler {
     }
 
     const outcomes = await this.reservations.reserve(
-      items.map((item) => ({ orderPublicId, offerId: item.offerId, quantity: item.quantity })),
+      items.map((item) => ({ orderPublicId, offerId: offersByPublicId.get(item.offerPublicId)!.id, quantity: item.quantity })),
     );
     const failedIds = new Set(
       outcomes.filter((outcome) => outcome.inserted > 0 && outcome.held === 0).map((outcome) => outcome.offerId),
@@ -36,13 +49,12 @@ export class SellerOfferStockReserveCommandHandler {
       return;
     }
 
-    const stockById = new Map(offers.map((offer) => [offer.id, offer.onHandQuantity - offer.reservedQuantity]));
-
     throw new StockReservationRejectedException(
       'insufficient_stock',
       items
-        .filter((item) => failedIds.has(item.offerId))
-        .map((item) => ({ ...item, available: stockById.get(item.offerId) ?? 0 })),
+        .map((item) => ({ item, offer: offersByPublicId.get(item.offerPublicId)! }))
+        .filter(({ offer }) => failedIds.has(offer.id))
+        .map(({ item, offer }) => ({ ...item, available: offer.onHandQuantity - offer.reservedQuantity })),
     );
   }
 }

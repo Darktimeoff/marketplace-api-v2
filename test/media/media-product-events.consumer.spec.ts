@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MediaAttachmentTypeEnum } from '@marketplace/contracts-core';
-import { MediaProductEventsGateway } from '../../src/media/gateway/media-product-events.gateway.js';
+import { MediaProductEventsConsumer } from '../../src/media/consumer/media-product-events.consumer.js';
 import { KafkaRejectedMessageException } from '../../src/generic/kafka/exception/kafka-rejected-message.exception.js';
 import type { KafkaConsumerService } from '../../src/generic/kafka/kafka-consumer.service.js';
 import type { KafkaSubscriptionInterface } from '../../src/generic/kafka/interface/kafka-subscription.interface.js';
@@ -13,7 +13,7 @@ function aGateway(): { confirm: ReturnType<typeof vi.fn>; subscription: KafkaSub
   const confirm = vi.fn();
   let subscription!: KafkaSubscriptionInterface;
   const consumer = { register: (registered: KafkaSubscriptionInterface) => { subscription = registered; } } as unknown as KafkaConsumerService;
-  new MediaProductEventsGateway(consumer, { execute: confirm } as unknown as MediaClaimConfirmCommandHandler).onModuleInit();
+  new MediaProductEventsConsumer(consumer, { execute: confirm } as unknown as MediaClaimConfirmCommandHandler).onModuleInit();
   return { confirm, subscription };
 }
 
@@ -21,7 +21,7 @@ function anEvent(data: object, type = 'product.created'): object {
   return { specversion: '1.0', id: productPublicId, type, data };
 }
 
-describe('MediaProductEventsGateway', () => {
+describe('MediaProductEventsConsumer', () => {
   it('registers the media.attachment group on product.events', () => {
     expect(aGateway().subscription).toMatchObject({ groupId: 'media.attachment', topic: 'product.events' });
   });

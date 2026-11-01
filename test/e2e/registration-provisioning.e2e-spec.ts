@@ -66,13 +66,13 @@ describe('Registration provisioning over Kafka (e2e)', () => {
     const { Test } = await import('@nestjs/testing');
     const { AppModule } = await import('../../src/app.module.js');
     const { UserCreateCommandHandler } = await import('../../src/user/command-handler/user-create.command-handler.js');
-    const { UserIdentityEventsGateway } = await import('../../src/user/gateway/user-identity-events.gateway.js');
+    const { UserIdentityEventsConsumer } = await import('../../src/user/consumer/user-identity-events.consumer.js');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     await app.init();
     dataSource = app.get(DataSource);
     userCreate = app.get(UserCreateCommandHandler);
-    userGateway = app.get(UserIdentityEventsGateway) as unknown as { handle: (event: unknown) => Promise<void> };
+    userGateway = app.get(UserIdentityEventsConsumer) as unknown as { handle: (event: unknown) => Promise<void> };
 
     producer = kafka.producer();
     await producer.connect();

@@ -12,11 +12,11 @@ import { OrderWorkflowOutbox } from "./entity/order-workflow-outbox.entity.js";
 import { OrderBuyer } from "./entity/order-buyer.entity.js";
 import { OrderBuyerRepository } from "./repository/order-buyer.repository.js";
 import { OrderBuyerRegisterCommandHandler } from "./command-handler/order-buyer-register.command-handler.js";
-import { OrderUserEventsGateway } from "./gateway/order-user-events.gateway.js";
+import { OrderUserEventsConsumer } from "./consumer/order-user-events.consumer.js";
 import { OrderWorkflowOutboxRepository } from "./repository/order-workflow-outbox.repository.js";
 import { OrderWorkflowOutboxRelay } from "./relay/order-workflow-outbox.relay.js";
 import { OrderWorkflowOutboxCleanupCron } from "./cron/order-workflow-outbox-cleanup.cron.js";
-import { OrderNotifyEventsGateway } from "./gateway/order-notify-events.gateway.js";
+import { OrderNotifyEventsConsumer } from "./consumer/order-notify-events.consumer.js";
 import { OrderPlaceMessage } from "./message/order-place.message.js";
 import { OrderRepository } from "./repository/order.repository.js";
 import { OrderRecipientRepository } from "./repository/order-recipient.repository.js";
@@ -66,8 +66,8 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
     OrderWorkflowOutboxCleanupCron,
     OrderBuyerRepository,
     OrderBuyerRegisterCommandHandler,
-    OrderUserEventsGateway,
-    OrderNotifyEventsGateway,
+    OrderUserEventsConsumer,
+    OrderNotifyEventsConsumer,
     OrderPlaceMessage,
     OrderService,
     OrderPlaceCommandHandler,

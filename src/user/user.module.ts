@@ -11,10 +11,10 @@ import { UserMessage } from './message/user.message.js';
 import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { UserRepository } from './repository/user.repository.js';
 import { UserCreateCommandHandler } from './command-handler/user-create.command-handler.js';
-import { UserIdentityEventsGateway } from './gateway/user-identity-events.gateway.js';
+import { UserIdentityEventsConsumer } from './consumer/user-identity-events.consumer.js';
 
 @Module({
   imports: [QueueModule, TypeOrmModule.forFeature([User, Address, UserOutbox]), KafkaModule],
-  providers: [UserRepository, UserOutboxRepository, UserCreateCommandHandler, UserIdentityEventsGateway, UserOutboxRelay, UserOutboxCleanupCron, UserMessage],
+  providers: [UserRepository, UserOutboxRepository, UserCreateCommandHandler, UserIdentityEventsConsumer, UserOutboxRelay, UserOutboxCleanupCron, UserMessage],
 })
 export class UserModule {}

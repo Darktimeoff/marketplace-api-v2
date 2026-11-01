@@ -8,7 +8,7 @@ import { MediaConsumerGroupEnum } from '../enum/media-consumer-group.enum.js';
 import { productCreatedEventSchema } from '../schema/product-created-event.schema.js';
 
 @Injectable()
-export class MediaProductEventsGateway implements OnModuleInit {
+export class MediaProductEventsConsumer implements OnModuleInit {
   constructor(
     private readonly consumer: KafkaConsumerService,
     private readonly claimConfirm: MediaClaimConfirmCommandHandler,

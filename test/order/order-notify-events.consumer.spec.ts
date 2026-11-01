@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { OrderStatusEnum } from '@marketplace/contracts-core';
-import { OrderNotifyEventsGateway } from '../../src/order/gateway/order-notify-events.gateway.js';
+import { OrderNotifyEventsConsumer } from '../../src/order/consumer/order-notify-events.consumer.js';
 import { OrderNotifyService } from '../../src/order/service/order-notify.service.js';
 import { KafkaRejectedMessageException } from '../../src/generic/kafka/exception/kafka-rejected-message.exception.js';
 import type { KafkaConsumerService } from '../../src/generic/kafka/kafka-consumer.service.js';
@@ -10,14 +10,14 @@ function aGateway(): { notify: OrderNotifyService; subscription: KafkaSubscripti
   const notify = new OrderNotifyService();
   let subscription!: KafkaSubscriptionInterface;
   const consumer = { register: (registered: KafkaSubscriptionInterface) => { subscription = registered; } } as unknown as KafkaConsumerService;
-  new OrderNotifyEventsGateway(consumer, notify).onModuleInit();
+  new OrderNotifyEventsConsumer(consumer, notify).onModuleInit();
   return { notify, subscription };
 }
 
 const ORDER = 'aaaaaaaa-0000-4000-8000-000000000011';
 const OTHER_ORDER = 'aaaaaaaa-0000-4000-8000-000000000012';
 
-describe('OrderNotifyEventsGateway', () => {
+describe('OrderNotifyEventsConsumer', () => {
   it('registers a broadcast consumer of order.events', () => {
     expect(aGateway().subscription).toMatchObject({ groupId: 'order.notify', topic: 'order.events', broadcast: true });
   });

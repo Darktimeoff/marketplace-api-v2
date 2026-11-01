@@ -13,10 +13,10 @@ import { AccountCustomerChargeCommandHandler } from './command-handler/account-c
 import { RabbitMqModule } from '../generic/rabbitmq/rabbitmq.module.js';
 import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { AccountCreateCommandHandler } from './command-handler/account-create.command-handler.js';
-import { AccountUserEventsGateway } from './gateway/account-user-events.gateway.js';
+import { AccountUserEventsConsumer } from './consumer/account-user-events.consumer.js';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Transaction, AccountInbox, Account]), RabbitMqModule, KafkaModule],
-  providers: [AccountRepository, AccountInboxRepository, AccountInboxService, AccountCustomerChargeCommandHandler, AccountCustomerRefundCommandHandler, AccountTopology, AccountGateway, AccountCreateCommandHandler, AccountUserEventsGateway],
+  providers: [AccountRepository, AccountInboxRepository, AccountInboxService, AccountCustomerChargeCommandHandler, AccountCustomerRefundCommandHandler, AccountTopology, AccountGateway, AccountCreateCommandHandler, AccountUserEventsConsumer],
 })
 export class AccountModule {}

@@ -9,7 +9,7 @@ import { OrderConsumerGroupEnum } from '../enum/order-consumer-group.enum.js';
 import { orderStatusEventSchema } from '../schema/order-status-event.schema.js';
 
 @Injectable()
-export class OrderNotifyEventsGateway implements OnModuleInit {
+export class OrderNotifyEventsConsumer implements OnModuleInit {
   private readonly handledTypes: string[] = [OrderCreatedEvent.TYPE, OrderPaidEvent.TYPE, OrderFailedEvent.TYPE];
 
   constructor(

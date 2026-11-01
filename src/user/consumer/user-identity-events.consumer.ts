@@ -7,8 +7,8 @@ import { UserConsumerGroupEnum } from '../enum/user-consumer-group.enum.js';
 import { identityRegisteredEventSchema } from '../schema/identity-registered-event.schema.js';
 
 @Injectable()
-export class UserIdentityEventsGateway implements OnModuleInit {
-  private readonly logger = new Logger(UserIdentityEventsGateway.name);
+export class UserIdentityEventsConsumer implements OnModuleInit {
+  private readonly logger = new Logger(UserIdentityEventsConsumer.name);
 
   constructor(
     private readonly consumer: KafkaConsumerService,

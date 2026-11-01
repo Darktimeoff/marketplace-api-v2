@@ -18,7 +18,7 @@ import { MediaMessage } from './message/media.message.js';
 import { MediaClaimReleaseCron } from './cron/media-claim-release.cron.js';
 import { MediaClaimCommandHandler } from './command-handler/media-claim.command-handler.js';
 import { MediaClaimConfirmCommandHandler } from './command-handler/media-claim-confirm.command-handler.js';
-import { MediaProductEventsGateway } from './gateway/media-product-events.gateway.js';
+import { MediaProductEventsConsumer } from './consumer/media-product-events.consumer.js';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Media]), StorageModule, QueueModule, KafkaModule],
@@ -34,7 +34,7 @@ import { MediaProductEventsGateway } from './gateway/media-product-events.gatewa
     MediaClaimReleaseCron,
     MediaClaimCommandHandler,
     MediaClaimConfirmCommandHandler,
-    MediaProductEventsGateway,
+    MediaProductEventsConsumer,
     MediaUploadRequestCommandHandler,
     MediaUploadCompleteCommandHandler,
     MediaUploadPartsCommandHandler,

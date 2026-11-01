@@ -6,6 +6,7 @@ import type { MediaOutboxCreateEntityInterface } from '../entity/media-outbox.en
 import type { MediaVariantsGenerateInterface } from '../interface/media-variants-generate.interface.js';
 import { MediaQueueEnum } from '../enum/media-queue.enum.js';
 import { MediaOutboxTypeEnum } from '../enum/media-outbox-type.enum.js';
+import { MediaOutboxAggregateTypeEnum } from '../enum/media-outbox-aggregate-type.enum.js';
 
 @Injectable()
 export class MediaMessage {
@@ -27,11 +28,14 @@ export class MediaMessage {
   toVariantsGenerateOutbox(mediaPublicId: Media['publicId']): MediaOutboxCreateEntityInterface {
     return {
       id: mediaPublicId,
-      queue: MediaQueueEnum.VARIANTS,
+      topic: MediaQueueEnum.VARIANTS,
+      aggregateType: MediaOutboxAggregateTypeEnum.MEDIA,
+      aggregateId: mediaPublicId,
       type: MediaOutboxTypeEnum.VARIANTS_GENERATE,
       payload: {
         mediaPublicId,
       } satisfies MediaVariantsGenerateInterface,
     };
   }
+
 }

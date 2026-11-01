@@ -1,6 +1,6 @@
 import { Check, Column, CreateDateColumn, Entity, Index, PrimaryColumn } from 'typeorm';
 import { MediaQueueEnum } from '../enum/media-queue.enum.js';
-import { MediaOutboxTypeEnum } from '../enum/media-outbox-type.enum.js';
+import { MediaOutboxAggregateTypeEnum } from '../enum/media-outbox-aggregate-type.enum.js';
 
 @Entity('MediaOutbox')
 @Index('MediaOutbox_unpublished_idx', ['createdAt'], { where: '"publishedAt" IS NULL' })
@@ -10,11 +10,17 @@ export class MediaOutbox {
   @PrimaryColumn({ type: 'uuid', primaryKeyConstraintName: 'MediaOutbox_pkey' })
   id: string;
 
-  @Column({ type: 'varchar', length: 255 })
-  queue: MediaQueueEnum;
+  @Column({ type: 'varchar', length: 249 })
+  topic: MediaQueueEnum;
+
+  @Column({ type: 'varchar', length: 64 })
+  aggregateType: MediaOutboxAggregateTypeEnum;
+
+  @Column({ type: 'varchar', length: 64 })
+  aggregateId: string;
 
   @Column({ type: 'varchar', length: 128 })
-  type: MediaOutboxTypeEnum;
+  type: string;
 
   @Column({ type: 'jsonb' })
   payload: object;
@@ -32,4 +38,5 @@ export class MediaOutbox {
   lastError: string | null;
 }
 
-export interface MediaOutboxCreateEntityInterface extends Pick<MediaOutbox, 'id' | 'queue' | 'type' | 'payload'> {}
+export interface MediaOutboxCreateEntityInterface
+  extends Pick<MediaOutbox, 'id' | 'topic' | 'aggregateType' | 'aggregateId' | 'type' | 'payload'> {}

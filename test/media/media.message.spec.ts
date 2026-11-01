@@ -42,7 +42,9 @@ describe('MediaMessage', () => {
 
     expect(new MediaMessage().toVariantsGenerateOutbox(media.publicId)).toEqual({
       id: media.publicId,
-      queue: 'media.variants',
+      topic: 'media.variants',
+      aggregateType: 'Media',
+      aggregateId: media.publicId,
       type: 'media.variants.generate',
       payload: { mediaPublicId: media.publicId },
     });

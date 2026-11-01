@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
+import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { LanguageEnum, MediaAttachmentTypeEnum } from '@marketplace/contracts-core';
 import { ProductCreatedEvent } from '@marketplace/messaging-contracts';
 import { Media } from '../../src/media/entity/media.entity.js';
@@ -72,6 +73,17 @@ describe('Product media (e2e)', () => {
     return dataSource.getRepository(Media).findOneByOrFail({ publicId });
   }
 
+  async function drainVariantsQueue(): Promise<{ specversion: string; source: string; type: string; subject: string; data: { mediaPublicId: string } }[]> {
+    const channel = app.get(AmqpConnection).channel;
+    const messages = [];
+
+    for (let message = await channel.get('media.variants', { noAck: true }); message; message = await channel.get('media.variants', { noAck: true })) {
+      messages.push(JSON.parse(message.content.toString()));
+    }
+
+    return messages;
+  }
+
   it('attaches the media in order, answers CDN URLs and confirms the claim through product.created', async () => {
     const token = await aSeller();
     const ids = [await anImage(token), await anImage(token)];
@@ -104,6 +116,17 @@ describe('Product media (e2e)', () => {
     expect(variantRequests.map(({ id, type, payload }) => ({ id, type, payload })).sort((a, b) => a.id.localeCompare(b.id))).toEqual(
       [...ids].sort().map((id) => ({ id, type: 'media.variants.generate', payload: { mediaPublicId: id } })),
     );
+
+    await vi.waitFor(
+      async () => {
+        const rows = await dataSource.getRepository(MediaOutbox).find();
+        if (rows.some((row) => row.publishedAt === null)) throw new Error('media outbox not published yet');
+      },
+      { timeout: 20000, interval: 100 },
+    );
+    const queued = (await drainVariantsQueue()).filter((message) => ids.includes(message.data.mediaPublicId));
+    expect(queued.map((message) => message.data.mediaPublicId).sort()).toEqual([...ids].sort());
+    expect(queued[0]).toMatchObject({ specversion: '1.0', source: '/media-service', type: 'media.variants.generate', subject: queued[0].data.mediaPublicId });
   });
 
   it('refuses media of another seller, media attached elsewhere and media without bytes', async () => {

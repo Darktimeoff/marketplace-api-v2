@@ -4,6 +4,7 @@ import { StorageModule } from '../generic/storage/storage.module.js';
 import { QueueModule } from '../generic/queue/queue.module.js';
 import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { Media } from './entity/media.entity.js';
+import { MediaVariant } from './entity/media-variant.entity.js';
 import { MediaRepository } from './repository/media.repository.js';
 import { MediaStorageService } from './service/media-storage.service.js';
 import { MediaResponse } from './response/media.response.js';
@@ -21,7 +22,7 @@ import { MediaClaimConfirmCommandHandler } from './command-handler/media-claim-c
 import { MediaProductEventsConsumer } from './consumer/media-product-events.consumer.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Media]), StorageModule, QueueModule, KafkaModule],
+  imports: [TypeOrmModule.forFeature([Media, MediaVariant]), StorageModule, QueueModule, KafkaModule],
   controllers: [MediaController],
   providers: [
     MediaRepository,

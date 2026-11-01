@@ -42,6 +42,7 @@ import { OrderBuyerIdentifiers1793000000200 } from '../../src/migrations/1793000
 import { PersonOwners1793000000300 } from '../../src/migrations/1793000000300-PersonOwners.js';
 import { OfferVariantPublicId1793000000400 } from '../../src/migrations/1793000000400-OfferVariantPublicId.js';
 import { OrderLineOfferPublicId1793000000500 } from '../../src/migrations/1793000000500-OrderLineOfferPublicId.js';
+import { AddMediaVariant1794000000000 } from '../../src/migrations/1794000000000-AddMediaVariant.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
@@ -68,6 +69,7 @@ import { Order } from '../../src/order/entity/order.entity.js';
 import { OrderLine } from '../../src/order/entity/order-line.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
 import { Media } from '../../src/media/entity/media.entity.js';
+import { MediaVariant } from '../../src/media/entity/media-variant.entity.js';
 import { ProductMedia } from '../../src/product/entity/product-media.entity.js';
 import { ProductOutbox } from '../../src/product/entity/product-outbox.entity.js';
 
@@ -115,6 +117,7 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   PersonOwners1793000000300,
   OfferVariantPublicId1793000000400,
   OrderLineOfferPublicId1793000000500,
+  AddMediaVariant1794000000000,
 ];
 
 export const testEntities = [
@@ -144,6 +147,7 @@ export const testEntities = [
   OrderLine,
   OrderRecipient,
   Media,
+  MediaVariant,
   ProductMedia,
   ProductOutbox,
 ];

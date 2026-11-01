@@ -8,6 +8,7 @@ import { bigintNumberTransformer } from '../../generic/transformer/bigint-number
 @Check('Media_sizeBytes_positive', `"sizeBytes" > 0`)
 @Check('Media_storageKey_not_blank', `btrim("storageKey") <> ''`)
 @Check('Media_attachment_complete', `("attachedToType" IS NULL) = ("attachedToId" IS NULL) AND ("attachedToId" IS NULL) = ("attachedAt" IS NULL)`)
+@Check('Media_thumbHash_not_blank', `"thumbHash" IS NULL OR btrim("thumbHash") <> ''`)
 @Check('Media_claim_attached', `"claimExpiresAt" IS NULL OR "attachedToId" IS NOT NULL`)
 @Index('Media_claimExpiresAt_idx', ['claimExpiresAt'], { where: '"claimExpiresAt" IS NOT NULL' })
 export class Media {
@@ -43,6 +44,9 @@ export class Media {
 
   @Column({ type: 'integer', nullable: true })
   durationMs: number | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  thumbHash: string | null;
 
   @Column({ type: 'varchar', length: 1024, nullable: true })
   uploadId: string | null;

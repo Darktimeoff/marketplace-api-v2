@@ -14,10 +14,6 @@ export async function truncateAllTables(dataSource: DataSource): Promise<void> {
       LOOP
         EXECUTE format('DELETE FROM %I', table_name);
       END LOOP;
-      PERFORM setval(sequence.oid, 1, false)
-      FROM pg_class sequence
-      JOIN pg_namespace namespace ON namespace.oid = sequence.relnamespace
-      WHERE sequence.relkind = 'S' AND namespace.nspname = 'public' AND sequence.relname <> 'migrations_id_seq';
     END $$;
   `);
 

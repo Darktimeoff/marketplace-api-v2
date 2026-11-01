@@ -5,6 +5,7 @@ import type { Media } from '../entity/media.entity.js';
 import type { MediaOutboxCreateEntityInterface } from '../entity/media-outbox.entity.js';
 import { MediaQueueEnum } from '../enum/media-queue.enum.js';
 import { MediaOutboxAggregateTypeEnum } from '../enum/media-outbox-aggregate-type.enum.js';
+import { MessageBrokerEnum } from '../../generic/messaging/enum/message-broker.enum.js';
 
 @Injectable()
 export class MediaMessage {
@@ -26,6 +27,7 @@ export class MediaMessage {
   toVariantsGenerateOutbox(mediaPublicId: Media['publicId']): MediaOutboxCreateEntityInterface {
     return {
       id: mediaPublicId,
+      broker: MessageBrokerEnum.RABBITMQ,
       topic: MediaQueueEnum.VARIANTS,
       aggregateType: MediaOutboxAggregateTypeEnum.MEDIA,
       aggregateId: mediaPublicId,

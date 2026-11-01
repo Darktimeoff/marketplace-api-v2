@@ -42,6 +42,7 @@ describe('MediaMessage', () => {
 
     expect(new MediaMessage().toVariantsGenerateOutbox(media.publicId)).toEqual({
       id: media.publicId,
+      broker: 'rabbitmq',
       topic: 'media.variants',
       aggregateType: 'Media',
       aggregateId: media.publicId,

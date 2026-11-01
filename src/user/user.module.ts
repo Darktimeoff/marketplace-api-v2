@@ -12,9 +12,10 @@ import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { UserRepository } from './repository/user.repository.js';
 import { UserCreateCommandHandler } from './command-handler/user-create.command-handler.js';
 import { UserIdentityEventsConsumer } from './consumer/user-identity-events.consumer.js';
+import { MessagingModule } from '../generic/messaging/messaging.module.js';
 
 @Module({
-  imports: [QueueModule, TypeOrmModule.forFeature([User, Address, UserOutbox]), KafkaModule],
+  imports: [QueueModule, TypeOrmModule.forFeature([User, Address, UserOutbox]), KafkaModule, MessagingModule],
   providers: [UserRepository, UserOutboxRepository, UserCreateCommandHandler, UserIdentityEventsConsumer, UserOutboxRelay, UserOutboxCleanupCron, UserMessage],
 })
 export class UserModule {}

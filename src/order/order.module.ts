@@ -40,11 +40,13 @@ import { CacheModule } from "../generic/cache/cache.module.js";
 import { OrderPlaceActivity } from "./activity/order-place.activity.js";
 import { OrderPlaceWorker } from "./worker/order-place.worker.js";
 import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
+import { MessagingModule } from "../generic/messaging/messaging.module.js";
 
 @Module({
   imports: [
     QueueModule,
     KafkaModule,
+    MessagingModule,
     TemporalModule,
     CacheModule,
     TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient, OrderOutbox, OrderWorkflowOutbox, OrderBuyer]),

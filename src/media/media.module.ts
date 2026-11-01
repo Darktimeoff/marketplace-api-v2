@@ -34,9 +34,10 @@ import { MediaUnattachedCleanupCron } from './cron/media-unattached-cleanup.cron
 import { MediaClaimCommandHandler } from './command-handler/media-claim.command-handler.js';
 import { MediaClaimConfirmCommandHandler } from './command-handler/media-claim-confirm.command-handler.js';
 import { MediaProductEventsConsumer } from './consumer/media-product-events.consumer.js';
+import { MessagingModule } from '../generic/messaging/messaging.module.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Media, MediaVariant, MediaOutbox]), StorageModule, QueueModule, KafkaModule, RabbitMqModule],
+  imports: [TypeOrmModule.forFeature([Media, MediaVariant, MediaOutbox]), StorageModule, QueueModule, KafkaModule, MessagingModule, RabbitMqModule],
   controllers: [MediaController],
   providers: [
     MediaRepository,

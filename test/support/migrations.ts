@@ -44,6 +44,7 @@ import { OfferVariantPublicId1793000000400 } from '../../src/migrations/17930000
 import { OrderLineOfferPublicId1793000000500 } from '../../src/migrations/1793000000500-OrderLineOfferPublicId.js';
 import { AddMediaVariant1794000000000 } from '../../src/migrations/1794000000000-AddMediaVariant.js';
 import { AddMediaOutbox1794000000100 } from '../../src/migrations/1794000000100-AddMediaOutbox.js';
+import { AddOutboxBroker1794000000200 } from '../../src/migrations/1794000000200-AddOutboxBroker.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
@@ -121,6 +122,7 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   OrderLineOfferPublicId1793000000500,
   AddMediaVariant1794000000000,
   AddMediaOutbox1794000000100,
+  AddOutboxBroker1794000000200,
 ];
 
 export const testEntities = [

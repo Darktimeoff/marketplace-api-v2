@@ -21,9 +21,10 @@ import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { QueueModule } from '../generic/queue/queue.module.js';
 import { CategoryModule } from '../category/category.module.js';
 import { BrandModule } from '../brand/brand.module.js';
+import { MessagingModule } from '../generic/messaging/messaging.module.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Product, ProductTranslation, ProductMedia, ProductOutbox]), MediaModule, KafkaModule, QueueModule, CategoryModule, BrandModule],
+  imports: [TypeOrmModule.forFeature([Product, ProductTranslation, ProductMedia, ProductOutbox]), MediaModule, KafkaModule, MessagingModule, QueueModule, CategoryModule, BrandModule],
   controllers: [ProductController],
   providers: [
     ProductRepository,

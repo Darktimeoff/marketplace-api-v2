@@ -9,6 +9,7 @@ import { OrderOutboxRepository } from '../../src/order/repository/order-outbox.r
 import { OrderOutboxAggregateTypeEnum } from '../../src/order/enum/order-outbox-aggregate-type.enum.js';
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
+import { MessageBrokerEnum } from '../../src/generic/messaging/enum/message-broker.enum.js';
 
 @Module({
   imports: [TypeOrmModule.forFeature([OrderOutbox])],
@@ -39,6 +40,7 @@ describe('OrderOutboxRepository', () => {
     const id = randomUUID();
     await outbox.create({
       id,
+      broker: MessageBrokerEnum.KAFKA,
       topic: TopicEnum.ORDER_EVENTS,
       aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
       aggregateId: id,

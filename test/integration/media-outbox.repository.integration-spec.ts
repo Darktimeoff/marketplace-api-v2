@@ -9,6 +9,7 @@ import { MediaOutboxRepository } from '../../src/media/repository/media-outbox.r
 import { MediaOutboxAggregateTypeEnum } from '../../src/media/enum/media-outbox-aggregate-type.enum.js';
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
+import { MessageBrokerEnum } from '../../src/generic/messaging/enum/message-broker.enum.js';
 
 @Module({
   imports: [TypeOrmModule.forFeature([MediaOutbox])],
@@ -39,6 +40,7 @@ describe('MediaOutboxRepository', () => {
     const id = randomUUID();
     await outbox.create({
       id,
+      broker: MessageBrokerEnum.RABBITMQ,
       topic: MediaQueueEnum.VARIANTS,
       aggregateType: MediaOutboxAggregateTypeEnum.MEDIA,
       aggregateId: id,
@@ -115,7 +117,7 @@ describe('MediaOutboxRepository', () => {
   });
   it('inserts a row once and ignores the same id again', async () => {
     const id = randomUUID();
-    const row = { id, topic: MediaQueueEnum.VARIANTS, aggregateType: MediaOutboxAggregateTypeEnum.MEDIA, aggregateId: id, type: 'media.variants.generate', payload: { mediaPublicId: id } };
+    const row = { id, broker: MessageBrokerEnum.RABBITMQ, topic: MediaQueueEnum.VARIANTS, aggregateType: MediaOutboxAggregateTypeEnum.MEDIA, aggregateId: id, type: 'media.variants.generate', payload: { mediaPublicId: id } };
 
     await outbox.createManyIgnoringExisting([row]);
     await outbox.createManyIgnoringExisting([row, { ...row, id: randomUUID() }]);

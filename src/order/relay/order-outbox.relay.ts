@@ -5,7 +5,7 @@ import { Transactional } from '@nestjs-cls/transactional';
 import { SourceEnum, type CloudEventInterface } from '@marketplace/messaging-contracts';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
 import { OrderOutbox } from '../entity/order-outbox.entity.js';
-import { KafkaProducerService } from '../../generic/kafka/kafka-producer.service.js';
+import { MessagePublisherService } from '../../generic/messaging/message-publisher.service.js';
 
 @Injectable()
 export class OrderOutboxRelay implements OnApplicationBootstrap {
@@ -16,7 +16,7 @@ export class OrderOutboxRelay implements OnApplicationBootstrap {
 
   constructor(
     private readonly outbox: OrderOutboxRepository,
-    private readonly kafka: KafkaProducerService,
+    private readonly publisher: MessagePublisherService,
     private readonly environment: EnvironmentService,
     @Optional() private readonly scheduler?: SchedulerRegistry,
   ) {}
@@ -48,7 +48,7 @@ export class OrderOutboxRelay implements OnApplicationBootstrap {
 
     for (const row of rows) {
       try {
-        await this.kafka.publish(row.topic, this.toCloudEvent(row));
+        await this.publisher.publish(row.broker, row.topic, this.toCloudEvent(row));
         published.push(row.id);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

@@ -18,6 +18,7 @@ describe('UserMessage', () => {
 
     expect(new UserMessage().toUserCreatedOutbox(user)).toEqual({
       id: user.publicId,
+      broker: 'kafka',
       topic: 'user.events',
       aggregateType: 'User',
       aggregateId: user.publicId,

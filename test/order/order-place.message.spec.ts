@@ -24,6 +24,7 @@ describe('OrderPlaceMessage', () => {
   it('builds order events as kafka outbox rows keyed by the order', () => {
     expect(messages.toOrderPaidOutbox(order)).toEqual({
       id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      broker: 'kafka',
       topic: 'order.events',
       aggregateType: 'Order',
       aggregateId: order.publicId,

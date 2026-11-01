@@ -3,7 +3,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { EnvironmentService } from '../../generic/environment/environment.module.js';
 import { Transactional } from '@nestjs-cls/transactional';
 import { SourceEnum, type CloudEventInterface } from '@marketplace/messaging-contracts';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
+import { MessagePublisherService } from '../../generic/messaging/message-publisher.service.js';
 import { MediaOutboxRepository } from '../repository/media-outbox.repository.js';
 import { MediaOutbox } from '../entity/media-outbox.entity.js';
 
@@ -12,12 +12,11 @@ export class MediaOutboxRelay implements OnApplicationBootstrap {
   private readonly logger = new Logger(MediaOutboxRelay.name);
   private readonly batchSize = 100;
   private readonly relayIntervalName = 'media-outbox-relay';
-  private readonly defaultExchange = '';
   private relaying = false;
 
   constructor(
     private readonly outbox: MediaOutboxRepository,
-    private readonly amqpConnection: AmqpConnection,
+    private readonly publisher: MessagePublisherService,
     private readonly environment: EnvironmentService,
     @Optional() private readonly scheduler?: SchedulerRegistry,
   ) {}
@@ -49,7 +48,7 @@ export class MediaOutboxRelay implements OnApplicationBootstrap {
 
     for (const row of rows) {
       try {
-        await this.amqpConnection.publish(this.defaultExchange, row.topic, this.toCloudEvent(row), { messageId: row.id, type: row.type });
+        await this.publisher.publish(row.broker, row.topic, this.toCloudEvent(row));
         published.push(row.id);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

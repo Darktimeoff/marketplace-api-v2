@@ -31,9 +31,10 @@ import { OidcSignInAttemptService } from './service/oidc-sign-in-attempt.service
 import { IdentityOidcSignInCommandHandler } from './command-handler/identity-oidc-sign-in.command-handler.js';
 import { IdentityExternalAccountRepository } from './repository/identity-external-account.repository.js';
 import { IdentityOidcLinkCommandHandler } from './command-handler/identity-oidc-link.command-handler.js';
+import { MessagingModule } from '../generic/messaging/messaging.module.js';
 
 @Module({
-  imports: [QueueModule, TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox, IdentityExternalAccount]), SecretManagerModule, KafkaModule, AuthModule, RateLimitModule, RedisModule],
+  imports: [QueueModule, TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox, IdentityExternalAccount]), SecretManagerModule, KafkaModule, MessagingModule, AuthModule, RateLimitModule, RedisModule],
   controllers: [AuthController, OidcController, JwksController],
   providers: [
     IdentityRepository,

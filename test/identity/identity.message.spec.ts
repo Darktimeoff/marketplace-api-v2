@@ -15,6 +15,7 @@ describe('IdentityMessage', () => {
 
     expect(new IdentityMessage().toIdentityRegisteredOutbox(identity)).toEqual({
       id: identity.publicId,
+      broker: 'kafka',
       topic: 'identity.events',
       aggregateType: 'Identity',
       aggregateId: identity.publicId,

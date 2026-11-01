@@ -17,6 +17,7 @@ describe('ProductMessage', () => {
 
     expect(new ProductMessage().toProductCreatedOutbox(product, media)).toEqual({
       id: product.publicId,
+      broker: 'kafka',
       topic: TopicEnum.PRODUCT_EVENTS,
       aggregateType: ProductOutboxAggregateTypeEnum.PRODUCT,
       aggregateId: product.publicId,

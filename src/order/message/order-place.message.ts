@@ -10,12 +10,14 @@ import type { OrderPlaceWorkflowInputInterface } from '../workflow/order-place-w
 import type { OrderWorkflowOutboxCreateEntityInterface } from '../entity/order-workflow-outbox.entity.js';
 import { OrderTaskQueueEnum } from '../enum/order-task-queue.enum.js';
 import type { OrderBuyer } from '../entity/order-buyer.entity.js';
+import { MessageBrokerEnum } from '../../generic/messaging/enum/message-broker.enum.js';
 
 @Injectable()
 export class OrderPlaceMessage {
   toOrderCreatedOutbox(order: Order, buyer: OrderBuyer): OrderOutboxCreateEntityInterface {
     return {
       id: randomUUID(),
+      broker: MessageBrokerEnum.KAFKA,
       topic: OrderCreatedEvent.TOPIC,
       aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
       aggregateId: order.publicId,
@@ -34,6 +36,7 @@ export class OrderPlaceMessage {
   toOrderFailedOutbox(order: Order, failure: OrderFailureInterface): OrderOutboxCreateEntityInterface {
     return {
       id: randomUUID(),
+      broker: MessageBrokerEnum.KAFKA,
       topic: OrderFailedEvent.TOPIC,
       aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
       aggregateId: order.publicId,
@@ -51,6 +54,7 @@ export class OrderPlaceMessage {
   toOrderPaidOutbox(order: Order): OrderOutboxCreateEntityInterface {
     return {
       id: randomUUID(),
+      broker: MessageBrokerEnum.KAFKA,
       topic: OrderPaidEvent.TOPIC,
       aggregateType: OrderOutboxAggregateTypeEnum.ORDER,
       aggregateId: order.publicId,

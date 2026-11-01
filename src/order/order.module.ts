@@ -29,7 +29,8 @@ import { OrderNotifyService } from './service/order-notify.service.js';
 import { OrderAccessService } from './service/order-access.service.js';
 import { SellerOfferModule } from "../seller-offer/seller-offer.module.js";
 import { SellerOfferClient } from "./client/seller-offer.client.js";
-import { SELLER_OFFER_CLIENT } from "./constant/order-client.constant.js";
+import { ACCOUNT_CLIENT, SELLER_OFFER_CLIENT } from "./constant/order-client.constant.js";
+import { AccountClient } from "./client/account.client.js";
 import { OrderResponse } from "./response/order.response.js";
 import { AccountModule } from "../account/account.module.js";
 import { OrderAccessGuard } from "./guard/order-access.guard.js";
@@ -54,6 +55,7 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
   controllers: [OrderController, OrdersController],
   providers: [
     { provide: SELLER_OFFER_CLIENT, useClass: SellerOfferClient },
+    { provide: ACCOUNT_CLIENT, useClass: AccountClient },
     OrderResponse,
     OrderRepository,
     OrderRecipientRepository,

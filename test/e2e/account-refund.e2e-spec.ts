@@ -51,7 +51,7 @@ describe('Account refund (e2e)', () => {
     const { data } = await amqpConnection.request<AccountCustomerChargeRequest.ResponseMessageType>({
       exchange: AccountCustomerChargeRequest.TOPIC,
       routingKey: AccountCustomerChargeRequest.TYPE,
-      payload: envelope(chargeId, AccountCustomerChargeRequest.TYPE, { customerPublicId, amount }),
+      payload: envelope(chargeId, AccountCustomerChargeRequest.TYPE, { chargeId, customerPublicId, amount }),
       timeout: 5000,
     });
     return data;

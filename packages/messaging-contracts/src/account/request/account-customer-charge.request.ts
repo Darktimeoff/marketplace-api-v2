@@ -10,6 +10,7 @@ export namespace AccountCustomerChargeRequest {
   export const RESPONSE_SOURCE = SourceEnum.ACCOUNT;
 
   export interface DataInterface {
+    chargeId: string;
     customerPublicId: string;
     amount: string;
   }

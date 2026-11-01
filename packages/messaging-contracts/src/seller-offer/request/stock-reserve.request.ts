@@ -15,6 +15,7 @@ export namespace StockReserveRequest {
   }
 
   export interface DataInterface {
+    orderPublicId: string;
     items: ItemInterface[];
   }
 

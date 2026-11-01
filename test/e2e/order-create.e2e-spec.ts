@@ -1,12 +1,14 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { type INestApplication } from '@nestjs/common';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { ApplicationFailure } from '@temporalio/activity';
+import { ACCOUNT_CLIENT, SELLER_OFFER_CLIENT } from '../../src/order/constant/order-client.constant.js';
+import type { SellerOfferClientInterface } from '../../src/order/client/seller-offer.client.interface.js';
+import type { AccountClientInterface } from '../../src/order/client/account.client.interface.js';
 import { AppModule } from '../../src/app.module.js';
 import { Order } from '../../src/order/entity/order.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
@@ -271,16 +273,16 @@ describe('Order create (e2e)', () => {
     ]);
   });
 
-  it('retries the stock release when its first request fails', async () => {
-    const amqpConnection = app.get(AmqpConnection);
-    const send = amqpConnection.request.bind(amqpConnection);
+  it('retries the stock release when its first call fails', async () => {
+    const sellerOffers = app.get<SellerOfferClientInterface>(SELLER_OFFER_CLIENT);
+    const release = sellerOffers.releaseStock.bind(sellerOffers);
     let refused = 0;
-    vi.spyOn(amqpConnection, 'request').mockImplementation(async (options) => {
-      if (options.routingKey === 'seller-offer.stock.release' && refused === 0) {
+    vi.spyOn(sellerOffers, 'releaseStock').mockImplementation(async (request) => {
+      if (refused === 0) {
         refused += 1;
-        throw new Error('broker down');
+        throw new Error('seller-offer unavailable');
       }
-      return send(options);
+      return release(request);
     });
     const buyer = await newBuyer();
     await fund(buyer.identityPublicId, '50.00');
@@ -304,14 +306,11 @@ describe('Order create (e2e)', () => {
   });
 
   it('refunds the charge and releases the stock when the charge fails after it was applied', async () => {
-    const amqpConnection = app.get(AmqpConnection);
-    const send = amqpConnection.request.bind(amqpConnection);
-    vi.spyOn(amqpConnection, 'request').mockImplementation(async (options) => {
-      const reply = await send(options);
-      if (options.routingKey === 'account.customer.charge') {
-        throw ApplicationFailure.nonRetryable('reply lost');
-      }
-      return reply;
+    const accounts = app.get<AccountClientInterface>(ACCOUNT_CLIENT);
+    const charge = accounts.charge.bind(accounts);
+    vi.spyOn(accounts, 'charge').mockImplementation(async (request) => {
+      await charge(request);
+      throw ApplicationFailure.nonRetryable('reply lost');
     });
     const buyer = await newBuyer();
     await fund(buyer.identityPublicId, '1000.00');

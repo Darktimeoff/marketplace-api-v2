@@ -1,14 +1,14 @@
 # marketplace-api-v2
 
-Marketplace backend in NestJS, built as a modular monolith whose modules behave like separate services: each owns its data and its broker topology, and they talk to each other only through messages described in shared contract packages: commands and requests over RabbitMQ, domain events over Kafka.
+Marketplace backend in NestJS, built as a modular monolith whose modules behave like separate services: each owns its data, and they talk to each other only through contracts described in shared packages: synchronous calls through ports (`client/`, an in-process adapter now and gRPC once a context moves out) and domain events over Kafka.
 
-| Service (module) | Owns | Talks over RabbitMQ |
+| Service (module) | Owns | Calls between services |
 |---|---|---|
-| `order` | `Order`, `OrderRecipient`, `OrderLine` | runs the placement workflow on Temporal, which sends `seller-offer.stock.reserve`, `account.customer.charge`, and the compensations `seller-offer.stock.release`, `account.customer.refund` |
-| `seller-offer` | `SellerOffer`, `StockReservation` | answers `seller-offer.stock.reserve` and `seller-offer.stock.release` |
-| `account` | `Account`, `Transaction`, `AccountInbox` | answers `account.customer.charge` and `account.customer.refund` |
+| `order` | `Order`, `OrderRecipient`, `OrderLine` | runs the placement workflow on Temporal; its activities call `SellerOfferClientInterface` (`findPrices`, `reserveStock`, `releaseStock`) and `AccountClientInterface` (`charge`, `refund`) |
+| `seller-offer` | `SellerOffer`, `StockReservation` | answers `SellerOfferPriceRpc`, `StockReserveRpc`, `StockReleaseRpc` |
+| `account` | `Account`, `Transaction`, `AccountInbox` | answers `AccountCustomerChargeRpc`, `AccountCustomerRefundRpc` |
 
-The other modules (`product`, `product-variant`, `category`, `brand`, `seller`, `user`, `identity`) only own entities. Order reads offers from `seller-offer` for pricing.
+Product calls media the same way (`MediaClientInterface`, `MediaClaimRpc`). The other modules (`product-variant`, `category`, `brand`, `seller`, `user`, `identity`) only own entities and talk through Kafka events.
 
 ## Bounded contexts
 
@@ -34,7 +34,7 @@ An arrow means "holds an id of". Every table belongs to one context, and a conte
 - **Snapshots, not shared rows.** `OrderRecipient` is the delivery contact as written at checkout: `fullName`, a phone and an address. It references nothing outside the order, so later edits to a user's profile don't rewrite past orders. It stays its own table, leaving room for per-seller shipments with their own recipient.
 - **Value objects are embedded columns.** The recipient's phone and address and the identity's login phone are TypeORM embedded classes (`value-object/`), which give ordinary typed columns with their own CHECKs (`phoneFullNumber`, `addressCity`, `loginPhoneFullNumber`, …) rather than JSON or a shared `Phone` table.
 - **Each context names things in its own language.** Order calls the person a buyer (`buyerPublicId`), account calls the same person a customer (`customerPublicId`), and order renames one to the other when it sends `account.customer.charge` and `account.customer.refund`. `OrderLine` holds `unitPrice`/`unitDiscountPrice` at purchase time; `SellerOffer.onHandQuantity` is the physical stock next to `reservedQuantity`.
-- **`id` inside, `publicId` outside.** Every table but an association or an outbox has an integer `id` identity: the primary key and the FK target inside its context, never sent anywhere else. Entities something outside refers to also have a unique `publicId uuid`: `Identity`, `Address`, `Seller`, `SellerOffer`, `Product`, `ProductVariant`, `Category`, `Brand`, `Order`, `Transaction`, `Media` generate it. Children reached only through their parent (translations, `OrderRecipient`, `ProductMedia`, `IdentitySession`) have none; associations (`OrderLine`, `StockReservation`) are keyed by the pair they link; outboxes and inboxes by the message id. HTTP routes, events, RabbitMQ messages and workflow inputs carry only uuids.
+- **`id` inside, `publicId` outside.** Every table but an association or an outbox has an integer `id` identity: the primary key and the FK target inside its context, never sent anywhere else. Entities something outside refers to also have a unique `publicId uuid`: `Identity`, `Address`, `Seller`, `SellerOffer`, `Product`, `ProductVariant`, `Category`, `Brand`, `Order`, `Transaction`, `Media` generate it. Children reached only through their parent (translations, `OrderRecipient`, `ProductMedia`, `IdentitySession`) have none; associations (`OrderLine`, `StockReservation`) are keyed by the pair they link; outboxes and inboxes by the message id. HTTP routes, events, RPC requests and workflow inputs carry only uuids.
 - **A person has one uuid.** It is born as `Identity.publicId` and is the JWT `sub`. `User`, `Account` and `OrderBuyer` are each context's projection of that person, with their own `id` and the person's uuid as `publicId`, copied from events and never generated, so a projection is recognisable by a `publicId` without a default. Logs, events and tokens correlate one person across every context by that single value.
 - **Contract packages hold only the published language**: what crosses a boundary (HTTP requests and responses, messages, and the enums those use). Entities, internal enums (`RoleEnum`, `TransactionTypeEnum`, `StockReservationStatusEnum`, …) and repository types stay inside their context.
 
@@ -97,15 +97,16 @@ node dist/main.js
 ```
 src/<domain>/
   controller/      HTTP controllers (input → service/handler, @ResponseDto)
-  gateway/         RabbitMQ adapters: @RabbitRPC / @RabbitSubscribe, envelope + payload validation, ack/nack
+  client/          ports to other contexts and their adapters (in-process now, gRPC later)
+  consumer/        Kafka consumers of other contexts' events
   command-handler/ one operation each, execute(), uses repositories directly
   workflow/        Temporal workflows (deterministic, no I/O) and their activity interface
   activity/        the workflow's activities, Nest providers that do the I/O
   worker/          the Temporal worker of the context's task queue
-  service/         reusable domain logic and the <Domain>Topology service
+  service/         reusable domain logic
   repository/      the only layer that touches TypeORM (TransactionHost per method)
   entity/          TypeORM entities; they implement contract interfaces
-  enum/            names the module owns: queues, DLX, DLQ, inbox consumers
+  enum/            names the module owns: consumer groups, inbox consumers, task queues
 ```
 
 ### Placing an order (Temporal workflow)
@@ -120,20 +121,20 @@ The workflow is started through an outbox rather than by calling Temporal from t
 
 `orderPlaceWorkflow` (`src/order/workflow/`) runs on the task queue `order-place`:
 
-1. **Reserve stock**: activity `reserveStock`, RPC `seller-offer.stock.reserve`. Rejected → order `canceled` (`insufficient_stock`).
-2. **Charge**: activity `chargeCustomer`, RPC `account.customer.charge`. Rejected → release the stock, order `failed_payment` (`payment_rejected`).
+1. **Reserve stock**: activity `reserveStock`, `SellerOfferClientInterface.reserveStock` (`StockReserveRpc`). Rejected → order `canceled` (`insufficient_stock`).
+2. **Charge**: activity `chargeCustomer`, `AccountClientInterface.charge` (`AccountCustomerChargeRpc`). Rejected → release the stock, order `failed_payment` (`payment_rejected`).
 3. **Mark `paid`**: activity `markPaid` writes the status and the `order.paid` outbox row in one transaction.
 
-Any other failure after the stock was reserved compensates what may already have happened: `refundCustomer` (RPC `account.customer.refund`) if the charge was sent, then `releaseStock` (RPC `seller-offer.stock.release`), then `markFailed` (`canceled`, reason `error`). The compensations run in a non-cancellable scope, so cancelling the workflow can't interrupt them. A business rejection completes the workflow with the final status as its result; a technical failure fails it after compensating, so it shows up red in the Web UI.
+Any other failure after the stock was reserved compensates what may already have happened: `refundCustomer` (`AccountClientInterface.refund`) if the charge was sent, then `releaseStock` (`SellerOfferClientInterface.releaseStock`), then `markFailed` (`canceled`, reason `error`). The compensations run in a non-cancellable scope, so cancelling the workflow can't interrupt them. A business rejection completes the workflow with the final status as its result; a technical failure fails it after compensating, so it shows up red in the Web UI.
 
 The workflow only decides; every side effect is an activity (`OrderPlaceActivity`, `src/order/activity/`, a Nest provider with its dependencies). A step of the process is an activity; a fact about the order's own data is an outbox row written in the same transaction as the status. `OrderOutbox` therefore carries only Kafka events (`order.created`, `order.paid`, `order.failed`), sent by `OrderOutboxRelay`, the same relay as identity's and user's. Activities are retried by Temporal, not by hand:
 
 - `reserveStock` and `chargeCustomer`: 10 s per attempt, backoff 1 s → 10 s, at most 1 minute in total, then the workflow compensates. A rejection is thrown as a non-retryable `ApplicationFailure` with a type (`InsufficientStock`, `PaymentRejected`) that the workflow maps to the status and reason.
 - `refundCustomer`, `releaseStock`, `markPaid`, `markFailed`: 10 s per attempt, retried until they succeed, because a compensation or a status must not be dropped.
 
-Every activity is idempotent, because a timed-out attempt may have done its work before the retry: reserve and release are keyed by the order's `publicId` in `StockReservation`, the charge and the refund carry `id` = the order's `publicId`, which account's inbox deduplicates, and `markPaid`/`markFailed` only move an order out of `pending_payment` (`UPDATE … WHERE status = 'pending_payment'`), writing their event only when the row changed.
+Every activity is idempotent, because a timed-out attempt may have done its work before the retry: reserve and release are keyed by the order's `publicId` in `StockReservation`, the charge and the refund carry `chargeId` = the order's `publicId`, which account's inbox deduplicates, and `markPaid`/`markFailed` only move an order out of `pending_payment` (`UPDATE … WHERE status = 'pending_payment'`), writing their event only when the row changed.
 
-The compensations are request/reply like the forward steps, so an activity completes only when the receiver confirms. A fire-and-forget command would complete as soon as the broker took it, and a refund that then failed in account would end in a DLQ while the workflow reported success. A refund for a charge that never happened (the charge timed out before reaching account) answers `not_charged` instead of failing, so it is not retried forever. Every request is published with `expiration` equal to its 5 s RPC timeout: a request still queued when the caller has given up expires instead of running late (a reservation or a charge for an attempt nobody waits for). Expired requests are dead-lettered to the queue's DLQ with reason `expired` in `x-death`, so a backlog is visible there; a request already delivered to a consumer is processed regardless.
+Every call to another context goes through a port in `order/client/` and waits for its answer, compensations included, so an activity completes only when the receiver has applied (or refused) the step. The activity only decides what a rejection means; the adapter owns the transport. Today the adapters call the other context's command handler in-process (`SellerOfferStockReserveCommandHandler`, `AccountCustomerChargeCommandHandler`, …); once a context moves out, its adapter becomes a gRPC client and nothing else changes, which is why every request carries its own idempotency key (`chargeId`, `orderPublicId`) instead of relying on a message envelope. A refund for a charge that never happened answers `not_charged` instead of failing, so it is not retried forever. Temporal's per-attempt timeout bounds every call.
 
 The workflow input carries only uuids (`orderPublicId`, `buyerPublicId`, `items[].offerPublicId`) and the total. Changing its shape breaks a workflow already running with the old input when it replays, so before such a deploy wait for running placements to finish (`temporal workflow list --query 'ExecutionStatus="Running"'`) or version the workflow with `patched()`.
 
@@ -155,23 +156,21 @@ Money is `numeric(12,2)` and stays a string in TypeScript (`moneyTransformer`): 
 
 ### Idempotency
 
-Delivery over RabbitMQ is at-least-once, so every consumer makes its effect safe to repeat:
+Temporal retries an activity whose attempt timed out, and Kafka delivers at least once, so every receiver makes its effect safe to repeat:
 
 - **Natural key where the effect has one**: stock reservations (`(orderPublicId, offerId)`).
-- **Per-service inbox where it doesn't**: account's `AccountInbox(consumer, messageId)`. `processOnce` inserts the row and runs the effect in the same transaction only if the row was new. A rejected charge rolls its row back, so a skipped duplicate is always a past success. A refund is applied only if the charge's inbox row exists. A refund that finds none inserts that row itself and answers `not_charged`: a charge that timed out on the order side can still be sitting in the queue, and without the row it would be applied after the order was already compensated. The insert also serializes the two: whichever commits first wins, and the other sees the row. Inboxes are never shared between services.
+- **Per-service inbox where it doesn't**: account's `AccountInbox(consumer, messageId)`. `processOnce` inserts the row and runs the effect in the same transaction only if the row was new. A rejected charge rolls its row back, so a skipped duplicate is always a past success. A refund is applied only if the charge's inbox row exists. A refund that finds none inserts that row itself and answers `not_charged`: a charge attempt that timed out on the order side can still be running, and without the row it would be applied after the order was already compensated. The insert also serializes the two: whichever commits first wins, and the other sees the row. Inboxes are never shared between services.
 
-### Messaging
+### Calls between contexts
 
-- **CloudEvents 1.0, structured mode**: the whole event is the JSON body, content type `application/cloudevents+json`. The stable `id` is the dedup key.
-- **Ownership**: an event belongs to its producer; a command or request belongs to its receiver (`seller-offer.stock.reserve` lives under `seller-offer/` in the contracts). A request with a reply is `XRequest` (`RESPONSE_TYPE` = `TYPE` + `.response`), a fire-and-forget instruction is `XCommand`.
-- **Topology**: one topic exchange per owner (`seller-offer.commands`, `account.commands`, listed in `TopicEnum`). Each consumer names its own queue `<consumer>.<message>`, DLX `<consumer>.dlx`, DLQ `<queue>.dlq`, dead-letter routing key = queue name, all quorum queues. Each module's `…TopologyService` declares its DLX/DLQ and re-declares them on reconnect.
-- **Publishing**: confirm channel, `persistent`, `mandatory`, plus a `return` listener that logs unroutable messages.
-- **Consuming**: manual ack after the effect. A message that can never succeed (wrong `specversion`/`type`, invalid ids, invalid payload) is `Nack(false)` → DLQ with reason `rejected`; transient failures are retried.
-- There is a single `RabbitMQModule.forRootAsync` (`src/generic/rabbitmq/rabbitmq.module.ts`); a second registration would silently share one connection with the wrong config.
+- **Ports, not brokers**: a context that needs an answer from another one depends on a `<Context>ClientInterface` in its own `client/` folder (`MediaClientInterface`, `SellerOfferClientInterface`, `AccountClientInterface`). The adapter calls the other context's published operation in-process today and becomes a gRPC client when that context moves out.
+- **Contracts**: each call is an `…Rpc` namespace in `packages/messaging-contracts/src/<receiver>/rpc/` (`StockReserveRpc`, `AccountCustomerChargeRpc`, `MediaClaimRpc`, `SellerOfferPriceRpc`) with a `RequestInterface` and a `ResponseType`. The receiver's command handler returns that `ResponseType` itself, turning its rejection exceptions into `{ status: 'rejected', … }`, so callers never see the receiver's exceptions.
+- **Idempotency key in the request**: requests carry their own key (`chargeId`, `orderPublicId`), so the receiver deduplicates without a transport envelope.
+- **RabbitMQ**: no context uses it now. `src/generic/rabbitmq/` stays for work that should be queued rather than awaited (image variants, notifications, imports).
 
 ### Events (Kafka)
 
-RabbitMQ keeps the request/reply calls of the placement workflow: work for one receiver, acked or dead-lettered per message. Kafka carries domain events, facts that already happened, kept in a log that any number of consumers can read and replay at their own pace.
+Synchronous questions go through ports (above). Kafka carries domain events, facts that already happened, kept in a log that any number of consumers can read and replay at their own pace.
 
 | Topic | Producer | Events | Consumer groups |
 |---|---|---|---|
@@ -297,7 +296,7 @@ Key fingerprints (the `kid`, RFC 7638 thumbprint of the public key; public data)
 
 ### Authorization
 
-- **Default deny**: `AccessTokenGuard` and `AbilityGuard` are global (`APP_GUARD`); every route needs a token unless it is marked `@Public()`. Both guards skip non-HTTP handlers (RabbitMQ RPC).
+- **Default deny**: `AccessTokenGuard` and `AbilityGuard` are global (`APP_GUARD`); every route needs a token unless it is marked `@Public()`. Both guards skip non-HTTP handlers.
 - **401 vs 403**: no token, a broken, expired, revoked or forged one is `401` (`WWW-Authenticate: Bearer`, or `error="invalid_token"`): the client refreshes. A valid token without the right is `403` (`error="insufficient_scope"`), logged with who, what and which route: the client shows an error. Mixing them up makes a client loop on refresh or log the user out on every page it may not see.
 - **Rules (CASL)**: `AbilityFactory` builds the abilities from the token's role in one place. Everyone can `create Order`; a buyer and a seller can `read Order` only where `buyerPublicId` is theirs, admin and owner any order; seller, admin and owner can `create Product`. `@CheckAbility(action, subject)` on a route checks the action at the type level in the guard (a buyer on `POST /product` gets `403` there).
 - **Ownership is not checked in a guard**: a guard has the token, not the order. `OrderService.findReadableByPublicId` loads the order with its buyer (from the cache when it's there) and asks `ability.can('read', subject('Order', { buyerPublicId }))`; someone else's order is `403`. `POST /order` takes the buyer from the token: the token's `sub` finds the `OrderBuyer` (copied from `user.created`), the order stores its `buyerId`, and anything in the body that names a buyer is ignored.

@@ -1,45 +1,27 @@
 import { Injectable } from '@nestjs/common';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { StockReleaseRequest, StockReserveRequest, type SellerOfferPriceRpc } from '@marketplace/messaging-contracts';
+import type { SellerOfferPriceRpc, StockReleaseRpc, StockReserveRpc } from '@marketplace/messaging-contracts';
 import { SellerOfferService } from '../../seller-offer/service/seller-offer.service.js';
-import { OrderPlaceMessage } from '../message/order-place.message.js';
+import { SellerOfferStockReserveCommandHandler } from '../../seller-offer/command-handler/seller-offer-stock-reserve.command-handler.js';
+import { SellerOfferStockReleaseCommandHandler } from '../../seller-offer/command-handler/seller-offer-stock-release.command-handler.js';
 import type { SellerOfferClientInterface } from './seller-offer.client.interface.js';
 
 @Injectable()
 export class SellerOfferClient implements SellerOfferClientInterface {
-  private readonly rpcTimeoutMs = 5000;
-
   constructor(
     private readonly sellerOffers: SellerOfferService,
-    private readonly amqpConnection: AmqpConnection,
-    private readonly messages: OrderPlaceMessage,
+    private readonly stockReserve: SellerOfferStockReserveCommandHandler,
+    private readonly stockRelease: SellerOfferStockReleaseCommandHandler,
   ) {}
 
   findPrices(request: SellerOfferPriceRpc.RequestInterface): Promise<SellerOfferPriceRpc.ResponseInterface> {
     return this.sellerOffers.findPrices(request);
   }
 
-  async reserveStock(request: StockReserveRequest.DataInterface): Promise<StockReserveRequest.ResponseDataType> {
-    const { data } = await this.amqpConnection.request<StockReserveRequest.ResponseMessageType>({
-      exchange: StockReserveRequest.TOPIC,
-      routingKey: StockReserveRequest.TYPE,
-      payload: this.messages.toStockReserveRequest(request),
-      timeout: this.rpcTimeoutMs,
-      expiration: this.rpcTimeoutMs,
-    });
-
-    return data;
+  reserveStock(request: StockReserveRpc.RequestInterface): Promise<StockReserveRpc.ResponseType> {
+    return this.stockReserve.execute(request);
   }
 
-  async releaseStock(request: StockReleaseRequest.DataInterface): Promise<StockReleaseRequest.ResponseDataType> {
-    const { data } = await this.amqpConnection.request<StockReleaseRequest.ResponseMessageType>({
-      exchange: StockReleaseRequest.TOPIC,
-      routingKey: StockReleaseRequest.TYPE,
-      payload: this.messages.toStockReleaseRequest(request),
-      timeout: this.rpcTimeoutMs,
-      expiration: this.rpcTimeoutMs,
-    });
-
-    return data;
+  releaseStock(request: StockReleaseRpc.RequestInterface): Promise<StockReleaseRpc.ResponseType> {
+    return this.stockRelease.execute(request);
   }
 }

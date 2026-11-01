@@ -1,6 +1,6 @@
-import type { AccountCustomerChargeRequest, AccountCustomerRefundRequest } from '@marketplace/messaging-contracts';
+import type { AccountCustomerChargeRpc, AccountCustomerRefundRpc } from '@marketplace/messaging-contracts';
 
 export interface AccountClientInterface {
-  charge(request: AccountCustomerChargeRequest.DataInterface): Promise<AccountCustomerChargeRequest.ResponseDataType>;
-  refund(request: AccountCustomerRefundRequest.DataInterface): Promise<AccountCustomerRefundRequest.ResponseDataType>;
+  charge(request: AccountCustomerChargeRpc.RequestInterface): Promise<AccountCustomerChargeRpc.ResponseType>;
+  refund(request: AccountCustomerRefundRpc.RequestInterface): Promise<AccountCustomerRefundRpc.ResponseType>;
 }

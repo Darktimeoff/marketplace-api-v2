@@ -58,34 +58,4 @@ describe('OrderPlaceMessage', () => {
       },
     });
   });
-
-  it('builds the reserve and charge requests as CloudEvents', () => {
-    expect(messages.toStockReserveRequest({ orderPublicId: order.publicId, items: [{ offerPublicId, quantity: 2 }] })).toMatchObject({
-      specversion: '1.0',
-      id: order.publicId,
-      type: 'seller-offer.stock.reserve',
-      subject: order.publicId,
-      data: { orderPublicId: order.publicId, items: [{ offerPublicId, quantity: 2 }] },
-    });
-    expect(messages.toAccountCustomerChargeRequest({ chargeId: order.publicId, customerPublicId: buyerPublicId, amount: '160.00' })).toMatchObject({
-      id: order.publicId,
-      type: 'account.customer.charge',
-      data: { chargeId: order.publicId, customerPublicId: buyerPublicId, amount: '160.00' },
-    });
-  });
-
-  it('builds the compensations as requests keyed by the order publicId, the refund pointing at the charge', () => {
-    expect(messages.toAccountCustomerRefundRequest({ chargeId: order.publicId, customerPublicId: buyerPublicId, amount: '160.00' })).toMatchObject({
-      specversion: '1.0',
-      id: order.publicId,
-      type: 'account.customer.refund',
-      subject: order.publicId,
-      data: { customerPublicId: buyerPublicId, amount: '160.00', chargeId: order.publicId },
-    });
-    expect(messages.toStockReleaseRequest({ orderPublicId: order.publicId })).toMatchObject({
-      id: order.publicId,
-      type: 'seller-offer.stock.release',
-      data: { orderPublicId: order.publicId },
-    });
-  });
 });

@@ -3,7 +3,6 @@ import { RabbitMQModule } from "@golevelup/nestjs-rabbitmq";
 import { EnvironmentModule, EnvironmentService } from "../environment/environment.module.js";
 import { SecretManagerModule } from "../secret-manager/secret-manager.module.js";
 import { SecretManagerService } from "../secret-manager/secret-manager.service.js";
-import { TopicEnum } from "@marketplace/messaging-contracts";
 import { getRabbitMqConnectionUri } from "./util/get-rabbitmq-connection-uri.util.js";
 import { RabbitMqReturnListenerService } from "./rabbitmq-return-listener.service.js";
 
@@ -13,11 +12,6 @@ import { RabbitMqReturnListenerService } from "./rabbitmq-return-listener.servic
       imports: [EnvironmentModule, SecretManagerModule],
       inject: [EnvironmentService, SecretManagerService],
       useFactory: async (environment: EnvironmentService, secrets: SecretManagerService) => ({
-        exchanges: [TopicEnum.SELLER_OFFER_COMMANDS, TopicEnum.ACCOUNT_COMMANDS].map((name) => ({
-          name,
-          type: 'topic',
-          options: { durable: true },
-        })),
         uri: await getRabbitMqConnectionUri(environment, secrets),
         connectionInitOptions: { wait: true, timeout: 5000 },
         enableControllerDiscovery: true,

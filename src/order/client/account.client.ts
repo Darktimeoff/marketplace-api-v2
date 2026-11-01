@@ -1,39 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { AccountCustomerChargeRequest, AccountCustomerRefundRequest } from '@marketplace/messaging-contracts';
-import { OrderPlaceMessage } from '../message/order-place.message.js';
+import type { AccountCustomerChargeRpc, AccountCustomerRefundRpc } from '@marketplace/messaging-contracts';
+import { AccountCustomerChargeCommandHandler } from '../../account/command-handler/account-customer-charge.command-handler.js';
+import { AccountCustomerRefundCommandHandler } from '../../account/command-handler/account-customer-refund.command-handler.js';
 import type { AccountClientInterface } from './account.client.interface.js';
 
 @Injectable()
 export class AccountClient implements AccountClientInterface {
-  private readonly rpcTimeoutMs = 5000;
-
   constructor(
-    private readonly amqpConnection: AmqpConnection,
-    private readonly messages: OrderPlaceMessage,
+    private readonly customerCharge: AccountCustomerChargeCommandHandler,
+    private readonly customerRefund: AccountCustomerRefundCommandHandler,
   ) {}
 
-  async charge(request: AccountCustomerChargeRequest.DataInterface): Promise<AccountCustomerChargeRequest.ResponseDataType> {
-    const { data } = await this.amqpConnection.request<AccountCustomerChargeRequest.ResponseMessageType>({
-      exchange: AccountCustomerChargeRequest.TOPIC,
-      routingKey: AccountCustomerChargeRequest.TYPE,
-      payload: this.messages.toAccountCustomerChargeRequest(request),
-      timeout: this.rpcTimeoutMs,
-      expiration: this.rpcTimeoutMs,
-    });
-
-    return data;
+  charge(request: AccountCustomerChargeRpc.RequestInterface): Promise<AccountCustomerChargeRpc.ResponseType> {
+    return this.customerCharge.execute(request);
   }
 
-  async refund(request: AccountCustomerRefundRequest.DataInterface): Promise<AccountCustomerRefundRequest.ResponseDataType> {
-    const { data } = await this.amqpConnection.request<AccountCustomerRefundRequest.ResponseMessageType>({
-      exchange: AccountCustomerRefundRequest.TOPIC,
-      routingKey: AccountCustomerRefundRequest.TYPE,
-      payload: this.messages.toAccountCustomerRefundRequest(request),
-      timeout: this.rpcTimeoutMs,
-      expiration: this.rpcTimeoutMs,
-    });
-
-    return data;
+  refund(request: AccountCustomerRefundRpc.RequestInterface): Promise<AccountCustomerRefundRpc.ResponseType> {
+    return this.customerRefund.execute(request);
   }
 }

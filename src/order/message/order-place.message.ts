@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { AccountCustomerChargeRequest, AccountCustomerRefundRequest, OrderCreatedEvent, OrderFailedEvent, OrderPaidEvent, StockReleaseRequest, StockReserveRequest } from '@marketplace/messaging-contracts';
+import { OrderCreatedEvent, OrderFailedEvent, OrderPaidEvent } from '@marketplace/messaging-contracts';
 import { Order } from '../entity/order.entity.js';
 import type { OrderOutboxCreateEntityInterface } from '../entity/order-outbox.entity.js';
 import { OrderOutboxAggregateTypeEnum } from '../enum/order-outbox-aggregate-type.enum.js';
@@ -78,75 +78,6 @@ export class OrderPlaceMessage {
         totalAmount: order.totalAmount,
         items: items.map(({ offerPublicId, quantity }) => ({ offerPublicId, quantity })),
       } satisfies OrderPlaceWorkflowInputInterface,
-    }
-  }
-
-  toAccountCustomerRefundRequest(data: AccountCustomerRefundRequest.DataInterface): AccountCustomerRefundRequest.MessageType {
-    return {
-      specversion: '1.0',
-      id: data.chargeId,
-      source: AccountCustomerRefundRequest.SOURCE,
-      type: AccountCustomerRefundRequest.TYPE,
-      time: new Date().toISOString(),
-      datacontenttype: 'application/json',
-      subject: data.chargeId,
-      correlationid: data.chargeId,
-      data: {
-        chargeId: data.chargeId,
-        customerPublicId: data.customerPublicId,
-        amount: data.amount,
-      } satisfies AccountCustomerRefundRequest.DataInterface,
-    }
-  }
-
-  toStockReleaseRequest(data: StockReleaseRequest.DataInterface): StockReleaseRequest.MessageType {
-    return {
-      specversion: '1.0',
-      id: data.orderPublicId,
-      source: StockReleaseRequest.SOURCE,
-      type: StockReleaseRequest.TYPE,
-      time: new Date().toISOString(),
-      datacontenttype: 'application/json',
-      subject: data.orderPublicId,
-      correlationid: data.orderPublicId,
-      data: {
-        orderPublicId: data.orderPublicId,
-      } satisfies StockReleaseRequest.DataInterface,
-    }
-  }
-
-  toStockReserveRequest(data: StockReserveRequest.DataInterface): StockReserveRequest.MessageType {
-    return {
-      specversion: '1.0',
-      id: data.orderPublicId,
-      source: StockReserveRequest.SOURCE,
-      type: StockReserveRequest.TYPE,
-      time: new Date().toISOString(),
-      datacontenttype: 'application/json',
-      subject: data.orderPublicId,
-      correlationid: data.orderPublicId,
-      data: {
-        orderPublicId: data.orderPublicId,
-        items: data.items.map(({ offerPublicId, quantity }) => ({ offerPublicId, quantity })),
-      } satisfies StockReserveRequest.DataInterface,
-    }
-  }
-
-  toAccountCustomerChargeRequest(data: AccountCustomerChargeRequest.DataInterface): AccountCustomerChargeRequest.MessageType {
-    return {
-      specversion: '1.0',
-      id: data.chargeId,
-      source: AccountCustomerChargeRequest.SOURCE,
-      type: AccountCustomerChargeRequest.TYPE,
-      time: new Date().toISOString(),
-      datacontenttype: 'application/json',
-      subject: data.chargeId,
-      correlationid: data.chargeId,
-      data: {
-        chargeId: data.chargeId,
-        customerPublicId: data.customerPublicId,
-        amount: data.amount,
-      } satisfies AccountCustomerChargeRequest.DataInterface,
     }
   }
 }

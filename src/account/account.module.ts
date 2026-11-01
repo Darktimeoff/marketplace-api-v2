@@ -7,16 +7,14 @@ import { AccountInboxRepository } from './repository/account-inbox.repository.js
 import { AccountInboxService } from './service/account-inbox.service.js';
 import { AccountCustomerRefundCommandHandler } from './command-handler/account-customer-refund.command-handler.js';
 import { AccountRepository } from './repository/account.repository.js';
-import { AccountGateway } from './gateway/account.gateway.js';
-import { AccountTopology } from './service/account-topology.service.js';
 import { AccountCustomerChargeCommandHandler } from './command-handler/account-customer-charge.command-handler.js';
-import { RabbitMqModule } from '../generic/rabbitmq/rabbitmq.module.js';
 import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { AccountCreateCommandHandler } from './command-handler/account-create.command-handler.js';
 import { AccountUserEventsConsumer } from './consumer/account-user-events.consumer.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Transaction, AccountInbox, Account]), RabbitMqModule, KafkaModule],
-  providers: [AccountRepository, AccountInboxRepository, AccountInboxService, AccountCustomerChargeCommandHandler, AccountCustomerRefundCommandHandler, AccountTopology, AccountGateway, AccountCreateCommandHandler, AccountUserEventsConsumer],
+  imports: [TypeOrmModule.forFeature([Transaction, AccountInbox, Account]), KafkaModule],
+  providers: [AccountRepository, AccountInboxRepository, AccountInboxService, AccountCustomerChargeCommandHandler, AccountCustomerRefundCommandHandler, AccountCreateCommandHandler, AccountUserEventsConsumer],
+  exports: [AccountCustomerChargeCommandHandler, AccountCustomerRefundCommandHandler],
 })
 export class AccountModule {}

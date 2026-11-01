@@ -34,7 +34,6 @@ import { AccountClient } from "./client/account.client.js";
 import { OrderResponse } from "./response/order.response.js";
 import { AccountModule } from "../account/account.module.js";
 import { OrderAccessGuard } from "./guard/order-access.guard.js";
-import { RabbitMqModule } from "../generic/rabbitmq/rabbitmq.module.js";
 import { KafkaModule } from "../generic/kafka/kafka.module.js";
 import { TemporalModule } from "../generic/temporal/temporal.module.js";
 import { CacheModule } from "../generic/cache/cache.module.js";
@@ -44,7 +43,6 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
 @Module({
   imports: [
     QueueModule,
-    RabbitMqModule,
     KafkaModule,
     TemporalModule,
     CacheModule,

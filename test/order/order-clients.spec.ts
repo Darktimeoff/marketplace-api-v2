@@ -1,44 +1,48 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { AccountClient } from '../../src/order/client/account.client.js';
 import { SellerOfferClient } from '../../src/order/client/seller-offer.client.js';
-import { OrderPlaceMessage } from '../../src/order/message/order-place.message.js';
 import type { SellerOfferService } from '../../src/seller-offer/service/seller-offer.service.js';
+import type { SellerOfferStockReserveCommandHandler } from '../../src/seller-offer/command-handler/seller-offer-stock-reserve.command-handler.js';
+import type { SellerOfferStockReleaseCommandHandler } from '../../src/seller-offer/command-handler/seller-offer-stock-release.command-handler.js';
+import type { AccountCustomerChargeCommandHandler } from '../../src/account/command-handler/account-customer-charge.command-handler.js';
+import type { AccountCustomerRefundCommandHandler } from '../../src/account/command-handler/account-customer-refund.command-handler.js';
 
 const order = '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d';
 const buyer = '9c82efe4-36c4-4767-b525-42e95cdbc5a3';
 const offer = '45b4b670-96f8-4cc3-9a2c-a9e284bb2551';
 
-function anAmqp(data: object): { amqp: AmqpConnection; request: ReturnType<typeof vi.fn> } {
-  const request = vi.fn().mockResolvedValue({ data });
-  return { amqp: { request } as unknown as AmqpConnection, request };
-}
+describe('order clients', () => {
+  it('reserves and releases stock through seller-offer, answering its response unchanged', async () => {
+    const reserve = vi.fn().mockResolvedValue({ status: 'rejected', reason: 'insufficient_stock', items: [{ offerPublicId: offer, quantity: 2, available: 1 }] });
+    const release = vi.fn().mockResolvedValue({ status: 'released', offers: 1 });
+    const client = new SellerOfferClient(
+      {} as SellerOfferService,
+      { execute: reserve } as unknown as SellerOfferStockReserveCommandHandler,
+      { execute: release } as unknown as SellerOfferStockReleaseCommandHandler,
+    );
 
-describe('order clients over RabbitMQ', () => {
-  it('reserves stock with a request that expires with its timeout and answers only the data', async () => {
-    const { amqp, request } = anAmqp({ status: 'reserved' });
-    const client = new SellerOfferClient({} as SellerOfferService, amqp, new OrderPlaceMessage());
-
-    expect(await client.reserveStock({ orderPublicId: order, items: [{ offerPublicId: offer, quantity: 2 }] })).toEqual({ status: 'reserved' });
-    expect(request).toHaveBeenCalledWith(expect.objectContaining({
-      exchange: 'seller-offer.commands',
-      routingKey: 'seller-offer.stock.reserve',
-      timeout: 5000,
-      expiration: 5000,
-      payload: expect.objectContaining({ id: order, data: { orderPublicId: order, items: [{ offerPublicId: offer, quantity: 2 }] } }),
-    }));
+    expect(await client.reserveStock({ orderPublicId: order, items: [{ offerPublicId: offer, quantity: 2 }] })).toEqual({
+      status: 'rejected',
+      reason: 'insufficient_stock',
+      items: [{ offerPublicId: offer, quantity: 2, available: 1 }],
+    });
+    expect(await client.releaseStock({ orderPublicId: order })).toEqual({ status: 'released', offers: 1 });
+    expect(reserve).toHaveBeenCalledWith({ orderPublicId: order, items: [{ offerPublicId: offer, quantity: 2 }] });
+    expect(release).toHaveBeenCalledWith({ orderPublicId: order });
   });
 
-  it('charges and refunds the customer by the person publicId, keyed by the order', async () => {
-    const { amqp, request } = anAmqp({ status: 'success' });
-    const client = new AccountClient(amqp, new OrderPlaceMessage());
+  it('charges and refunds the customer through account by the charge id', async () => {
+    const charge = vi.fn().mockResolvedValue({ status: 'success' });
+    const refund = vi.fn().mockResolvedValue({ status: 'not_charged' });
+    const client = new AccountClient(
+      { execute: charge } as unknown as AccountCustomerChargeCommandHandler,
+      { execute: refund } as unknown as AccountCustomerRefundCommandHandler,
+    );
+    const request = { chargeId: order, customerPublicId: buyer, amount: '160.00' };
 
-    await client.charge({ chargeId: order, customerPublicId: buyer, amount: '160.00' });
-    await client.refund({ chargeId: order, customerPublicId: buyer, amount: '160.00' });
-
-    expect(request.mock.calls.map(([options]) => [options.routingKey, options.payload.id, options.payload.data])).toEqual([
-      ['account.customer.charge', order, { chargeId: order, customerPublicId: buyer, amount: '160.00' }],
-      ['account.customer.refund', order, { chargeId: order, customerPublicId: buyer, amount: '160.00' }],
-    ]);
+    expect(await client.charge(request)).toEqual({ status: 'success' });
+    expect(await client.refund(request)).toEqual({ status: 'not_charged' });
+    expect(charge).toHaveBeenCalledWith(request);
+    expect(refund).toHaveBeenCalledWith(request);
   });
 });

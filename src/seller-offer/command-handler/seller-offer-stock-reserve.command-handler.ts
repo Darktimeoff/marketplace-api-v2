@@ -1,4 +1,4 @@
-import { StockReserveRequest } from "@marketplace/messaging-contracts";
+import { StockReserveRpc } from "@marketplace/messaging-contracts";
 import { Injectable } from "@nestjs/common";
 import { Transactional } from "@nestjs-cls/transactional";
 import { SellerOfferRepository } from "../repository/seller-offer.repository.js";
@@ -12,8 +12,21 @@ export class SellerOfferStockReserveCommandHandler {
     private readonly reservations: StockReservationRepository,
   ) {}
 
+  async execute(request: StockReserveRpc.RequestInterface): Promise<StockReserveRpc.ResponseType> {
+    try {
+      await this.reserve(request);
+      return { status: 'reserved' };
+    } catch (e) {
+      if (e instanceof StockReservationRejectedException) {
+        return { status: 'rejected', reason: e.reason, items: e.items };
+      }
+
+      throw e;
+    }
+  }
+
   @Transactional()
-  async execute(orderPublicId: string, { items }: StockReserveRequest.DataInterface): Promise<void> {
+  private async reserve({ orderPublicId, items }: StockReserveRpc.RequestInterface): Promise<void> {
     const offers = await this.offers.findByPublicIds(items.map((item) => item.offerPublicId));
     const offersByPublicId = new Map(offers.map((offer) => [offer.publicId, offer]));
     const missing = items.filter((item) => !offersByPublicId.has(item.offerPublicId));

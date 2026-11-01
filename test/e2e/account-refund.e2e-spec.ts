@@ -1,10 +1,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
-import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
-import { AccountCustomerChargeRequest, AccountCustomerRefundRequest, SourceEnum } from '@marketplace/messaging-contracts';
+import type { AccountCustomerChargeRpc, AccountCustomerRefundRpc } from '@marketplace/messaging-contracts';
+import { AccountCustomerChargeCommandHandler } from '../../src/account/command-handler/account-customer-charge.command-handler.js';
+import { AccountCustomerRefundCommandHandler } from '../../src/account/command-handler/account-customer-refund.command-handler.js';
 import { AppModule } from '../../src/app.module.js';
 import { Account } from '../../src/account/entity/account.entity.js';
 import { Transaction } from '../../src/account/entity/transaction.entity.js';
@@ -15,14 +16,12 @@ import { truncateAllTables } from '../support/isolation.js';
 describe('Account refund (e2e)', () => {
   let app: INestApplication;
   let dataSource: DataSource;
-  let amqpConnection: AmqpConnection;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     await app.init();
     dataSource = app.get(DataSource);
-    amqpConnection = app.get(AmqpConnection);
   });
 
   afterEach(async () => {
@@ -33,38 +32,12 @@ describe('Account refund (e2e)', () => {
     await app.close();
   });
 
-  function envelope<T extends string, D>(id: string, type: T, data: D) {
-    return {
-      specversion: '1.0' as const,
-      id,
-      source: SourceEnum.ORDER,
-      type,
-      time: new Date().toISOString(),
-      datacontenttype: 'application/json',
-      subject: id,
-      correlationid: id,
-      data,
-    };
+  function charge(chargeId: string, customerPublicId: string, amount: string): Promise<AccountCustomerChargeRpc.ResponseType> {
+    return app.get(AccountCustomerChargeCommandHandler).execute({ chargeId, customerPublicId, amount });
   }
 
-  async function charge(chargeId: string, customerPublicId: string, amount: string): Promise<AccountCustomerChargeRequest.ResponseDataType> {
-    const { data } = await amqpConnection.request<AccountCustomerChargeRequest.ResponseMessageType>({
-      exchange: AccountCustomerChargeRequest.TOPIC,
-      routingKey: AccountCustomerChargeRequest.TYPE,
-      payload: envelope(chargeId, AccountCustomerChargeRequest.TYPE, { chargeId, customerPublicId, amount }),
-      timeout: 5000,
-    });
-    return data;
-  }
-
-  async function refund(chargeId: string, customerPublicId: string, amount: string): Promise<AccountCustomerRefundRequest.ResponseDataType> {
-    const { data } = await amqpConnection.request<AccountCustomerRefundRequest.ResponseMessageType>({
-      exchange: AccountCustomerRefundRequest.TOPIC,
-      routingKey: AccountCustomerRefundRequest.TYPE,
-      payload: envelope(chargeId, AccountCustomerRefundRequest.TYPE, { customerPublicId, amount, chargeId }),
-      timeout: 5000,
-    });
-    return data;
+  function refund(chargeId: string, customerPublicId: string, amount: string): Promise<AccountCustomerRefundRpc.ResponseType> {
+    return app.get(AccountCustomerRefundCommandHandler).execute({ chargeId, customerPublicId, amount });
   }
 
   async function fundedCustomer(balance: string): Promise<string> {

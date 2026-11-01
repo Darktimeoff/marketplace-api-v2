@@ -8,7 +8,7 @@ import { ProductRepository } from '../repository/product.repository.js';
 import { ProductTranslationRepository } from '../repository/product-translation.repository.js';
 import { ProductMediaRepository } from '../repository/product-media.repository.js';
 import { ProductOutboxRepository } from '../repository/product-outbox.repository.js';
-import { ProductMessageService } from '../service/product-message.service.js';
+import { ProductMessage } from '../message/product.message.js';
 import { ProductResponseService } from '../service/product-response.service.js';
 import { ProductCreateInput } from '../input/product-create.input.js';
 import { MEDIA_CLIENT } from '../constant/product-client.constant.js';
@@ -29,7 +29,7 @@ export class ProductCreateCommandHandler {
     private readonly translations: ProductTranslationRepository,
     private readonly productMedia: ProductMediaRepository,
     private readonly outbox: ProductOutboxRepository,
-    private readonly messages: ProductMessageService,
+    private readonly messages: ProductMessage,
     private readonly responses: ProductResponseService,
     private readonly categories: CategoryRepository,
     private readonly brands: BrandRepository,

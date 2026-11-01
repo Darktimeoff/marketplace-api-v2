@@ -4,7 +4,7 @@ import type { MediaClaimRpc } from '@marketplace/messaging-contracts';
 import type { Media } from '../entity/media.entity.js';
 
 @Injectable()
-export class MediaMessageService {
+export class MediaMessage {
   toClaimed(requestedIds: Media['publicId'][], claimed: Media[]): MediaClaimRpc.ClaimedResponseInterface {
     const byId = new Map(claimed.map((media) => [media.publicId, media]));
 

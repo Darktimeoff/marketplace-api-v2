@@ -5,14 +5,14 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { MediaAttachmentTypeEnum, MediaClaimStatusEnum, MediaKindEnum, MediaStatusEnum } from '@marketplace/contracts-core';
 import { Media } from '../../src/media/entity/media.entity.js';
 import { MediaRepository } from '../../src/media/repository/media.repository.js';
-import { MediaMessageService } from '../../src/media/service/media-message.service.js';
+import { MediaMessage } from '../../src/media/message/media.message.js';
 import { MediaClaimCommandHandler } from '../../src/media/command-handler/media-claim.command-handler.js';
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Media])],
-  providers: [MediaRepository, MediaMessageService, MediaClaimCommandHandler],
+  providers: [MediaRepository, MediaMessage, MediaClaimCommandHandler],
 })
 class MediaTestModule {}
 

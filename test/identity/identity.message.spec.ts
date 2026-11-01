@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { IdentityMessageService } from '../../src/identity/service/identity-message.service.js';
+import { IdentityMessage } from '../../src/identity/message/identity.message.js';
 import type { Identity } from '../../src/identity/entity/identity.entity.js';
 
-describe('IdentityMessageService', () => {
+describe('IdentityMessage', () => {
   it('builds identity.registered as an outbox row whose id and key are the identity publicId', () => {
     const identity = {
       id: 9,
@@ -13,7 +13,7 @@ describe('IdentityMessageService', () => {
       createdAt: new Date('2026-10-10T10:00:00.000Z'),
     } as unknown as Identity;
 
-    expect(new IdentityMessageService().toIdentityRegisteredOutbox(identity)).toEqual({
+    expect(new IdentityMessage().toIdentityRegisteredOutbox(identity)).toEqual({
       id: identity.publicId,
       topic: 'identity.events',
       aggregateType: 'Identity',

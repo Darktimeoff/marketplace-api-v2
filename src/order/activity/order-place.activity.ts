@@ -6,7 +6,7 @@ import { OrderStatusEnum } from '@marketplace/contracts-core';
 import { AccountCustomerChargeRequest, AccountCustomerRefundRequest, StockReleaseRequest, StockReserveRequest } from '@marketplace/messaging-contracts';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
-import { OrderPlaceMessageService } from '../service/order-place-message.service.js';
+import { OrderPlaceMessage } from '../message/order-place.message.js';
 import { CacheEvict } from '../../generic/cache/decorator/cache-evict.decorator.js';
 import { orderCacheKey } from '../cache-key/order.cache-key.js';
 import { OrderPlaceFailureTypeEnum } from '../enum/order-place-failure-type.enum.js';
@@ -25,7 +25,7 @@ export class OrderPlaceActivity implements OrderPlaceActivitiesInterface {
     private readonly amqpConnection: AmqpConnection,
     private readonly orderRepository: OrderRepository,
     private readonly outbox: OrderOutboxRepository,
-    private readonly messages: OrderPlaceMessageService,
+    private readonly messages: OrderPlaceMessage,
   ) {}
 
   async reserveStock(orderPublicId: string, items: OrderPlaceItemInterface[]): Promise<void> {

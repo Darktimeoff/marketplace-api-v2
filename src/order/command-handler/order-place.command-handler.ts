@@ -18,7 +18,7 @@ import {
 import { SellerOfferService } from '../../seller-offer/service/seller-offer.service.js';
 import { SellerOffer } from '../../seller-offer/entity/seller-offer.entity.js';
 import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
-import { OrderPlaceMessageService } from '../service/order-place-message.service.js';
+import { OrderPlaceMessage } from '../message/order-place.message.js';
 import { OrderWorkflowOutboxRepository } from '../repository/order-workflow-outbox.repository.js';
 import { OrderBuyerRepository } from '../repository/order-buyer.repository.js';
 import type { OrderBuyer } from '../entity/order-buyer.entity.js';
@@ -39,7 +39,7 @@ export class OrderPlaceCommandHandler {
     private readonly outbox: OrderOutboxRepository,
     private readonly workflowOutbox: OrderWorkflowOutboxRepository,
     private readonly buyers: OrderBuyerRepository,
-    private readonly messages: OrderPlaceMessageService,
+    private readonly messages: OrderPlaceMessage,
   ) {}
 
   async execute(input: OrderCreateInput, identityPublicId: string, idempotencyKey: string | null = null): Promise<Order> {

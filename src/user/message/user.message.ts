@@ -5,7 +5,7 @@ import type { UserOutboxCreateEntityInterface } from '../entity/user-outbox.enti
 import { UserOutboxAggregateTypeEnum } from '../enum/user-outbox-aggregate-type.enum.js';
 
 @Injectable()
-export class UserMessageService {
+export class UserMessage {
   toUserCreatedOutbox(user: User): UserOutboxCreateEntityInterface {
     return {
       id: user.publicId,

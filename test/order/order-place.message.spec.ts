@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
-import { OrderPlaceMessageService } from '../../src/order/service/order-place-message.service.js';
+import { OrderPlaceMessage } from '../../src/order/message/order-place.message.js';
 import type { Order } from '../../src/order/entity/order.entity.js';
 
 const buyerPublicId = '9c82efe4-36c4-4767-b525-42e95cdbc5a3';
@@ -18,8 +18,8 @@ const order = {
   lines: [{ offerPublicId, quantity: 2, unitPrice: '100.00', unitDiscountPrice: '80.00' }],
 } as unknown as Order;
 
-describe('OrderPlaceMessageService', () => {
-  const messages = new OrderPlaceMessageService();
+describe('OrderPlaceMessage', () => {
+  const messages = new OrderPlaceMessage();
 
   it('builds order events as kafka outbox rows keyed by the order', () => {
     expect(messages.toOrderPaidOutbox(order)).toEqual({

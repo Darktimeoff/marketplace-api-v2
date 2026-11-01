@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { LanguageEnum } from '@marketplace/contracts-core';
-import { UserMessageService } from '../../src/user/service/user-message.service.js';
+import { UserMessage } from '../../src/user/message/user.message.js';
 import type { User } from '../../src/user/entity/user.entity.js';
 
-describe('UserMessageService', () => {
+describe('UserMessage', () => {
   it('builds user.created as an outbox row whose id and key are the user publicId', () => {
     const user = {
       id: 12,
@@ -16,7 +16,7 @@ describe('UserMessageService', () => {
       createdAt: new Date('2026-10-10T10:00:01.000Z'),
     } as unknown as User;
 
-    expect(new UserMessageService().toUserCreatedOutbox(user)).toEqual({
+    expect(new UserMessage().toUserCreatedOutbox(user)).toEqual({
       id: user.publicId,
       topic: 'user.events',
       aggregateType: 'User',

@@ -15,7 +15,7 @@ import { OrderUserEventsGateway } from "./gateway/order-user-events.gateway.js";
 import { OrderWorkflowOutboxRepository } from "./repository/order-workflow-outbox.repository.js";
 import { OrderWorkflowOutboxRelayService } from "./service/order-workflow-outbox-relay.service.js";
 import { OrderNotifyEventsGateway } from "./gateway/order-notify-events.gateway.js";
-import { OrderPlaceMessageService } from "./service/order-place-message.service.js";
+import { OrderPlaceMessage } from "./message/order-place.message.js";
 import { OrderRepository } from "./repository/order.repository.js";
 import { OrderRecipientRepository } from "./repository/order-recipient.repository.js";
 import { OrderLineRepository } from "./repository/order-line.repository.js";
@@ -59,7 +59,7 @@ import { OrderPlaceWorker } from "./worker/order-place.worker.js";
     OrderBuyerRegisterCommandHandler,
     OrderUserEventsGateway,
     OrderNotifyEventsGateway,
-    OrderPlaceMessageService,
+    OrderPlaceMessage,
     OrderService,
     OrderPlaceCommandHandler,
     OrderAccessService,

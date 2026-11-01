@@ -10,7 +10,7 @@ import { ProductMediaRepository } from './repository/product-media.repository.js
 import { ProductOutboxRepository } from './repository/product-outbox.repository.js';
 import { ProductCreateCommandHandler } from './command-handler/product-create.command-handler.js';
 import { ProductController } from './controller/product.controller.js';
-import { ProductMessageService } from './service/product-message.service.js';
+import { ProductMessage } from './message/product.message.js';
 import { ProductResponseService } from './service/product-response.service.js';
 import { ProductOutboxRelayService } from './service/product-outbox-relay.service.js';
 import { MediaClient } from './client/media.client.js';
@@ -30,7 +30,7 @@ import { BrandModule } from '../brand/brand.module.js';
     ProductMediaRepository,
     ProductOutboxRepository,
     ProductCreateCommandHandler,
-    ProductMessageService,
+    ProductMessage,
     ProductResponseService,
     ProductOutboxRelayService,
     { provide: MEDIA_CLIENT, useClass: MediaClient },

@@ -14,7 +14,7 @@ import { MediaUploadRequestCommandHandler } from './command-handler/media-upload
 import { MediaUploadCompleteCommandHandler } from './command-handler/media-upload-complete.command-handler.js';
 import { MediaUploadPartsCommandHandler } from './command-handler/media-upload-parts.command-handler.js';
 import { MediaController } from './controller/media.controller.js';
-import { MediaMessageService } from './service/media-message.service.js';
+import { MediaMessage } from './message/media.message.js';
 import { MediaClaimReleaseService } from './service/media-claim-release.service.js';
 import { MediaClaimCommandHandler } from './command-handler/media-claim.command-handler.js';
 import { MediaClaimConfirmCommandHandler } from './command-handler/media-claim-confirm.command-handler.js';
@@ -30,7 +30,7 @@ import { MediaProductEventsGateway } from './gateway/media-product-events.gatewa
     MediaPartPlanService,
     MediaService,
     MediaOrphanCleanupService,
-    MediaMessageService,
+    MediaMessage,
     MediaClaimReleaseService,
     MediaClaimCommandHandler,
     MediaClaimConfirmCommandHandler,

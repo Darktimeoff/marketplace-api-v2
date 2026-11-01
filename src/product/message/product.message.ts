@@ -6,7 +6,7 @@ import type { ProductOutboxCreateEntityInterface } from '../entity/product-outbo
 import { ProductOutboxAggregateTypeEnum } from '../enum/product-outbox-aggregate-type.enum.js';
 
 @Injectable()
-export class ProductMessageService {
+export class ProductMessage {
   toProductCreatedOutbox(product: Product, media: ProductMedia[]): ProductOutboxCreateEntityInterface {
     return {
       id: product.publicId,

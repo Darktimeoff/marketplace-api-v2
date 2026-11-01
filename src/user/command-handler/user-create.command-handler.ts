@@ -3,14 +3,14 @@ import { Transactional } from '@nestjs-cls/transactional';
 import { UserRepository } from '../repository/user.repository.js';
 import type { UserCreateEntityInterface } from '../entity/user.entity.js';
 import { UserOutboxRepository } from '../repository/user-outbox.repository.js';
-import { UserMessageService } from '../service/user-message.service.js';
+import { UserMessage } from '../message/user.message.js';
 
 @Injectable()
 export class UserCreateCommandHandler {
   constructor(
     private readonly users: UserRepository,
     private readonly outbox: UserOutboxRepository,
-    private readonly messages: UserMessageService,
+    private readonly messages: UserMessage,
   ) {}
 
   @Transactional()

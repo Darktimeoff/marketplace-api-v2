@@ -5,7 +5,7 @@ import type { IdentityOutboxCreateEntityInterface } from '../entity/identity-out
 import { IdentityOutboxAggregateTypeEnum } from '../enum/identity-outbox-aggregate-type.enum.js';
 
 @Injectable()
-export class IdentityMessageService {
+export class IdentityMessage {
   toIdentityRegisteredOutbox(identity: Identity): IdentityOutboxCreateEntityInterface {
     return {
       id: identity.publicId,

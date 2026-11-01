@@ -12,7 +12,7 @@ import { OrderTaskQueueEnum } from '../enum/order-task-queue.enum.js';
 import type { OrderBuyer } from '../entity/order-buyer.entity.js';
 
 @Injectable()
-export class OrderPlaceMessageService {
+export class OrderPlaceMessage {
   toOrderCreatedOutbox(order: Order, buyer: OrderBuyer): OrderOutboxCreateEntityInterface {
     return {
       id: randomUUID(),

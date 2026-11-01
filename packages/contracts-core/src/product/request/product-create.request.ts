@@ -10,4 +10,5 @@ export interface ProductCreateRequestInterface {
   categoryId: number;
   brandId: number;
   translations: ProductCreateTranslationRequestInterface[];
+  mediaIds?: string[];
 }

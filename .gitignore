@@ -1,6 +1,8 @@
 # dependencies
 node_modules/
 
+TODO.md
+
 # compiled output
 /dist
 packages/*/dist

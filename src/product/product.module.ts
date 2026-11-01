@@ -2,14 +2,36 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Product } from './entity/product.entity.js';
 import { ProductTranslation } from './entity/product-translation.entity.js';
+import { ProductMedia } from './entity/product-media.entity.js';
+import { ProductOutbox } from './entity/product-outbox.entity.js';
 import { ProductRepository } from './repository/product.repository.js';
 import { ProductTranslationRepository } from './repository/product-translation.repository.js';
+import { ProductMediaRepository } from './repository/product-media.repository.js';
+import { ProductOutboxRepository } from './repository/product-outbox.repository.js';
 import { ProductCreateCommandHandler } from './command-handler/product-create.command-handler.js';
 import { ProductController } from './controller/product.controller.js';
+import { ProductMessageService } from './service/product-message.service.js';
+import { ProductResponseService } from './service/product-response.service.js';
+import { ProductOutboxRelayService } from './service/product-outbox-relay.service.js';
+import { MediaClient } from './client/media.client.js';
+import { MEDIA_CLIENT } from './constant/product-client.constant.js';
+import { MediaModule } from '../media/media.module.js';
+import { KafkaModule } from '../generic/kafka/kafka.module.js';
+import { QueueModule } from '../generic/queue/queue.module.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Product, ProductTranslation])],
+  imports: [TypeOrmModule.forFeature([Product, ProductTranslation, ProductMedia, ProductOutbox]), MediaModule, KafkaModule, QueueModule],
   controllers: [ProductController],
-  providers: [ProductRepository, ProductTranslationRepository, ProductCreateCommandHandler],
+  providers: [
+    ProductRepository,
+    ProductTranslationRepository,
+    ProductMediaRepository,
+    ProductOutboxRepository,
+    ProductCreateCommandHandler,
+    ProductMessageService,
+    ProductResponseService,
+    ProductOutboxRelayService,
+    { provide: MEDIA_CLIENT, useClass: MediaClient },
+  ],
 })
 export class ProductModule {}

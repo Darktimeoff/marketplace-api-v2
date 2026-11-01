@@ -9,6 +9,7 @@ const OWNED_TOPICS: KafkaTopicInterface[] = [
   { topic: TopicEnum.IDENTITY_EVENTS, numPartitions: 3, configEntries: KEEP_FOREVER },
   { topic: TopicEnum.USER_EVENTS, numPartitions: 3, configEntries: KEEP_FOREVER },
   { topic: TopicEnum.ORDER_EVENTS, numPartitions: 3, configEntries: KEEP_FOREVER },
+  { topic: TopicEnum.PRODUCT_EVENTS, numPartitions: 3, configEntries: KEEP_FOREVER },
 ];
 
 @Injectable()

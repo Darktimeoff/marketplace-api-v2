@@ -12,3 +12,5 @@ export * from './user/event/user-created.event.js';
 export * from './order/event/order-created.event.js';
 export * from './order/event/order-paid.event.js';
 export * from './order/event/order-failed.event.js';
+export * from './media/rpc/media-claim.rpc.js';
+export * from './product/event/product-created.event.js';

@@ -4,4 +4,5 @@ export enum SourceEnum {
   SELLER_OFFER = '/seller-offer-service',
   IDENTITY = '/identity-service',
   USER = '/user-service',
+  PRODUCT = '/product-service',
 }

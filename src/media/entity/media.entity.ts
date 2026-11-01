@@ -1,5 +1,5 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, PrimaryGeneratedColumn, Unique } from 'typeorm';
-import { MediaKindEnum, MediaStatusEnum } from '@marketplace/contracts-core';
+import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, Index, PrimaryGeneratedColumn, Unique } from 'typeorm';
+import { MediaAttachmentTypeEnum, MediaKindEnum, MediaStatusEnum } from '@marketplace/contracts-core';
 import { bigintNumberTransformer } from '../../generic/transformer/bigint-number.transformer.js';
 
 @Entity('Media')
@@ -7,6 +7,9 @@ import { bigintNumberTransformer } from '../../generic/transformer/bigint-number
 @Unique('Media_ownerIdentityPublicId_idempotencyKey_key', ['ownerIdentityPublicId', 'idempotencyKey'])
 @Check('Media_sizeBytes_positive', `"sizeBytes" > 0`)
 @Check('Media_storageKey_not_blank', `btrim("storageKey") <> ''`)
+@Check('Media_attachment_complete', `("attachedToType" IS NULL) = ("attachedToId" IS NULL) AND ("attachedToId" IS NULL) = ("attachedAt" IS NULL)`)
+@Check('Media_claim_attached', `"claimExpiresAt" IS NULL OR "attachedToId" IS NOT NULL`)
+@Index('Media_claimExpiresAt_idx', ['claimExpiresAt'], { where: '"claimExpiresAt" IS NOT NULL' })
 export class Media {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
@@ -46,6 +49,18 @@ export class Media {
 
   @Column({ type: 'uuid', nullable: true })
   idempotencyKey: string | null;
+
+  @Column({ type: 'enum', enum: MediaAttachmentTypeEnum, enumName: 'MediaAttachmentTypeEnum', nullable: true })
+  attachedToType: MediaAttachmentTypeEnum | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  attachedToId: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  attachedAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  claimExpiresAt: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz', default: () => 'now()' })
   createdAt: Date;

@@ -10,8 +10,8 @@ export interface ProductMediaResponseInterface {
 
 export interface ProductResponseInterface {
   publicId: string;
-  categoryId: number;
-  brandId: number;
+  categoryPublicId: string;
+  brandPublicId: string;
   media: ProductMediaResponseInterface[];
   createdAt: Date;
 }

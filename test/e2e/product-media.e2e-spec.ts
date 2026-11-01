@@ -9,6 +9,7 @@ import { Media } from '../../src/media/entity/media.entity.js';
 import { ProductMedia } from '../../src/product/entity/product-media.entity.js';
 import { ProductOutbox } from '../../src/product/entity/product-outbox.entity.js';
 import { MediaClaimReleaseService } from '../../src/media/service/media-claim-release.service.js';
+import { MediaClaimCommandHandler } from '../../src/media/command-handler/media-claim.command-handler.js';
 import { RoleEnum } from '../../src/identity/enum/role.enum.js';
 import { aBrandWithTranslation, aCategoryWithTranslation } from '../support/builders.js';
 import { truncateAllTables } from '../support/isolation.js';
@@ -55,11 +56,11 @@ describe('Product media (e2e)', () => {
     return upload.id;
   }
 
-  async function aBody(mediaIds: string[], categoryId?: number) {
+  async function aBody(mediaIds: string[], categoryPublicId?: string) {
     const suffix = randomUUID();
     const category = await aCategoryWithTranslation(dataSource.manager, { slug: `kitchen-${suffix}`, name: 'Kitchen' });
     const brand = await aBrandWithTranslation(dataSource.manager, { slug: `acme-${suffix}`, name: 'Acme' });
-    return { categoryId: categoryId ?? category.id, brandId: brand.id, translations: [{ language: LanguageEnum.en, title: 'Kettle' }], mediaIds };
+    return { categoryPublicId: categoryPublicId ?? category.publicId, brandPublicId: brand.publicId, translations: [{ language: LanguageEnum.en, title: 'Kettle' }], mediaIds };
   }
 
   function create(token: string, body: object) {
@@ -123,14 +124,21 @@ describe('Product media (e2e)', () => {
     expect(await dataSource.getRepository(ProductMedia).count()).toBe(0);
   });
 
-  it('releases the claim of a product that never committed so the media can be used again', async () => {
+  it('checks the category and brand before claiming, so a 404 leaves the media free', async () => {
     const token = await aSeller();
     const photo = await anImage(token);
 
-    await create(token, await aBody([photo], 999999)).expect(404);
-    const reserved = await mediaRow(photo);
-    expect(reserved.attachedToId).not.toBeNull();
-    expect(reserved.claimExpiresAt).not.toBeNull();
+    await create(token, await aBody([photo], '00000000-0000-4000-8000-000000000001')).expect(404);
+
+    expect(await mediaRow(photo)).toMatchObject({ attachedToId: null, claimExpiresAt: null });
+  });
+
+  it('releases a claim whose product never committed so the media can be used again', async () => {
+    const token = await aSeller();
+    const photo = await anImage(token);
+    const owner = (await mediaRow(photo)).ownerPublicId;
+    await app.get(MediaClaimCommandHandler).execute({ ownerPublicId: owner, mediaIds: [photo], attachTo: { type: MediaAttachmentTypeEnum.PRODUCT, id: randomUUID() } });
+    expect((await mediaRow(photo)).claimExpiresAt).not.toBeNull();
 
     await dataSource.query(`UPDATE "Media" SET "claimExpiresAt" = now() - interval '1 second' WHERE "publicId" = $1`, [photo]);
     await app.get(MediaClaimReleaseService).releaseExpired();

@@ -1,5 +1,5 @@
 import { Expose, Type } from 'class-transformer';
-import { IsArray, IsDate, IsEnum, IsInt, IsPositive, IsString, IsUrl, IsUUID, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsDate, IsEnum, IsInt, IsString, IsUrl, IsUUID, Min, ValidateNested } from 'class-validator';
 import { MediaKindEnum, type ProductMediaResponseInterface, type ProductResponseInterface } from '@marketplace/contracts-core';
 
 export class ProductMediaDto implements ProductMediaResponseInterface {
@@ -31,14 +31,12 @@ export class ProductDto implements ProductResponseInterface {
   publicId: string;
 
   @Expose()
-  @IsInt()
-  @IsPositive()
-  categoryId: number;
+  @IsUUID()
+  categoryPublicId: string;
 
   @Expose()
-  @IsInt()
-  @IsPositive()
-  brandId: number;
+  @IsUUID()
+  brandPublicId: string;
 
   @Expose()
   @IsArray()

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayNotEmpty, ArrayUnique, IsArray, IsEnum, IsInt, IsOptional, IsPositive, IsString, IsUUID, Matches, MaxLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, ArrayUnique, IsArray, IsEnum, IsOptional, IsString, IsUUID, Matches, MaxLength, ValidateNested } from 'class-validator';
 import { LanguageEnum, type ProductCreateRequestInterface, type ProductCreateTranslationRequestInterface } from '@marketplace/contracts-core';
 
 export class ProductCreateTranslationInput implements ProductCreateTranslationRequestInterface {
@@ -17,13 +17,11 @@ export class ProductCreateTranslationInput implements ProductCreateTranslationRe
 }
 
 export class ProductCreateInput implements ProductCreateRequestInterface {
-  @IsInt()
-  @IsPositive()
-  categoryId: number;
+  @IsUUID()
+  categoryPublicId: string;
 
-  @IsInt()
-  @IsPositive()
-  brandId: number;
+  @IsUUID()
+  brandPublicId: string;
 
   @ArrayNotEmpty()
   @ArrayUnique((translation: ProductCreateTranslationInput) => translation.language)

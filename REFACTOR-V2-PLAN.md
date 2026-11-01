@@ -92,9 +92,11 @@ The integer `id` never leaves its context: not in HTTP, not in events, not in Ra
 
 ### 2.3 product → category / brand over HTTP
 
-- [ ] **Contracts:** `ProductCreateRequest` / `ProductResponse`: `categoryId` / `brandId` → `categoryPublicId` / `brandPublicId`.
-- [ ] **Code:** `product-create.input`, the handler (resolve the uuid → the catalog's int FK), `product-response.service`, `product.dto`. The int FKs inside catalog stay.
-- [ ] **Tests:** `product.e2e`, `product-media.e2e`, `product-response.service.spec`.
+- [x] **Contracts:** `ProductCreateRequest` / `ProductResponse`: `categoryId` / `brandId` → `categoryPublicId` / `brandPublicId`.
+- [x] **Code:** `product-create.input`, the handler (resolve the uuid → the catalog's int FK), `product-response.service`, `product.dto`. The int FKs inside catalog stay.
+- [x] **Tests:** `product.e2e`, `product-media.e2e`, `product-response.service.spec`.
+- [x] **Behavior change:** category and brand are resolved before the media claim, so a 404 no longer reserves media. The release test now claims directly through `MediaClaimCommandHandler`.
+- [x] **Found while testing:** test cleanup reset every sequence to 1, and a Kafka consumer committing a row after cleanup collided with the next test's ids (`OrderBuyer_pkey`). Cleanup no longer resets sequences (separate commit).
 
 ---
 

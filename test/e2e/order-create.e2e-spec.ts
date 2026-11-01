@@ -128,7 +128,7 @@ describe('Order create (e2e)', () => {
 
   async function settledOrders(count: number): Promise<Order[]> {
     return vi.waitFor(async () => {
-      const orders = await dataSource.getRepository(Order).find({ relations: { orderRecipient: true, lines: true }, order: { id: 'ASC' } });
+      const orders = await dataSource.getRepository(Order).find({ relations: { orderRecipient: true, lines: true, buyer: true }, order: { id: 'ASC' } });
       if (orders.length !== count || orders.some((order) => order.status === OrderStatusEnum.pending_payment)) throw new Error('orders not settled yet');
       return orders;
     }, { timeout: 15000, interval: 100 });
@@ -154,7 +154,7 @@ describe('Order create (e2e)', () => {
     });
 
     const order = await settledOrder();
-    expect(order).toMatchObject({ id: response.body.id, publicId: response.body.publicId, userId: buyer.id, status: OrderStatusEnum.paid });
+    expect(order).toMatchObject({ id: response.body.id, publicId: response.body.publicId, buyer: { publicId: buyer.identityPublicId }, status: OrderStatusEnum.paid });
     expect(order.orderRecipient).toMatchObject({
       fullName: 'Jane Doe',
       phone: {
@@ -181,7 +181,7 @@ describe('Order create (e2e)', () => {
     expect(rows[0].payload).toEqual({
       orderId: order.id,
       orderPublicId: order.publicId,
-      userId: buyer.id,
+      buyerPublicId: buyer.identityPublicId,
       totalAmount: '160.00',
       discountAmount: '40.00',
       currency: CurrencyEnum.UAH,
@@ -202,7 +202,7 @@ describe('Order create (e2e)', () => {
       data: {
         orderId: order.id,
         orderPublicId: order.publicId,
-        userId: buyer.id,
+        buyerPublicId: buyer.identityPublicId,
         totalAmount: '160.00',
         discountAmount: '40.00',
         currency: CurrencyEnum.UAH,
@@ -425,7 +425,7 @@ describe('Order create (e2e)', () => {
       await placeOrder(first, aBody([{ offerId: offer.id, quantity: 1 }]), key).expect(202);
       await placeOrder(second, aBody([{ offerId: offer.id, quantity: 1 }]), key).expect(202);
 
-      expect((await settledOrders(2)).map(({ userId }) => userId).toSorted()).toEqual([first.id, second.id].toSorted());
+      expect((await settledOrders(2)).map(({ buyer }) => buyer.publicId).toSorted()).toEqual([first.identityPublicId, second.identityPublicId].toSorted());
     });
 
     it('rejects a key that is not a uuid with 400 and creates nothing', async () => {
@@ -457,13 +457,13 @@ describe('Order create (e2e)', () => {
       await placeOrder(buyer, { ...aBody([{ offerId: offer.id, quantity: 1 }]), userId: victim.id }).expect(202);
 
       const order = await settledOrder();
-      expect(order).toMatchObject({ userId: buyer.id, ownerIdentityPublicId: buyer.identityPublicId, status: OrderStatusEnum.paid });
+      expect(order).toMatchObject({ buyer: { publicId: buyer.identityPublicId }, status: OrderStatusEnum.paid });
       expect(await balanceOf(victim.identityPublicId)).toBe('1000.00');
     });
 
     it('answers 409 while the buyer is not provisioned yet', async () => {
       const buyer = await newBuyer();
-      await dataSource.getRepository(OrderBuyer).delete({ identityPublicId: buyer.identityPublicId });
+      await dataSource.getRepository(OrderBuyer).delete({ publicId: buyer.identityPublicId });
       const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
 
       await placeOrder(buyer, aBody([{ offerId: offer.id, quantity: 1 }])).expect(409);

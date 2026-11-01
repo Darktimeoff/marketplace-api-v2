@@ -34,14 +34,14 @@ export class OrderUserEventsGateway implements OnModuleInit {
       throw new KafkaRejectedMessageException(parsed.error.message);
     }
 
-    const { userId, publicId } = parsed.data.data;
+    const { publicId } = parsed.data.data;
 
     if (!publicId) {
       this.logger.debug(`skipped id=${parsed.data.id}: event predates the person publicId, the buyer was back-filled by migration`);
       return;
     }
 
-    const registered = await this.buyerRegister.execute({ identityPublicId: publicId, userId });
+    const registered = await this.buyerRegister.execute({ publicId });
     this.logger.log(`${registered ? 'registered' : 'skipped existing'} buyer for person=${publicId} id=${parsed.data.id}`);
   }
 }

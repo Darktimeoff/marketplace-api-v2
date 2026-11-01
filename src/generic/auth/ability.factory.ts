@@ -16,7 +16,7 @@ export class AbilityFactory {
       can('read', 'Order');
       can('read', 'Media');
     } else {
-      can('read', 'Order', { ownerIdentityPublicId: identity.identityPublicId });
+      can('read', 'Order', { buyerPublicId: identity.identityPublicId });
       can('read', 'Media', { ownerIdentityPublicId: identity.identityPublicId });
     }
 

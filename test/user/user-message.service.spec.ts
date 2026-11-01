@@ -24,7 +24,6 @@ describe('UserMessageService', () => {
       type: 'user.created',
       payload: {
         publicId: user.publicId,
-        userId: 12,
         email: 'jane@example.com',
         phoneNumber: null,
         firstName: null,

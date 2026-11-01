@@ -14,7 +14,7 @@ export namespace OrderFailedEvent {
   export interface DataInterface {
     orderId: number;
     orderPublicId: string;
-    userId: number;
+    buyerPublicId: string;
     status: OrderStatusEnum.canceled | OrderStatusEnum.failed_payment;
     reason: ReasonType;
     failedAt: string;

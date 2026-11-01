@@ -307,10 +307,15 @@ async function seed(): Promise<void> {
     const items = [offerRows[i % offerRows.length], offerRows[(i + 3) % offerRows.length]];
     const total = items.reduce((sum, offer) => sum + Number(offer.price), 0);
 
+    const [orderBuyer]: { id: number }[] = await AppDataSource.query(
+      `INSERT INTO "OrderBuyer" ("publicId") VALUES ($1) ON CONFLICT ("publicId") DO UPDATE SET "publicId" = EXCLUDED."publicId" RETURNING "id"`,
+      [buyer.publicId],
+    );
+
     const order = await orders.save(
       orders.create({
         publicId,
-        userId: buyer.id,
+        buyerId: orderBuyer.id,
         orderRecipientId: recipient.id,
         status: statuses[i % statuses.length],
         totalAmount: total.toFixed(2),

@@ -4,6 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Order } from '../../src/order/entity/order.entity.js';
 import { OrderLine } from '../../src/order/entity/order-line.entity.js';
 import { OrderRecipient } from '../../src/order/entity/order-recipient.entity.js';
+import { OrderBuyer } from '../../src/order/entity/order-buyer.entity.js';
+import { randomUUID } from 'node:crypto';
 import { OrderRepository } from '../../src/order/repository/order.repository.js';
 import { OrderLineRepository } from '../../src/order/repository/order-line.repository.js';
 import { CurrencyEnum } from '@marketplace/contracts-core';
@@ -12,7 +14,7 @@ import { truncateAllTables } from '../support/isolation.js';
 import { anOrderRecipient, aSellerOffer } from '../support/builders.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient])],
+  imports: [TypeOrmModule.forFeature([Order, OrderLine, OrderRecipient, OrderBuyer])],
   providers: [OrderRepository, OrderLineRepository],
 })
 class OrderTestModule {}
@@ -36,10 +38,15 @@ describe('OrderRepository', () => {
     await testModule.close();
   });
 
+  async function aBuyerId(): Promise<number> {
+    const buyer = await testModule.dataSource.getRepository(OrderBuyer).save({ publicId: randomUUID() });
+    return buyer.id;
+  }
+
   it('rejects a second order for the same recipient (unique constraint)', async () => {
     const recipient = await anOrderRecipient(testModule.dataSource.manager);
     await repository.create({
-      userId: 1,
+      buyerId: await aBuyerId(),
       orderRecipientId: recipient.id,
       totalAmount: '10.00',
       discountAmount: '0.00',
@@ -48,7 +55,7 @@ describe('OrderRepository', () => {
 
     await expect(
       repository.create({
-        userId: 1,
+        buyerId: await aBuyerId(),
         orderRecipientId: recipient.id,
         totalAmount: '20.00',
         discountAmount: '0.00',
@@ -60,7 +67,7 @@ describe('OrderRepository', () => {
   it('rejects an order referencing a non-existent recipient (FK constraint)', async () => {
     await expect(
       repository.create({
-        userId: 1,
+        buyerId: await aBuyerId(),
         orderRecipientId: 999999,
         totalAmount: '10.00',
         discountAmount: '0.00',
@@ -76,7 +83,7 @@ describe('OrderRepository', () => {
     });
 
     const order = await repository.create({
-      userId: 1,
+      buyerId: await aBuyerId(),
       orderRecipientId: recipient.id,
       totalAmount: '100.00',
       discountAmount: '0.00',

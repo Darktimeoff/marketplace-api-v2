@@ -43,7 +43,7 @@ export class OrderPlaceCommandHandler {
   ) {}
 
   async execute(input: OrderCreateInput, identityPublicId: string, idempotencyKey: string | null = null): Promise<Order> {
-    const buyer = await this.buyers.findByIdentityPublicId(identityPublicId);
+    const buyer = await this.buyers.findByPublicId(identityPublicId);
 
     if (!buyer) {
       throw new ConflictException('Buyer account is still being set up, try again shortly');
@@ -55,8 +55,8 @@ export class OrderPlaceCommandHandler {
   @Transactional()
   private async createPending(input: OrderCreateInput, buyer: OrderBuyer, idempotencyKey: string | null): Promise<Order> {
     if (idempotencyKey) {
-      await this.orderRepository.lockIdempotencyKey(buyer.userId, idempotencyKey);
-      const placed = await this.orderRepository.findByIdempotencyKey(buyer.userId, idempotencyKey);
+      await this.orderRepository.lockIdempotencyKey(buyer.id, idempotencyKey);
+      const placed = await this.orderRepository.findByIdempotencyKey(buyer.id, idempotencyKey);
 
       if (placed) {
         return placed;
@@ -85,8 +85,8 @@ export class OrderPlaceCommandHandler {
     );
 
     await this.createItems(pricedItems, order.id);
-    await this.outbox.create(this.messages.toOrderCreatedOutbox(order));
-    await this.workflowOutbox.create(this.messages.toOrderPlaceWorkflowOutbox(order, input.items));
+    await this.outbox.create(this.messages.toOrderCreatedOutbox(order, buyer));
+    await this.workflowOutbox.create(this.messages.toOrderPlaceWorkflowOutbox(order, buyer, input.items));
 
     return order;
   }
@@ -117,8 +117,7 @@ export class OrderPlaceCommandHandler {
     );
 
     return this.orderRepository.create({
-      userId: buyer.userId,
-      ownerIdentityPublicId: buyer.identityPublicId,
+      buyerId: buyer.id,
       orderRecipientId,
       totalAmount: totalAmount.toFixed(2),
       discountAmount: discountAmount.toFixed(2),

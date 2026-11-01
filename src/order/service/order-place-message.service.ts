@@ -9,10 +9,11 @@ import { OrderCreateInput } from '../input/order-create.input.js';
 import type { OrderPlaceWorkflowInputInterface } from '../workflow/order-place-workflow.interface.js';
 import type { OrderWorkflowOutboxCreateEntityInterface } from '../entity/order-workflow-outbox.entity.js';
 import { OrderTaskQueueEnum } from '../enum/order-task-queue.enum.js';
+import type { OrderBuyer } from '../entity/order-buyer.entity.js';
 
 @Injectable()
 export class OrderPlaceMessageService {
-  toOrderCreatedOutbox(order: Order): OrderOutboxCreateEntityInterface {
+  toOrderCreatedOutbox(order: Order, buyer: OrderBuyer): OrderOutboxCreateEntityInterface {
     return {
       id: randomUUID(),
       topic: OrderCreatedEvent.TOPIC,
@@ -22,7 +23,7 @@ export class OrderPlaceMessageService {
       payload: {
         orderId: order.id,
         orderPublicId: order.publicId,
-        userId: order.userId,
+        buyerPublicId: buyer.publicId,
         totalAmount: order.totalAmount,
         discountAmount: order.discountAmount,
         currency: order.currency,
@@ -41,7 +42,7 @@ export class OrderPlaceMessageService {
       payload: {
         orderId: order.id,
         orderPublicId: order.publicId,
-        userId: order.userId,
+        buyerPublicId: order.buyer.publicId,
         status: failure.status,
         reason: failure.reason,
         failedAt: order.updatedAt.toISOString(),
@@ -59,7 +60,7 @@ export class OrderPlaceMessageService {
       payload: {
         orderId: order.id,
         orderPublicId: order.publicId,
-        userId: order.userId,
+        buyerPublicId: order.buyer.publicId,
         totalAmount: order.totalAmount,
         discountAmount: order.discountAmount,
         currency: order.currency,
@@ -69,7 +70,7 @@ export class OrderPlaceMessageService {
     }
   }
 
-  toOrderPlaceWorkflowOutbox(order: Order, items: OrderCreateInput['items']): OrderWorkflowOutboxCreateEntityInterface {
+  toOrderPlaceWorkflowOutbox(order: Order, buyer: OrderBuyer, items: OrderCreateInput['items']): OrderWorkflowOutboxCreateEntityInterface {
     return {
       workflowId: `order-place-${order.publicId}`,
       workflowType: 'orderPlaceWorkflow',
@@ -77,7 +78,7 @@ export class OrderPlaceMessageService {
       input: {
         orderId: order.id,
         orderPublicId: order.publicId,
-        userId: order.userId,
+        buyerPublicId: buyer.publicId,
         totalAmount: order.totalAmount,
         items: items.map(({ offerId, quantity }) => ({ offerId, quantity })),
       } satisfies OrderPlaceWorkflowInputInterface,

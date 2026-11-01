@@ -129,8 +129,8 @@ describe('Registration provisioning over Kafka (e2e)', () => {
 
     expect(user).toMatchObject({ publicId: identity.publicId, email: identity.email, phoneNumber: null, firstName: null, lastName: null });
     expect(account.balance).toBe('0.00');
-    const buyer = await waitFor(async () => (await dataSource.getRepository(OrderBuyer).findOneBy({ identityPublicId: identity.publicId })) ?? undefined, 'the order buyer');
-    expect(buyer.userId).toBe(user.id);
+    const buyer = await waitFor(async () => (await dataSource.getRepository(OrderBuyer).findOneBy({ publicId: identity.publicId })) ?? undefined, 'the order buyer');
+    expect(buyer.id).toEqual(expect.any(Number));
 
     const received = await waitFor(() => userEvents.find(({ key }) => key === user.publicId), 'user.created');
     const outboxRow = await waitFor(async () => {
@@ -150,7 +150,6 @@ describe('Registration provisioning over Kafka (e2e)', () => {
       correlationid: user.publicId,
       data: {
         publicId: identity.publicId,
-        userId: user.id,
         email: identity.email,
         phoneNumber: null,
         firstName: null,

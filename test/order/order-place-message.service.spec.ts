@@ -3,10 +3,12 @@ import { CurrencyEnum, OrderStatusEnum } from '@marketplace/contracts-core';
 import { OrderPlaceMessageService } from '../../src/order/service/order-place-message.service.js';
 import type { Order } from '../../src/order/entity/order.entity.js';
 
+const buyerPublicId = '9c82efe4-36c4-4767-b525-42e95cdbc5a3';
+
 const order = {
   id: 7,
   publicId: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d',
-  userId: 4,
+  buyer: { id: 4, publicId: buyerPublicId },
   totalAmount: '160.00',
   discountAmount: '40.00',
   currency: CurrencyEnum.UAH,
@@ -14,8 +16,6 @@ const order = {
   updatedAt: new Date('2026-10-10T10:00:05.000Z'),
   lines: [{ offerId: 3, quantity: 2, unitPrice: '100.00', unitDiscountPrice: '80.00' }],
 } as unknown as Order;
-
-const buyerPublicId = '9c82efe4-36c4-4767-b525-42e95cdbc5a3';
 
 describe('OrderPlaceMessageService', () => {
   const messages = new OrderPlaceMessageService();
@@ -30,7 +30,7 @@ describe('OrderPlaceMessageService', () => {
       payload: {
         orderId: 7,
         orderPublicId: order.publicId,
-        userId: 4,
+        buyerPublicId,
         totalAmount: '160.00',
         discountAmount: '40.00',
         currency: CurrencyEnum.UAH,
@@ -40,20 +40,20 @@ describe('OrderPlaceMessageService', () => {
     });
     expect(messages.toOrderFailedOutbox(order, { status: OrderStatusEnum.failed_payment, reason: 'payment_rejected' })).toMatchObject({
       type: 'order.failed',
-      payload: { orderId: 7, status: 'failed_payment', reason: 'payment_rejected', failedAt: '2026-10-10T10:00:05.000Z' },
+      payload: { orderId: 7, buyerPublicId, status: 'failed_payment', reason: 'payment_rejected', failedAt: '2026-10-10T10:00:05.000Z' },
     });
-    expect(messages.toOrderCreatedOutbox(order).payload).toEqual(expect.objectContaining({ createdAt: '2026-10-10T10:00:00.000Z' }));
+    expect(messages.toOrderCreatedOutbox(order, order.buyer).payload).toEqual(expect.objectContaining({ buyerPublicId, createdAt: '2026-10-10T10:00:00.000Z' }));
   });
 
   it('builds the workflow start as an outbox row keyed by the order publicId', () => {
-    expect(messages.toOrderPlaceWorkflowOutbox(order, [{ offerId: 3, quantity: 2 }])).toEqual({
+    expect(messages.toOrderPlaceWorkflowOutbox(order, order.buyer, [{ offerId: 3, quantity: 2 }])).toEqual({
       workflowId: `order-place-${order.publicId}`,
       workflowType: 'orderPlaceWorkflow',
       taskQueue: 'order-place',
       input: {
         orderId: 7,
         orderPublicId: order.publicId,
-        userId: 4,
+        buyerPublicId,
         totalAmount: '160.00',
         items: [{ offerId: 3, quantity: 2 }],
       },

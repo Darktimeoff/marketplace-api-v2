@@ -11,7 +11,6 @@ export namespace UserCreatedEvent {
 
   export interface DataInterface {
     publicId: string;
-    userId: number;
     email: string | null;
     phoneNumber: string | null;
     firstName: string | null;

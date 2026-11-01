@@ -15,7 +15,6 @@ export class UserMessageService {
       type: UserCreatedEvent.TYPE,
       payload: {
         publicId: user.publicId,
-        userId: user.id,
         email: user.email,
         phoneNumber: user.phoneNumber,
         firstName: user.firstName,

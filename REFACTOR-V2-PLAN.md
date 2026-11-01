@@ -43,19 +43,21 @@ The integer `id` never leaves its context: not in HTTP, not in events, not in Ra
 
 ### 1.3 order buyer + order
 
-- [ ] **Migration `OrderBuyerIdentifiers`:**
+- [x] **Migration `OrderBuyerIdentifiers`:**
   - `OrderBuyer`: add `id` identity, `publicId` = the current `identityPublicId`; the PK moves to `id`; drop `userId` and `OrderBuyer_userId_key`.
   - `Order`: add `buyerId` and backfill it through `OrderBuyer` by `ownerIdentityPublicId`; old orders without it get backfilled through `userId`. Then make `buyerId` `NOT NULL` with the FK `Order_buyerId_fkey`.
   - Drop `Order.userId`, `ownerIdentityPublicId`, its index, and `Order_userId_idempotencyKey_key`; add `Order_buyerId_idempotencyKey_key` instead.
-- [ ] **Code:**
+- [x] **Code:**
   - `order-buyer.repository`, `order-user-events.gateway` + schema (tolerant reader);
   - `order-place.command-handler`, `order.repository` (idempotency lock by `buyerId`), `order-access.service` / `guard`;
   - `ability.factory` + `app-ability.type`: the `Order` subject gets a `buyerPublicId` condition;
   - `order.service`, `order-place-message.service` (charge / refund with `customerPublicId = buyer.publicId`);
   - `order-place.activity`, `order-place-workflow.interface`.
-- [ ] **Contract (contract step):** drop `userId` from `user.created`; nothing reads it any more.
-- [ ] **Temporal:** the workflow input changes from `userId` to `buyerPublicId`, so a workflow started with the old input breaks on replay. On dev, before applying: wait for running workflows to finish or terminate them (`temporal workflow list`). Add a line about it to the README.
-- [ ] **Tests:** `order.repository.integration`, `order-create.e2e`, `order.e2e`, `order-realtime.e2e`, `order-place-message.service.spec`, `ability.factory.spec`, `test/support/buyer.ts`.
+- [x] **Contract (contract step):** drop `userId` from `user.created`; nothing reads it any more.
+- [x] **Temporal:** the workflow input changes from `userId` to `buyerPublicId`, so a workflow started with the old input breaks on replay. On dev, before applying: wait for running workflows to finish or terminate them (`temporal workflow list`). Add a line about it to the README.
+- [x] **Tests:** `order.repository.integration`, `order-create.e2e`, `order.e2e`, `order-realtime.e2e`, `order-place-message.service.spec`, `ability.factory.spec`, `test/support/buyer.ts`.
+- [x] **Found while applying:** 5 dev orders pointed at users that no longer exist and had no owner. The migration gives each such `userId` an "unknown" `OrderBuyer` with a fresh uuid, so the orders keep their history and only admins can read them; `down` cannot restore those junk `userId`s and writes `0`.
+- [x] **Moved here from pass 3:** `order.created / paid / failed` carry `buyerPublicId` instead of `userId` (the only consumer reads `orderId` / `status`); the SSE guard takes `?buyerPublicId=` instead of `?userId=`; the order cache key is now `order:v2:<id>` so cached orders of the old shape are not served.
 
 ### 1.4 seller owner and media owner
 

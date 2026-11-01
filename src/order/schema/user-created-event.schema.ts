@@ -7,9 +7,8 @@ export const userCreatedEventSchema = z.object({
   type: z.literal(UserCreatedEvent.TYPE),
   data: z
     .object({
-      userId: z.int().positive(),
       publicId: z.uuid().optional(),
       identityPublicId: z.uuid().optional(),
     })
-    .transform(({ userId, publicId, identityPublicId }) => ({ userId, publicId: publicId ?? identityPublicId ?? null })),
+    .transform(({ publicId, identityPublicId }) => ({ publicId: publicId ?? identityPublicId ?? null })),
 });

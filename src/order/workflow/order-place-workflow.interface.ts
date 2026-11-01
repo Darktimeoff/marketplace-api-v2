@@ -8,14 +8,14 @@ export interface OrderPlaceItemInterface {
 export interface OrderPlaceWorkflowInputInterface {
   orderId: number;
   orderPublicId: string;
-  userId: number;
+  buyerPublicId: string;
   totalAmount: string;
   items: OrderPlaceItemInterface[];
 }
 
 export interface OrderPlaceChargeInterface {
   orderPublicId: string;
-  userId: number;
+  buyerPublicId: string;
   totalAmount: string;
 }
 

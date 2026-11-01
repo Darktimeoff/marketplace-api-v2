@@ -9,16 +9,16 @@ function anEvent(data: object): object {
 
 describe('order userCreatedEventSchema', () => {
   it('reads the person publicId from the current event', () => {
-    expect(userCreatedEventSchema.parse(anEvent({ publicId: person, userId: 12 })).data).toEqual({ userId: 12, publicId: person });
+    expect(userCreatedEventSchema.parse(anEvent({ publicId: person })).data).toEqual({ publicId: person });
   });
 
   it('reads the identity publicId of an event published before the rename as the person publicId', () => {
     const old = anEvent({ userId: 12, userPublicId: '345db97f-3775-4a03-ac88-3499486dfbaf', identityId: 10, identityPublicId: person });
 
-    expect(userCreatedEventSchema.parse(old).data).toEqual({ userId: 12, publicId: person });
+    expect(userCreatedEventSchema.parse(old).data).toEqual({ publicId: person });
   });
 
   it('leaves the publicId empty for events that predate it, so the gateway can skip them', () => {
-    expect(userCreatedEventSchema.parse(anEvent({ userId: 12, userPublicId: '345db97f-3775-4a03-ac88-3499486dfbaf' })).data).toEqual({ userId: 12, publicId: null });
+    expect(userCreatedEventSchema.parse(anEvent({ userId: 12, userPublicId: '345db97f-3775-4a03-ac88-3499486dfbaf' })).data).toEqual({ publicId: null });
   });
 });

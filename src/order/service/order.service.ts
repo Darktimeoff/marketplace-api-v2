@@ -30,7 +30,7 @@ export class OrderService implements OnModuleInit {
   async findReadableById(id: Order['id'], ability: AppAbilityType): Promise<Order> {
     const order = await this.findById(id);
 
-    if (!ability.can('read', subject('Order', { ownerIdentityPublicId: order.ownerIdentityPublicId }))) {
+    if (!ability.can('read', subject('Order', { buyerPublicId: order.buyer.publicId }))) {
       this.logger.warn(`forbidden read of order=${order.publicId}`);
       throw new ForbiddenException('This order belongs to someone else');
     }

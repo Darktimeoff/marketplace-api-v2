@@ -40,7 +40,7 @@ describe('Order realtime over Kafka (e2e)', () => {
     await app.close();
   });
 
-  async function placeOrder(balance: string): Promise<{ orderId: number; userId: number }> {
+  async function placeOrder(balance: string): Promise<{ orderId: number; buyerPublicId: string }> {
     const buyer = await aBuyer(app, dataSource);
     await dataSource.query(`INSERT INTO "Account" ("publicId", "balance") VALUES ($1, $2)`, [buyer.identityPublicId, balance]);
     const offer = await aSellerOffer(dataSource.manager, { price: '100.00', onHandQuantity: 5 });
@@ -58,10 +58,10 @@ describe('Order realtime over Kafka (e2e)', () => {
         currency: CurrencyEnum.UAH,
       });
 
-    return { orderId: response.body.id ?? (await dataSource.query(`SELECT max("id") AS id FROM "Order"`))[0].id, userId: buyer.id };
+    return { orderId: response.body.id ?? (await dataSource.query(`SELECT max("id") AS id FROM "Order"`))[0].id, buyerPublicId: buyer.identityPublicId };
   }
 
-  function openStream(orderId: number, userId?: number, lastEventId?: number): Promise<StreamInterface> {
+  function openStream(orderId: number, buyerPublicId?: string, lastEventId?: number): Promise<StreamInterface> {
     const { port } = app.getHttpServer().address() as AddressInfo;
     const chunks: string[] = [];
 
@@ -69,7 +69,7 @@ describe('Order realtime over Kafka (e2e)', () => {
       const req: ClientRequest = httpGet({
         hostname: '127.0.0.1',
         port,
-        path: `/orders/${orderId}/events${userId === undefined ? '' : `?userId=${userId}`}`,
+        path: `/orders/${orderId}/events${buyerPublicId === undefined ? '' : `?buyerPublicId=${buyerPublicId}`}`,
         headers: lastEventId === undefined ? {} : { 'Last-Event-ID': String(lastEventId) },
       }, (res) => {
         res.setEncoding('utf8');
@@ -97,8 +97,8 @@ describe('Order realtime over Kafka (e2e)', () => {
   }
 
   it('streams pending_payment then paid for a paid order, from order.events', async () => {
-    const { orderId, userId } = await placeOrder('1000.00');
-    const stream = await openStream(orderId, userId);
+    const { orderId, buyerPublicId } = await placeOrder('1000.00');
+    const stream = await openStream(orderId, buyerPublicId);
 
     try {
       expect(stream.response.headers['content-type']).toContain('text/event-stream');
@@ -114,8 +114,8 @@ describe('Order realtime over Kafka (e2e)', () => {
   });
 
   it('streams failed_payment when the payment is refused', async () => {
-    const { orderId, userId } = await placeOrder('10.00');
-    const stream = await openStream(orderId, userId);
+    const { orderId, buyerPublicId } = await placeOrder('10.00');
+    const stream = await openStream(orderId, buyerPublicId);
 
     try {
       const events = await eventsOf(stream, 2);
@@ -126,11 +126,11 @@ describe('Order realtime over Kafka (e2e)', () => {
   });
 
   it('replays only the events after Last-Event-ID', async () => {
-    const { orderId, userId } = await placeOrder('1000.00');
-    const first = await openStream(orderId, userId);
+    const { orderId, buyerPublicId } = await placeOrder('1000.00');
+    const first = await openStream(orderId, buyerPublicId);
     const [created, paid] = await eventsOf(first, 2).finally(() => first.close());
 
-    const resumed = await openStream(orderId, userId, created.id);
+    const resumed = await openStream(orderId, buyerPublicId, created.id);
 
     try {
       const events = await eventsOf(resumed, 1);
@@ -146,13 +146,13 @@ describe('Order realtime over Kafka (e2e)', () => {
     const { orderId } = await placeOrder('1000.00');
     const other = await aUser(dataSource.manager);
 
-    await request(app.getHttpServer()).get(`/orders/${orderId}/events?userId=${other.id}`).expect(403);
+    await request(app.getHttpServer()).get(`/orders/${orderId}/events?buyerPublicId=${other.publicId}`).expect(403);
   });
 
   it('rejects an invalid buyer id and an unknown order', async () => {
     const { orderId } = await placeOrder('1000.00');
 
-    await request(app.getHttpServer()).get(`/orders/${orderId}/events?userId=abc`).expect(400);
+    await request(app.getHttpServer()).get(`/orders/${orderId}/events?buyerPublicId=abc`).expect(400);
     await request(app.getHttpServer()).get('/orders/999999/events').expect(404);
   });
 });

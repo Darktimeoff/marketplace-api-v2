@@ -1,3 +1,3 @@
 export function orderCacheKey(id: number): string {
-  return `order:${id}`;
+  return `order:v2:${id}`;
 }

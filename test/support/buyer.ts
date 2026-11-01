@@ -14,7 +14,7 @@ export interface TestBuyerInterface {
 
 export async function aBuyer(app: INestApplicationContext, dataSource: DataSource, role: RoleEnum = RoleEnum.user): Promise<TestBuyerInterface> {
   const user = await aUser(dataSource.manager);
-  await dataSource.getRepository(OrderBuyer).insert({ identityPublicId: user.publicId, userId: user.id });
+  await dataSource.getRepository(OrderBuyer).insert({ publicId: user.publicId });
   await dataSource.getRepository(Identity).update({ publicId: user.publicId }, { role });
   const identity = await dataSource.getRepository(Identity).findOneByOrFail({ publicId: user.publicId });
   const { accessToken } = await app.get(TokenService).createTokenPair(identity);

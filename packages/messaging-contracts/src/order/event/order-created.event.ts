@@ -12,7 +12,7 @@ export namespace OrderCreatedEvent {
   export interface DataInterface {
     orderId: number;
     orderPublicId: string;
-    userId: number;
+    buyerPublicId: string;
     totalAmount: string;
     discountAmount: string;
     currency: CurrencyEnum;

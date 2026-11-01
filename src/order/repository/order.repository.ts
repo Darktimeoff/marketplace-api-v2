@@ -13,12 +13,12 @@ export class OrderRepository {
     return orders.save(orders.create(input));
   }
 
-  async lockIdempotencyKey(userId: Order['userId'], idempotencyKey: string): Promise<void> {
-    await this.txHost.tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`order:${userId}:${idempotencyKey}`]);
+  async lockIdempotencyKey(buyerId: Order['buyerId'], idempotencyKey: string): Promise<void> {
+    await this.txHost.tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`order:${buyerId}:${idempotencyKey}`]);
   }
 
-  findByIdempotencyKey(userId: Order['userId'], idempotencyKey: string): Promise<Order | null> {
-    return this.txHost.tx.getRepository(Order).findOneBy({ userId, idempotencyKey });
+  findByIdempotencyKey(buyerId: Order['buyerId'], idempotencyKey: string): Promise<Order | null> {
+    return this.txHost.tx.getRepository(Order).findOneBy({ buyerId, idempotencyKey });
   }
 
   async updateStatusById(id: Order['id'], status: OrderStatusEnum): Promise<Order> {
@@ -43,7 +43,7 @@ export class OrderRepository {
   async findByIdOrFail(id: Order['id']): Promise<Order> {
     return await this.txHost.tx.getRepository(Order).findOneOrFail({
       where: { id },
-      relations: { lines: true, orderRecipient: true },
+      relations: { lines: true, orderRecipient: true, buyer: true },
     })
   }
 }

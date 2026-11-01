@@ -30,7 +30,7 @@ const { releaseStock, refundCustomer, markPaid, markFailed } = proxyActivities<O
 export async function orderPlaceWorkflow(input: OrderPlaceWorkflowInputInterface): Promise<OrderStatusEnum> {
   const charge: OrderPlaceChargeInterface = {
     orderPublicId: input.orderPublicId,
-    userId: input.userId,
+    buyerPublicId: input.buyerPublicId,
     totalAmount: input.totalAmount,
   };
   let isChargeSent = false;

@@ -111,8 +111,8 @@ The integer `id` never leaves its context: not in HTTP, not in events, not in Ra
 
 ## Pass 4. Documenting the rules
 
-- [ ] **AGENTS.md:** the two tables from the top of this plan, "a person's uuid is born in identity", the exceptions (associations, infrastructure), and "a contract change means a tolerant reader for old Kafka events".
-- [ ] **README:** the "Bounded contexts" section (the arrows and the "Plain ids across contexts" paragraph are now outdated), the Temporal note, the `POST /order` example.
+- [x] **AGENTS.md:** the two tables from the top of this plan, "a person's uuid is born in identity", the exceptions (associations, infrastructure), and "a contract change means a tolerant reader for old Kafka events".
+- [x] **README:** the "Bounded contexts" section (the arrows and the "Plain ids across contexts" paragraph are now outdated), the Temporal note, the `POST /order` example.
 
 ---
 

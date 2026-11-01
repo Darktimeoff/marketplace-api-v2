@@ -10,8 +10,8 @@ import { OrderWorkflowOutbox } from '../entity/order-workflow-outbox.entity.js';
 import { TemporalClientService } from '../../generic/temporal/temporal-client.service.js';
 
 @Injectable()
-export class OrderWorkflowOutboxRelayService implements OnModuleInit, OnApplicationBootstrap {
-  private readonly logger = new Logger(OrderWorkflowOutboxRelayService.name);
+export class OrderWorkflowOutboxRelay implements OnModuleInit, OnApplicationBootstrap {
+  private readonly logger = new Logger(OrderWorkflowOutboxRelay.name);
   private readonly cleanupJobName = 'order-workflow-outbox-cleanup';
   private readonly batchSize = 100;
   private readonly startedRetentionDays = 7;

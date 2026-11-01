@@ -6,20 +6,20 @@ import { subDays } from 'date-fns';
 import { Transactional } from '@nestjs-cls/transactional';
 import { SourceEnum, type CloudEventInterface } from '@marketplace/messaging-contracts';
 import { KafkaProducerService } from '../../generic/kafka/kafka-producer.service.js';
-import { IdentityOutboxRepository } from '../repository/identity-outbox.repository.js';
-import { IdentityOutbox } from '../entity/identity-outbox.entity.js';
+import { ProductOutboxRepository } from '../repository/product-outbox.repository.js';
+import { ProductOutbox } from '../entity/product-outbox.entity.js';
 
 @Injectable()
-export class IdentityOutboxRelayService implements OnModuleInit, OnApplicationBootstrap {
-  private readonly logger = new Logger(IdentityOutboxRelayService.name);
-  private readonly cleanupJobName = 'identity-outbox-cleanup';
+export class ProductOutboxRelay implements OnModuleInit, OnApplicationBootstrap {
+  private readonly logger = new Logger(ProductOutboxRelay.name);
+  private readonly cleanupJobName = 'product-outbox-cleanup';
   private readonly batchSize = 100;
   private readonly publishedRetentionDays = 7;
-  private readonly relayIntervalName = 'identity-outbox-relay';
+  private readonly relayIntervalName = 'product-outbox-relay';
   private relaying = false;
 
   constructor(
-    private readonly outbox: IdentityOutboxRepository,
+    private readonly outbox: ProductOutboxRepository,
     private readonly kafka: KafkaProducerService,
     private readonly maintenance: MaintenanceJobRegistryService,
     private readonly environment: EnvironmentService,
@@ -62,7 +62,7 @@ export class IdentityOutboxRelayService implements OnModuleInit, OnApplicationBo
   @Transactional()
   private async relayBatch(): Promise<void> {
     const rows = await this.outbox.claimUnpublished(this.batchSize);
-    const published: IdentityOutbox['id'][] = [];
+    const published: ProductOutbox['id'][] = [];
 
     for (const row of rows) {
       try {
@@ -81,11 +81,11 @@ export class IdentityOutboxRelayService implements OnModuleInit, OnApplicationBo
     }
   }
 
-  private toCloudEvent(row: IdentityOutbox): CloudEventInterface<string, object> {
+  private toCloudEvent(row: ProductOutbox): CloudEventInterface<string, object> {
     return {
       specversion: '1.0',
       id: row.id,
-      source: SourceEnum.IDENTITY,
+      source: SourceEnum.PRODUCT,
       type: row.type,
       time: row.createdAt.toISOString(),
       datacontenttype: 'application/json',

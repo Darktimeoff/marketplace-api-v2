@@ -6,7 +6,7 @@ import { IdentitySession } from './entity/identity-session.entity.js';
 import { IdentityOutbox } from './entity/identity-outbox.entity.js';
 import { IdentityExternalAccount } from './entity/identity-external-account.entity.js';
 import { IdentityOutboxRepository } from './repository/identity-outbox.repository.js';
-import { IdentityOutboxRelayService } from './service/identity-outbox-relay.service.js';
+import { IdentityOutboxRelay } from './relay/identity-outbox.relay.js';
 import { IdentityMessage } from './message/identity.message.js';
 import { SecretManagerModule } from '../generic/secret-manager/secret-manager.module.js';
 import { AuthModule } from '../generic/auth/auth.module.js';
@@ -38,7 +38,7 @@ import { IdentityOidcLinkCommandHandler } from './command-handler/identity-oidc-
     IdentityRepository,
     IdentitySessionRepository,
     IdentityOutboxRepository,
-    IdentityOutboxRelayService,
+    IdentityOutboxRelay,
     IdentityMessage,
     PasswordService,
     TokenService,

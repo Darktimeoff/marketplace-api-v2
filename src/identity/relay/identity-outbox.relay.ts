@@ -5,21 +5,21 @@ import { EnvironmentService } from '../../generic/environment/environment.module
 import { subDays } from 'date-fns';
 import { Transactional } from '@nestjs-cls/transactional';
 import { SourceEnum, type CloudEventInterface } from '@marketplace/messaging-contracts';
-import { OrderOutboxRepository } from '../repository/order-outbox.repository.js';
-import { OrderOutbox } from '../entity/order-outbox.entity.js';
 import { KafkaProducerService } from '../../generic/kafka/kafka-producer.service.js';
+import { IdentityOutboxRepository } from '../repository/identity-outbox.repository.js';
+import { IdentityOutbox } from '../entity/identity-outbox.entity.js';
 
 @Injectable()
-export class OrderOutboxRelayService implements OnModuleInit, OnApplicationBootstrap {
-  private readonly logger = new Logger(OrderOutboxRelayService.name);
-  private readonly cleanupJobName = 'order-outbox-cleanup';
+export class IdentityOutboxRelay implements OnModuleInit, OnApplicationBootstrap {
+  private readonly logger = new Logger(IdentityOutboxRelay.name);
+  private readonly cleanupJobName = 'identity-outbox-cleanup';
   private readonly batchSize = 100;
   private readonly publishedRetentionDays = 7;
-  private readonly relayIntervalName = 'order-outbox-relay';
+  private readonly relayIntervalName = 'identity-outbox-relay';
   private relaying = false;
 
   constructor(
-    private readonly outbox: OrderOutboxRepository,
+    private readonly outbox: IdentityOutboxRepository,
     private readonly kafka: KafkaProducerService,
     private readonly maintenance: MaintenanceJobRegistryService,
     private readonly environment: EnvironmentService,
@@ -62,7 +62,7 @@ export class OrderOutboxRelayService implements OnModuleInit, OnApplicationBoots
   @Transactional()
   private async relayBatch(): Promise<void> {
     const rows = await this.outbox.claimUnpublished(this.batchSize);
-    const published: OrderOutbox['id'][] = [];
+    const published: IdentityOutbox['id'][] = [];
 
     for (const row of rows) {
       try {
@@ -81,11 +81,11 @@ export class OrderOutboxRelayService implements OnModuleInit, OnApplicationBoots
     }
   }
 
-  private toCloudEvent(row: OrderOutbox): CloudEventInterface<string, object> {
+  private toCloudEvent(row: IdentityOutbox): CloudEventInterface<string, object> {
     return {
       specversion: '1.0',
       id: row.id,
-      source: SourceEnum.ORDER,
+      source: SourceEnum.IDENTITY,
       type: row.type,
       time: row.createdAt.toISOString(),
       datacontenttype: 'application/json',

@@ -6,20 +6,20 @@ import { subDays } from 'date-fns';
 import { Transactional } from '@nestjs-cls/transactional';
 import { SourceEnum, type CloudEventInterface } from '@marketplace/messaging-contracts';
 import { KafkaProducerService } from '../../generic/kafka/kafka-producer.service.js';
-import { ProductOutboxRepository } from '../repository/product-outbox.repository.js';
-import { ProductOutbox } from '../entity/product-outbox.entity.js';
+import { UserOutboxRepository } from '../repository/user-outbox.repository.js';
+import { UserOutbox } from '../entity/user-outbox.entity.js';
 
 @Injectable()
-export class ProductOutboxRelayService implements OnModuleInit, OnApplicationBootstrap {
-  private readonly logger = new Logger(ProductOutboxRelayService.name);
-  private readonly cleanupJobName = 'product-outbox-cleanup';
+export class UserOutboxRelay implements OnModuleInit, OnApplicationBootstrap {
+  private readonly logger = new Logger(UserOutboxRelay.name);
+  private readonly cleanupJobName = 'user-outbox-cleanup';
   private readonly batchSize = 100;
   private readonly publishedRetentionDays = 7;
-  private readonly relayIntervalName = 'product-outbox-relay';
+  private readonly relayIntervalName = 'user-outbox-relay';
   private relaying = false;
 
   constructor(
-    private readonly outbox: ProductOutboxRepository,
+    private readonly outbox: UserOutboxRepository,
     private readonly kafka: KafkaProducerService,
     private readonly maintenance: MaintenanceJobRegistryService,
     private readonly environment: EnvironmentService,
@@ -62,7 +62,7 @@ export class ProductOutboxRelayService implements OnModuleInit, OnApplicationBoo
   @Transactional()
   private async relayBatch(): Promise<void> {
     const rows = await this.outbox.claimUnpublished(this.batchSize);
-    const published: ProductOutbox['id'][] = [];
+    const published: UserOutbox['id'][] = [];
 
     for (const row of rows) {
       try {
@@ -81,11 +81,11 @@ export class ProductOutboxRelayService implements OnModuleInit, OnApplicationBoo
     }
   }
 
-  private toCloudEvent(row: ProductOutbox): CloudEventInterface<string, object> {
+  private toCloudEvent(row: UserOutbox): CloudEventInterface<string, object> {
     return {
       specversion: '1.0',
       id: row.id,
-      source: SourceEnum.PRODUCT,
+      source: SourceEnum.USER,
       type: row.type,
       time: row.createdAt.toISOString(),
       datacontenttype: 'application/json',

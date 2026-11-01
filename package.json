@@ -32,7 +32,10 @@
     "migrate:generate": "bash scripts/with-secrets.sh dev npx typeorm migration:generate -d dist/data-source.js",
     "seed": "bash scripts/with-secrets.sh dev node dist/seed.js",
     "edge": "bash scripts/with-secrets.sh dev node dist/edge.js",
-    "assets:publish": "bash scripts/with-secrets.sh dev node dist/asset-publish.js"
+    "assets:publish": "bash scripts/with-secrets.sh dev node dist/asset-publish.js",
+    "demo:upload": "bash scripts/with-secrets.sh dev node dist/demo/upload.js",
+    "demo:multipart": "bash scripts/with-secrets.sh dev node dist/demo/multipart.js",
+    "demo:cdn": "bash scripts/with-secrets.sh dev node dist/demo/cdn.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "~3.1152.0",

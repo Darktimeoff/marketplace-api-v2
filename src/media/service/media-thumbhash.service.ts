@@ -6,7 +6,7 @@ import { rgbaToThumbHash } from 'thumbhash';
 export class MediaThumbHashService {
   private readonly maxSide = 100;
 
-  async fromImage(image: Buffer): Promise<string> {
+  async fromImage(image: Buffer | string): Promise<string> {
     const { data, info } = await sharp(image)
       .rotate()
       .resize(this.maxSide, this.maxSide, { fit: 'inside' })

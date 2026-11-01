@@ -2,12 +2,20 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { DataSource } from 'typeorm';
+import { DataSource, IsNull } from 'typeorm';
+import { execFileSync } from 'node:child_process';
+import { HeadObjectCommand } from '@aws-sdk/client-s3';
+import sharp from 'sharp';
+import { thumbHashToApproximateAspectRatio } from 'thumbhash';
+import { MediaVariantNameEnum } from '@marketplace/contracts-core';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { LanguageEnum, MediaAttachmentTypeEnum } from '@marketplace/contracts-core';
 import { ProductCreatedEvent } from '@marketplace/messaging-contracts';
 import { Media } from '../../src/media/entity/media.entity.js';
 import { MediaOutbox } from '../../src/media/entity/media-outbox.entity.js';
+import { MediaVariant } from '../../src/media/entity/media-variant.entity.js';
+import type { MediaVariantsGenerateCommandHandler } from '../../src/media/command-handler/media-variants-generate.command-handler.js';
+import type { StorageClientService } from '../../src/generic/storage/storage-client.service.js';
 import { ProductMedia } from '../../src/product/entity/product-media.entity.js';
 import { ProductOutbox } from '../../src/product/entity/product-outbox.entity.js';
 import { MediaClaimReleaseCron } from '../../src/media/cron/media-claim-release.cron.js';
@@ -21,6 +29,8 @@ process.env.KAFKA_CONSUMERS_ENABLED = 'true';
 describe('Product media (e2e)', () => {
   let app: INestApplication;
   let dataSource: DataSource;
+  let storage: StorageClientService;
+  let generate: MediaVariantsGenerateCommandHandler;
 
   beforeAll(async () => {
     const { Test } = await import('@nestjs/testing');
@@ -29,6 +39,8 @@ describe('Product media (e2e)', () => {
     app = moduleRef.createNestApplication();
     await app.init();
     dataSource = app.get(DataSource);
+    storage = app.get((await import('../../src/generic/storage/storage-client.service.js')).StorageClientService);
+    generate = app.get((await import('../../src/media/command-handler/media-variants-generate.command-handler.js')).MediaVariantsGenerateCommandHandler);
   });
 
   afterEach(async () => {
@@ -47,8 +59,11 @@ describe('Product media (e2e)', () => {
   }
 
   async function anImage(token: string, ready = true): Promise<string> {
-    const bytes = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), randomBytes(1000)]);
-    const upload = (await request(app.getHttpServer()).post('/media/upload').set('Authorization', `Bearer ${token}`).send({ mimeType: 'image/png', sizeBytes: bytes.length }).expect(200)).body;
+    return anUpload(token, await sharp({ create: { width: 1000, height: 600, channels: 3, background: { r: 200, g: 60, b: 40 } } }).png().toBuffer(), 'image/png', ready);
+  }
+
+  async function anUpload(token: string, bytes: Buffer, mimeType: string, ready = true): Promise<string> {
+    const upload = (await request(app.getHttpServer()).post('/media/upload').set('Authorization', `Bearer ${token}`).send({ mimeType, sizeBytes: bytes.length }).expect(200)).body;
 
     if (ready) {
       await fetch(upload.url, { method: 'PUT', body: new Uint8Array(bytes), headers: upload.headers });
@@ -73,15 +88,24 @@ describe('Product media (e2e)', () => {
     return dataSource.getRepository(Media).findOneByOrFail({ publicId });
   }
 
-  async function drainVariantsQueue(): Promise<{ specversion: string; source: string; type: string; subject: string; data: { mediaPublicId: string } }[]> {
+  async function deadLettered(mediaPublicId: string): Promise<boolean> {
     const channel = app.get(AmqpConnection).channel;
-    const messages = [];
 
-    for (let message = await channel.get('media.variants', { noAck: true }); message; message = await channel.get('media.variants', { noAck: true })) {
-      messages.push(JSON.parse(message.content.toString()));
+    for (let message = await channel.get('media.variants.dlq', { noAck: true }); message; message = await channel.get('media.variants.dlq', { noAck: true })) {
+      if (JSON.parse(message.content.toString())?.data?.mediaPublicId === mediaPublicId) {
+        return true;
+      }
     }
 
-    return messages;
+    return false;
+  }
+
+  function variantsOf(mediaPublicId: string): Promise<MediaVariant[]> {
+    return dataSource.getRepository(MediaVariant).find({ where: { media: { publicId: mediaPublicId } }, order: { name: 'ASC' } });
+  }
+
+  async function contentTypeOf(storageKey: string): Promise<string | undefined> {
+    return (await storage.client.send(new HeadObjectCommand({ Bucket: storage.bucket, Key: storageKey }))).ContentType;
   }
 
   it('attaches the media in order, answers CDN URLs and confirms the claim through product.created', async () => {
@@ -112,21 +136,21 @@ describe('Product media (e2e)', () => {
       },
       { timeout: 20000, interval: 100 },
     );
-    const variantRequests = await dataSource.getRepository(MediaOutbox).find({ order: { createdAt: 'ASC' } });
-    expect(variantRequests.map(({ id, type, payload }) => ({ id, type, payload })).sort((a, b) => a.id.localeCompare(b.id))).toEqual(
-      [...ids].sort().map((id) => ({ id, type: 'media.variants.generate', payload: { mediaPublicId: id } })),
-    );
-
     await vi.waitFor(
       async () => {
-        const rows = await dataSource.getRepository(MediaOutbox).find();
-        if (rows.some((row) => row.publishedAt === null)) throw new Error('media outbox not published yet');
+        for (const id of ids) {
+          expect((await variantsOf(id)).map(({ name }) => name)).toEqual([MediaVariantNameEnum.W320, MediaVariantNameEnum.W800]);
+        }
       },
-      { timeout: 20000, interval: 100 },
+      { timeout: 30000, interval: 200 },
     );
-    const queued = (await drainVariantsQueue()).filter((message) => ids.includes(message.data.mediaPublicId));
-    expect(queued.map((message) => message.data.mediaPublicId).sort()).toEqual([...ids].sort());
-    expect(queued[0]).toMatchObject({ specversion: '1.0', source: '/media-service', type: 'media.variants.generate', subject: queued[0].data.mediaPublicId });
+    expect(await dataSource.getRepository(MediaOutbox).findBy({ publishedAt: IsNull() })).toEqual([]);
+    const [small, medium] = await variantsOf(ids[0]);
+    const original = await mediaRow(ids[0]);
+    expect(small).toMatchObject({ mimeType: 'image/webp', width: 320, height: 192, storageKey: original.storageKey.replace(/\.png$/, '/w320.webp') });
+    expect(medium).toMatchObject({ width: 800, height: 480 });
+    expect(await contentTypeOf(small.storageKey)).toBe('image/webp');
+    expect(thumbHashToApproximateAspectRatio(Buffer.from(original.thumbHash!, 'base64'))).toBeCloseTo(1000 / 600, 0);
   });
 
   it('refuses media of another seller, media attached elsewhere and media without bytes', async () => {
@@ -174,4 +198,53 @@ describe('Product media (e2e)', () => {
     expect(await mediaRow(photo)).toMatchObject({ attachedToId: null, claimExpiresAt: null });
     await create(token, await aBody([photo])).expect(201);
   });
+
+  it('dead-letters a file that is not an image at once, without variants', async () => {
+    const token = await aSeller();
+    const junk = await anUpload(token, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), randomBytes(1000)]), 'image/png');
+
+    await create(token, await aBody([junk])).expect(201);
+
+    await vi.waitFor(
+      async () => {
+        expect(await deadLettered(junk)).toBe(true);
+      },
+      { timeout: 30000, interval: 200 },
+    );
+    expect(await variantsOf(junk)).toEqual([]);
+    expect((await mediaRow(junk)).thumbHash).toBeNull();
+  });
+
+  it('dead-letters a message that is not a variants job', async () => {
+    const mediaPublicId = randomUUID();
+    await app.get(AmqpConnection).publish('', 'media.variants', { specversion: '1.0', id: 'not-a-uuid', type: 'media.variants.generate', data: { mediaPublicId } });
+
+    await vi.waitFor(
+      async () => {
+        expect(await deadLettered(mediaPublicId)).toBe(true);
+      },
+      { timeout: 10000, interval: 100 },
+    );
+  });
+
+  it('turns a video into a webm and a poster, and does the work once when the job is delivered again', async () => {
+    const token = await aSeller();
+    const video = execFileSync('ffmpeg', [
+      '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=duration=2:size=640x360:rate=24',
+      '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1',
+    ]);
+    const id = await anUpload(token, video, 'video/mp4');
+
+    await generate.execute(id);
+    const first = await variantsOf(id);
+    await generate.execute(id);
+
+    expect(first.map(({ name, mimeType, width, height }) => ({ name, mimeType, width, height }))).toEqual([
+      { name: MediaVariantNameEnum.VIDEO_720, mimeType: 'video/webm', width: 640, height: 360 },
+      { name: MediaVariantNameEnum.POSTER, mimeType: 'image/webp', width: 640, height: 360 },
+    ]);
+    expect((await variantsOf(id)).map(({ id: variantId }) => variantId)).toEqual(first.map(({ id: variantId }) => variantId));
+    expect(await contentTypeOf(first[0].storageKey)).toBe('video/webm');
+    expect((await mediaRow(id)).thumbHash).not.toBeNull();
+  }, 60_000);
 });

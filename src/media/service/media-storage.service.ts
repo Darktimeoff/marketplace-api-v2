@@ -1,4 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
+import type { Readable } from 'node:stream';
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
@@ -130,6 +134,24 @@ export class MediaStorageService {
         throw error;
       }
     }
+  }
+
+  async downloadToFile(storageKey: string, path: string): Promise<void> {
+    const object = await this.storage.client.send(new GetObjectCommand({ Bucket: this.storage.bucket, Key: storageKey }));
+    await pipeline(object.Body as Readable, createWriteStream(path));
+  }
+
+  async uploadFile(storageKey: string, path: string, contentType: string): Promise<void> {
+    await this.storage.client.send(
+      new PutObjectCommand({
+        Bucket: this.storage.bucket,
+        Key: storageKey,
+        Body: createReadStream(path),
+        ContentLength: (await stat(path)).size,
+        ContentType: contentType,
+        CacheControl: MEDIA_CACHE_CONTROL,
+      }),
+    );
   }
 
   async deleteObject(storageKey: Media['storageKey']): Promise<void> {

@@ -1,11 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { MediaClaimStatusEnum } from '@marketplace/contracts-core';
-import type { MediaClaimRpc } from '@marketplace/messaging-contracts';
+import { MediaVariantsGenerateJob, type MediaClaimRpc } from '@marketplace/messaging-contracts';
 import type { Media } from '../entity/media.entity.js';
 import type { MediaOutboxCreateEntityInterface } from '../entity/media-outbox.entity.js';
-import type { MediaVariantsGenerateInterface } from '../interface/media-variants-generate.interface.js';
 import { MediaQueueEnum } from '../enum/media-queue.enum.js';
-import { MediaOutboxTypeEnum } from '../enum/media-outbox-type.enum.js';
 import { MediaOutboxAggregateTypeEnum } from '../enum/media-outbox-aggregate-type.enum.js';
 
 @Injectable()
@@ -31,10 +29,10 @@ export class MediaMessage {
       topic: MediaQueueEnum.VARIANTS,
       aggregateType: MediaOutboxAggregateTypeEnum.MEDIA,
       aggregateId: mediaPublicId,
-      type: MediaOutboxTypeEnum.VARIANTS_GENERATE,
+      type: MediaVariantsGenerateJob.TYPE,
       payload: {
         mediaPublicId,
-      } satisfies MediaVariantsGenerateInterface,
+      } satisfies MediaVariantsGenerateJob.DataInterface,
     };
   }
 

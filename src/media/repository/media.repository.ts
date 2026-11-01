@@ -60,6 +60,10 @@ export class MediaRepository {
     return (affected as number) > 0;
   }
 
+  async setThumbHash(id: Media['id'], thumbHash: string): Promise<void> {
+    await this.txHost.tx.getRepository(Media).update({ id }, { thumbHash });
+  }
+
   async deleteById(id: Media['id']): Promise<void> {
     await this.txHost.tx.getRepository(Media).delete({ id });
   }

@@ -12,6 +12,12 @@ import { MediaOutboxRelay } from './relay/media-outbox.relay.js';
 import { MediaOutboxCleanupCron } from './cron/media-outbox-cleanup.cron.js';
 import { MediaTopologyService } from './service/media-topology.service.js';
 import { MediaThumbHashService } from './service/media-thumbhash.service.js';
+import { MediaVariantRepository } from './repository/media-variant.repository.js';
+import { MediaImageVariantService } from './service/media-image-variant.service.js';
+import { MediaVideoVariantService } from './service/media-video-variant.service.js';
+import { MediaVariantEncoderResolverService } from './service/media-variant-encoder-resolver.service.js';
+import { MediaVariantsGenerateCommandHandler } from './command-handler/media-variants-generate.command-handler.js';
+import { MediaVariantsJob } from './job/media-variants.job.js';
 import { MediaRepository } from './repository/media.repository.js';
 import { MediaStorageService } from './service/media-storage.service.js';
 import { MediaResponse } from './response/media.response.js';
@@ -39,6 +45,12 @@ import { MediaProductEventsConsumer } from './consumer/media-product-events.cons
     MediaOutboxCleanupCron,
     MediaTopologyService,
     MediaThumbHashService,
+    MediaVariantRepository,
+    MediaImageVariantService,
+    MediaVideoVariantService,
+    MediaVariantEncoderResolverService,
+    MediaVariantsGenerateCommandHandler,
+    MediaVariantsJob,
     MediaStorageService,
     MediaResponse,
     MediaPartPlanService,

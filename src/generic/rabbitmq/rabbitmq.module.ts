@@ -6,6 +6,7 @@ import { SecretManagerService } from "../secret-manager/secret-manager.service.j
 import { getRabbitMqConnectionUri } from "./util/get-rabbitmq-connection-uri.util.js";
 import { RabbitMqReturnListenerService } from "./rabbitmq-return-listener.service.js";
 import { RabbitMqRpcService } from "./rabbitmq-rpc.service.js";
+import { RabbitMqChannelEnum } from "./enum/rabbitmq-channel.enum.js";
 
 @Module({
   imports: [
@@ -16,6 +17,9 @@ import { RabbitMqRpcService } from "./rabbitmq-rpc.service.js";
         uri: await getRabbitMqConnectionUri(environment, secrets),
         connectionInitOptions: { wait: true, timeout: 5000 },
         enableControllerDiscovery: true,
+        channels: {
+          [RabbitMqChannelEnum.WORK]: { prefetchCount: 1 },
+        },
         defaultPublishOptions: {
           persistent: true,
           mandatory: true

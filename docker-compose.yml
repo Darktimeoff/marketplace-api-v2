@@ -182,6 +182,49 @@ services:
       timeout: 3s
       retries: 10
 
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    container_name: minio
+    command: server /data --console-address :9001
+    ports:
+      - "${MINIO_PORT:-9010}:9000"
+      - "${MINIO_CONSOLE_PORT:-9011}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-root}
+      MINIO_ROOT_PASSWORD_FILE: minio_root_password
+    secrets:
+      - minio_root_password
+    volumes:
+      - minio_data:/data
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:9000/minio/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio-init:
+    image: pgsty/mc:RELEASE.2026-08-04T00-00-00Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["sh", "/init.sh"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-root}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-marketplace-media}
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-media-app}
+    volumes:
+      - ./minio/init.sh:/init.sh:ro
+    secrets:
+      - minio_root_password
+      - storage_secret_key
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
   infisical-backend:
     container_name: infisical-backend
     restart: unless-stopped
@@ -243,6 +286,7 @@ volumes:
   redis_data:
     driver: local
   redis_queue_data:
+  minio_data:
 
 networks:
   infisical:
@@ -254,3 +298,7 @@ secrets:
     file: ./secrets/db_password.txt
   redis_password:
     file: ./secrets/redis_password.txt
+  minio_root_password:
+    file: ./secrets/minio_root_password.txt
+  storage_secret_key:
+    file: ./secrets/storage_secret_key.txt

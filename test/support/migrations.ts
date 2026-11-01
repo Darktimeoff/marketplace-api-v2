@@ -40,6 +40,7 @@ import { UnifyUserIdentity1793000000000 } from '../../src/migrations/17930000000
 import { AccountIdentifiers1793000000100 } from '../../src/migrations/1793000000100-AccountIdentifiers.js';
 import { OrderBuyerIdentifiers1793000000200 } from '../../src/migrations/1793000000200-OrderBuyerIdentifiers.js';
 import { PersonOwners1793000000300 } from '../../src/migrations/1793000000300-PersonOwners.js';
+import { OfferVariantPublicId1793000000400 } from '../../src/migrations/1793000000400-OfferVariantPublicId.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
@@ -111,6 +112,7 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   AccountIdentifiers1793000000100,
   OrderBuyerIdentifiers1793000000200,
   PersonOwners1793000000300,
+  OfferVariantPublicId1793000000400,
 ];
 
 export const testEntities = [

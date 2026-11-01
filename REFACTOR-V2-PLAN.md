@@ -75,8 +75,8 @@ The integer `id` never leaves its context: not in HTTP, not in events, not in Ra
 
 ### 2.1 offer → variant
 
-- [ ] **Migration:** `SellerOffer.variantId` → `variantPublicId uuid` (backfill from `ProductVariant.publicId`).
-- [ ] **Code:** `seller-offer.entity`, `seed.ts`, `test/support/builders.ts`.
+- [x] **Migration:** `SellerOffer.variantId` → `variantPublicId uuid` (backfill from `ProductVariant.publicId`).
+- [x] **Code:** `seller-offer.entity`, `seed.ts`, `test/support/builders.ts`.
 
 ### 2.2 order line → offer, stock
 

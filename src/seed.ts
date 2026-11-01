@@ -259,7 +259,7 @@ async function seed(): Promise<void> {
       {
         sellerId: seller.id,
         sellerSku,
-        variantId: variant.id,
+        variantPublicId: variant.publicId,
         price: (100 + i * 25).toFixed(2),
         currency: CurrencyEnum.UAH,
         discountPrice: i % 3 === 0 ? (90 + i * 25).toFixed(2) : null,

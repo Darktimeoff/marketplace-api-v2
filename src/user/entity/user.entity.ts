@@ -1,4 +1,4 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
+import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { Address } from './address.entity.js';
 import { LanguageEnum } from '@marketplace/contracts-core';
 import { GenderEnum } from '../enum/gender.enum.js';

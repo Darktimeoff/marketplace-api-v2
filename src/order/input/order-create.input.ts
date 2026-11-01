@@ -4,7 +4,6 @@ import {
   IsDefined,
   IsEnum,
   IsInt,
-  IsPositive,
   IsUUID,
   IsOptional,
   IsString,

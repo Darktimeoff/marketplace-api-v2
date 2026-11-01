@@ -148,7 +148,12 @@ describe('Product media (e2e)', () => {
       },
       { timeout: 30000, interval: 200 },
     );
-    expect(await dataSource.getRepository(MediaOutbox).findBy({ publishedAt: IsNull() })).toEqual([]);
+    await vi.waitFor(
+      async () => {
+        expect(await dataSource.getRepository(MediaOutbox).findBy({ publishedAt: IsNull() })).toEqual([]);
+      },
+      { timeout: 10000, interval: 100 },
+    );
     const [small, medium] = await variantsOf(ids[0]);
     const original = await mediaRow(ids[0]);
     expect(small).toMatchObject({ mimeType: 'image/webp', width: 320, height: 192, storageKey: original.storageKey.replace(/\.png$/, '/w320.webp') });
@@ -273,4 +278,65 @@ describe('Product media (e2e)', () => {
     expect(await contentTypeOf(first[0].storageKey)).toBe('video/webm');
     expect((await mediaRow(id)).thumbHash).not.toBeNull();
   }, 60_000);
+
+  it('runs a rotated phone photo and a video through the whole pipeline to GET /product', async () => {
+    const token = await aSeller();
+    const photo = await anUpload(
+      token,
+      await sharp({ create: { width: 2400, height: 1800, channels: 3, background: { r: 90, g: 140, b: 60 } } }).jpeg().withMetadata({ orientation: 6 }).toBuffer(),
+      'image/jpeg',
+    );
+    const video = await anUpload(
+      token,
+      execFileSync('ffmpeg', [
+        '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=duration=2:size=1280x720:rate=24', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2',
+        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1',
+      ]),
+      'video/mp4',
+    );
+    expect(await dataSource.getRepository(MediaOutbox).count()).toBe(0);
+
+    const product = (await create(token, await aBody([photo, video])).expect(201)).body;
+
+    const read = await vi.waitFor(
+      async () => {
+        const body = (await request(app.getHttpServer()).get(`/product/${product.publicId}`).expect(200)).body;
+        expect(body.media.every((item: { variants: unknown[] }) => item.variants.length > 0)).toBe(true);
+        return body;
+      },
+      { timeout: 60000, interval: 250 },
+    );
+    const [readPhoto, readVideo] = read.media;
+    expect(readPhoto.variants.map(({ name, mimeType, width, height }: Record<string, unknown>) => ({ name, mimeType, width, height }))).toEqual([
+      { name: MediaVariantNameEnum.W320, mimeType: 'image/webp', width: 320, height: 427 },
+      { name: MediaVariantNameEnum.W800, mimeType: 'image/webp', width: 800, height: 1067 },
+      { name: MediaVariantNameEnum.W1600, mimeType: 'image/webp', width: 1600, height: 2133 },
+    ]);
+    expect(readVideo.variants.map(({ name, mimeType, width, height }: Record<string, unknown>) => ({ name, mimeType, width, height }))).toEqual([
+      { name: MediaVariantNameEnum.VIDEO_720, mimeType: 'video/webm', width: 1280, height: 720 },
+      { name: MediaVariantNameEnum.POSTER, mimeType: 'image/webp', width: 1280, height: 720 },
+    ]);
+    expect(thumbHashToApproximateAspectRatio(Buffer.from(readPhoto.thumbHash, 'base64'))).toBeLessThan(1);
+    expect(thumbHashToApproximateAspectRatio(Buffer.from(readVideo.thumbHash, 'base64'))).toBeGreaterThan(1);
+
+    for (const item of read.media) {
+      for (const variant of item.variants) {
+        expect(await contentTypeOf(variant.url.replace('http://localhost:8088/', ''))).toBe(variant.mimeType);
+      }
+    }
+    await vi.waitFor(
+      async () => {
+        const rows = await dataSource.getRepository(MediaOutbox).find();
+        expect(rows.map(({ broker, topic, type, aggregateId, publishedAt }) => ({ broker, topic, type, aggregateId, published: publishedAt !== null })).sort((a, b) => `${a.type}${a.aggregateId}`.localeCompare(`${b.type}${b.aggregateId}`))).toEqual(
+          [
+            { broker: 'rabbitmq', topic: 'media.variants', type: 'media.variants.generate', aggregateId: photo, published: true },
+            { broker: 'rabbitmq', topic: 'media.variants', type: 'media.variants.generate', aggregateId: video, published: true },
+            { broker: 'kafka', topic: 'media.events', type: 'media.variants.generated', aggregateId: photo, published: true },
+            { broker: 'kafka', topic: 'media.events', type: 'media.variants.generated', aggregateId: video, published: true },
+          ].sort((a, b) => `${a.type}${a.aggregateId}`.localeCompare(`${b.type}${b.aggregateId}`)),
+        );
+      },
+      { timeout: 10000, interval: 100 },
+    );
+  }, 90_000);
 });

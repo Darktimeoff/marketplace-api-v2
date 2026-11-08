@@ -512,6 +512,17 @@ No single channel sees both leaks: `ARG` lives only in the history, `rm` leaves 
 - The drain runs on every close, `SIGINT` and `app.close()` in tests included; set `DRAIN_MS=0` locally to skip it.
 - There is no artificial warm-up before `listen()`: connecting TypeORM, the Kafka producer, RabbitMQ, Temporal and both Redis instances takes about 2.65 s from process start to the first answer (three runs: 2.65, 2.66, 2.65 s), so a pod without a readiness probe gets traffic it cannot answer yet.
 
+## Kubernetes
+
+### Cluster
+
+kind `v0.33.0`, one node `kindest/node:v1.36.4` (pinned by digest in `k8s/kind-config.yaml`; v1.36 because the local `kubectl` is v1.35 and a client supports one minor version of skew), on Docker with 31 GiB of memory. Measured on this machine: `kind create … --wait 120s` until the node is `Ready` 27.7 / 29.2 / 30.6 s, joining the compose network and `kind load docker-image` 12.9–15.6 s, the idle node 640 MiB.
+
+- `npm run cluster:up` (`scripts/cluster-up.sh`) creates the cluster unless it exists, connects the node to the compose network `marketplace-api-v2_default` and loads `marketplace-api:hw28` into it. Run it again after every `image:build`: an image built on the host does not exist in the cluster, and the pod would hang in `ErrImagePull` whatever its `imagePullPolicy`. kind reloads the image every time (about 8 s) because Docker's containerd image store reports the manifest-list digest as the image id and the node the config digest, so they never match.
+- `npm run cluster:down` deletes it.
+- Only the API runs in the cluster. Postgres (through pgbouncer), Kafka, RabbitMQ, Temporal, both Redis instances and MinIO stay in compose, as managed services would stay outside a production cluster. With the node on the compose network, pods resolve the compose service names through CoreDNS and Docker's DNS (checked from a pod: `db-bouncer:5432`, `kafka:29092`, `rabbitmq:5672`, `temporal:7233`, `redis-cache:6379`, `redis-queue:6379`, `minio:9000` all open), so Kafka's internal listener, which already advertises `kafka:29092`, works without another listener.
+- The scripts use `$KUBECONFIG` when it is set; locally the cluster lives in `~/.kube/kind-marketplace`, so creating it doesn't switch the default context of another kubeconfig.
+
 ## Secrets
 
 Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` (see `SecretsInterface`). The Redis URLs carry the password (`redis://default:<password>@host:port`), so they are secrets rather than settings; `npm run bootstrap:secrets` writes that password to `secrets/redis_password.txt` for compose, taking it from the URLs so it lives in one place. Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.

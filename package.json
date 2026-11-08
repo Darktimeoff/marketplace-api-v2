@@ -34,6 +34,8 @@
     "edge": "bash scripts/with-secrets.sh dev node dist/edge.js",
     "image:build": "DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile --secret id=npm_token,src=.npm_token -t marketplace-api:hw28 .",
     "scan": "SCAN_MAX=${SCAN_MAX:-2} bash scripts/scan.sh",
+    "cluster:up": "bash scripts/cluster-up.sh",
+    "cluster:down": "kind delete cluster --name ${KIND_CLUSTER:-marketplace}",
     "demo:image": "bash demo/image.sh",
     "demo:image:leaky": "bash demo/leaky/run.sh"
   },

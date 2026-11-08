@@ -555,6 +555,24 @@ Measured: `up` from nothing 11.6 s (8 resources; the first pod ready after 4 s),
 
 In `broken` an old pod is killed before its replacement exists and closes its sockets at once, and the new pod is in the Service from the moment its container starts, about 2.65 s before it listens; the failures are almost all closed or reset sockets (`UND_ERR_SOCKET` 9 072 and 16 391, `ECONNRESET` 155 and 130, a few 2 s timeouts). The safe rollout is slower because each pod waits for a ready replacement and drains for 5 s.
 
+### Demo: PodDisruptionBudget
+
+<!-- TODO(hw-28): remove after homework -->
+
+`npm run demo:pdb` (`demo/pdb.sh`) waits until every pod is ready and the budget allows a disruption, then sends two evictions in a row through the Eviction API (`POST /api/v1/namespaces/marketplace/pods/<pod>/eviction` over `kubectl proxy`, so the HTTP status is the API server's own), the call `kubectl drain` and the cluster autoscaler make. `healthy` is the PDB's `status.currentHealthy`; `minAvailable` is `status.desiredHealthy`: the budget is written as `maxUnavailable: 1`, and Kubernetes derives the minimum from the current number of pods (2 − 1 = 1). Exit `1` unless the codes are `201` and `429`. Three runs, identical:
+
+| Key | Value |
+|---|---|
+| `healthy` | 2 |
+| `minAvailable` | 1 |
+| `evict-1` | 201 |
+| `evict-2` | 429 `Cannot evict pod as it would violate the pod's disruption budget.` |
+
+The first eviction takes `disruptionsAllowed` from 1 to 0 at once, so the second, sent right after, is refused until the Deployment's replacement is ready and the evicted pod has finished its drain (6.0 / 7.0 / 6.0 s). Under the load generator the same run lost nothing: 21 636 requests, `failed=0`, because an evicted pod stops through the same `SIGTERM` drain.
+
+- **`maxUnavailable` rather than `minAvailable`.** With the HPA the pod count moves between 2 and 4. `maxUnavailable: 1` always means one pod at a time; a fixed `minAvailable: 1` would let a node drain take three of four pods at once.
+- **What the budget does not cover.** It guards voluntary evictions only. A rollout is limited by the Deployment's own `maxUnavailable`/`maxSurge`, not by the PDB; `kubectl delete pod`, a crashed node or an OOM kill ignore it.
+
 ## Secrets
 
 Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` (see `SecretsInterface`). The Redis URLs carry the password (`redis://default:<password>@host:port`), so they are secrets rather than settings; `npm run bootstrap:secrets` writes that password to `secrets/redis_password.txt` for compose, taking it from the URLs so it lives in one place. Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.

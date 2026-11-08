@@ -1,12 +1,20 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-trixie-slim AS deps
+FROM node:24-trixie-slim AS manifests
 
 WORKDIR /app
 
 COPY package*.json .npmrc ./
 COPY packages/contracts-core/package.json packages/contracts-core/
 COPY packages/messaging-contracts/package.json packages/messaging-contracts/
+
+RUN npm pkg delete scripts --workspaces --include-workspace-root
+
+FROM node:24-trixie-slim AS deps
+
+WORKDIR /app
+
+COPY --from=manifests /app ./
 
 RUN --mount=type=secret,id=npm_token,env=NPM_TOKEN,required=true \
     --mount=type=cache,target=/root/.npm \
@@ -22,9 +30,7 @@ FROM node:24-trixie-slim AS prod-deps
 
 WORKDIR /app
 
-COPY package*.json .npmrc ./
-COPY packages/contracts-core/package.json packages/contracts-core/
-COPY packages/messaging-contracts/package.json packages/messaging-contracts/
+COPY --from=manifests /app ./
 
 RUN --mount=type=secret,id=npm_token,env=NPM_TOKEN,required=true \
     --mount=type=cache,target=/root/.npm \

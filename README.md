@@ -468,7 +468,8 @@ The stream is fed from Kafka, not from the code that changes the status. Order w
 
 `npm run image:build` builds `docker/Dockerfile` with BuildKit into `marketplace-api:hw28`:
 
-- `deps` and `prod-deps` run `npm ci` on `node:24-trixie-slim` (Debian 13, glibc 2.41 and Node 24.22.2, the same as the runtime, so the prebuilt native modules of `sharp`, `argon2`, `@confluentinc/kafka-javascript` and `@temporalio/core-bridge` load as they are); `build` compiles; `ffmpeg` provides the static `ffmpeg`/`ffprobe` that media variants call; `runtime` is `gcr.io/distroless/nodejs24-debian13:nonroot`: no shell, no package manager, uid `65532`.
+- `manifests` copies `package.json`, the lock file, `.npmrc` and the workspace manifests and drops their `scripts` (`npm pkg delete scripts`); `deps` and `prod-deps` copy that result and run `npm ci` on `node:24-trixie-slim` (Debian 13, glibc 2.41 and Node 24.22.2, the same as the runtime, so the prebuilt native modules of `sharp`, `argon2`, `@confluentinc/kafka-javascript` and `@temporalio/core-bridge` load as they are); `build` compiles; `ffmpeg` provides the static `ffmpeg`/`ffprobe` that media variants call; `runtime` is `gcr.io/distroless/nodejs24-debian13:nonroot`: no shell, no package manager, uid `65532`.
+- Layer reuse, measured: a change in `src/` rebuilds only `build` and the `dist` layer (3.9 s); a change of `scripts` alone rebuilds only `manifests` and `build` and reuses both `npm ci` and the 619 MB `node_modules` layer (5.0 s, it was 32.3 s before `manifests`: the cache key of `COPY package*.json` is the whole file, so any new npm script reinstalled everything twice). BuildKit compares the output of `COPY --from=manifests` by content, so stripped manifests that didn't change keep the cache. `npm ci` doesn't read `scripts`, `build` still gets the real `package.json` through `COPY . .`, and the runtime gets the stripped one (`type`, `exports` and `workspaces` are all Node needs). `/root/.npm` is a cache mount, so even a real reinstall takes tarballs from the cache, not the network.
 - The registry token reaches `npm ci` only as a BuildKit secret (`--secret id=npm_token,src=.npm_token`, mounted as `NPM_TOKEN` for that one `RUN`); `.npmrc` holds `${NPM_TOKEN}`, not the value. `ARG` would keep the value in the image history and `COPY` + `rm` in the bytes of an earlier layer. There is no private registry yet, so `.npm_token` is a decoy for the scope `@marketplace-private` on `npm.invalid`, which no dependency uses.
 - `.dockerignore` is an allowlist: only the manifests, the compiler configs, `src` and the workspace packages reach the build context, so a new file in the repository (state, keys, env files) never does by accident.
 - `packages/*/src` stays in the image next to `dist`: the Temporal worker bundles the workflows with webpack at startup in `development` mode, which picks the `development` export condition (`./src/index.ts`) of `@marketplace/contracts-core`. Without it the worker fails with `no valid target file was found`.
@@ -491,7 +492,7 @@ The stream is fed from Kafka, not from the code that changes the status. Order w
 
 | Key | `demo:image` | `ARG` in the final stage | `COPY` + `rm` in the next layer |
 |---|---|---|---|
-| `stages` | 5 | 2 | 2 |
+| `stages` | 6 | 2 | 2 |
 | `shell-inside` | 0 | 1 | 1 |
 | `runtime-uid` | 65532 | 0 | 0 |
 | `token-in-history` | 0 | 2 (`ARG NPM_TOKEN=…`, `RUN \|1 NPM_TOKEN=…`) | 0 |

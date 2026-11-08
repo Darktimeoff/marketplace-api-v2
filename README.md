@@ -484,24 +484,6 @@ The stream is fed from Kafka, not from the code that changes the status. Order w
 - trivy `0.76.1` is a binary on `PATH` when there is one, otherwise `docker run aquasec/trivy:0.76.1` with the Docker socket and a `trivy-cache` volume; both gave the same `found`.
 - CI (`.github/workflows/scan.yml`, on pull requests and pushes to `main`) builds the image with a random decoy token, downloads trivy by version and checks its sha256 before running it, then calls `npm run scan`. Actions are pinned by commit (`actions/checkout` `3d3c42e5…` = v7.0.1, `actions/cache` `55cc8345…` = v6.1.0), not by tag: a scanner runs with the job's credentials, and trivy's own release and action tags were replaced with credential-stealing builds in 2026, so a moved tag must not change what runs.
 
-### Demo: image
-
-<!-- TODO(hw-28): remove after homework -->
-
-`npm run demo:image` reads the built image, not the Dockerfile text, except for `stages` (the `FROM` lines of `docker/Dockerfile`): `shell-inside` tries `sh`, `/bin/sh`, `/bin/bash` and `/busybox/sh` as the entrypoint; `runtime-uid` is `Config.User`, resolved through the image's own `/etc/passwd` when it is a name and `0` when it is empty; the token from `.npm_token` is searched in `docker history --no-trunc`, in `docker image inspect` and in every layer listed by the `manifest.json` of `docker save` (decompressed, the config blob left out). It exits `1` when an invariant breaks. `npm run demo:image:leaky` builds two broken variants from `demo/leaky/` in a throwaway context and runs the same script on them. Three runs each, identical:
-
-| Key | `demo:image` | `ARG` in the final stage | `COPY` + `rm` in the next layer |
-|---|---|---|---|
-| `stages` | 6 | 2 | 2 |
-| `shell-inside` | 0 | 1 | 1 |
-| `runtime-uid` | 65532 | 0 | 0 |
-| `token-in-history` | 0 | 2 (`ARG NPM_TOKEN=…`, `RUN \|1 NPM_TOKEN=…`) | 0 |
-| `token-in-config` | 0 | 0 | 0 |
-| `token-in-layers` | 0 | 0 | 1 |
-| exit | 0 | 1 | 1 |
-
-No single channel sees both leaks: `ARG` lives only in the history, `rm` leaves only a whiteout on top of the layer that still holds the bytes. An `ARG` used only in a builder stage does not show in the final image's history at all (measured: all three counters `0`), so the leaky variant uses it in the stage that becomes the image.
-
 ## Health and graceful shutdown
 
 - `GET /healthz` (liveness) checks nothing but the process: it answers while the event loop runs. A dependency that is down must not get a pod restarted.
@@ -565,9 +547,9 @@ The non-secret settings of the pod (`db-bouncer:5432`, `kafka:29092`, `DRAIN_MS`
 - **Service.** `NodePort` `30080`, published by kind on `127.0.0.1:30080`; PDB `maxUnavailable: 1`.
 - **Image.** Pulumi knows the image only as the string in the pod spec, so the program never uses the moving tag `hw28`: with it a rebuilt image changed nothing in the spec, `up` answered `unchanged` and the old pods kept the old code, while any pod the HPA or a restart created took the new image under the same tag, two versions side by side. `scripts/infra.sh` passes `IMAGE_REF` = the immutable tag that `cluster:up` loaded, and stops with `image … is not in the cluster: run npm run cluster:up` when the node lacks it (otherwise the pods would sit in `ErrImagePull` until the progress deadline). The tag is the digest of the platform manifest, not the image id: with the containerd image store the id is the digest of the index, which carries a BuildKit attestation with the build time and changed on every rebuild (`7ec60ae62793`, `88b4dff57f57` for the same code), while the platform manifest stayed `df05608f3ad1`. Measured: a rebuild without changes → `8 unchanged`; a changed log line → `ee274e37ebf3` and a rolling update; the change reverted → back to `df05608f3ad1` from the build cache, and the Deployment reused its old ReplicaSet. Old tags stay on the host and the node until removed (`docker image rm`, `cluster:down`).
 - **`REV`.** The `rev` config value (`npm run up -- -c rev=2`) goes into the pod env, so changing it rolls the same image again; a code change doesn't need it.
-- **Rollout settings.** `drainMs`, `readiness` (`false` drops the startup and readiness probes), `maxUnavailable` and `maxSurge` are config values with the safe defaults above, so the demo can switch them off; the program refuses `maxUnavailable` and `maxSurge` both `0`, a rollout that could never replace a pod.
+- **Rollout settings.** `drainMs`, `readiness` (`false` drops the startup and readiness probes), `maxUnavailable` and `maxSurge` are config values with the safe defaults above; the program refuses `maxUnavailable` and `maxSurge` both `0`, a rollout that could never replace a pod.
 
-Measured: `up` from nothing 11.6 s (8 resources; the first pod ready after 4 s), `destroy` 11.6 s, `up` with nothing changed 2 s. A quick check before the load demo: `rev=1 → 2` took 10.4 s while a sequential `curl` loop sent 12 062 requests to `/healthz`, all `200`.
+Measured: `up` from nothing 11.6 s (8 resources; the first pod ready after 4 s), `destroy` 11.6 s, `up` with nothing changed 2 s. A first check: `rev=1 → 2` took 10.4 s while a sequential `curl` loop sent 12 062 requests to `/healthz`, all `200`.
 
 ### Replicas and the HPA
 
@@ -577,38 +559,7 @@ Measured: `up` from nothing 11.6 s (8 resources; the first pod ready after 4 s),
 
 The runtime secrets travel vault → `scripts/with-secrets.sh` → Pulumi program → K8s Secret → `secretKeyRef` in the pod, and no value is in the Deployment manifest (`kubectl get deploy -o json` holds the references and a sha256 checksum, none of the thirteen values). The build secret (`.npm_token`, BuildKit `--mount=type=secret`) is a different thing: it protects the image during `docker build`; the K8s Secret protects git and the manifests at run time; neither replaces the other. Base64 in `data` is an encoding, not encryption: a local cluster stores it in etcd in plain text (no `EncryptionConfiguration` by default), and anyone allowed to `get secret` in the namespace reads it, so putting a value into a Secret means taking it out of git, not encrypting it. This path also keeps copies in two more places, etcd and the Pulumi state (encrypted with the passphrase), and makes rotation a deploy: a rotated JWT key reaches the pods only on the next `npm run up`, which rolls them through the checksum annotation, while the app's own 60 s re-read of the vault does nothing with `SKIP_VAULT=1`.
 
-In production the values would not go through the deploy tool at all. External Secrets Operator runs in the cluster and keeps a K8s Secret in sync with the vault from an `ExternalSecret` object (only that object goes through Pulumi or git, never a value), so a rotation needs no deploy. The Secrets Store CSI driver mounts the values as files straight from the vault into the pod, with no Secret object in etcd unless sync is turned on, and updates the files in place. Better still for this app, which already reads Infisical itself: the pod logs in with its own Kubernetes identity (Infisical Kubernetes Auth, the ServiceAccount token checked through `TokenReview`), with no secret zero to deliver and the 60 s re-read working again. That is planned after the homework; the K8s Secret path stays for grading with `SKIP_VAULT=1`. No operator is installed here.
-
-### Demo: rollout
-
-<!-- TODO(hw-28): remove after homework -->
-
-`npm run demo:rollout` (`demo/rollout.sh`, profile `safe`) or `npm run demo:rollout -- broken`. It needs the stack up and a product in the database (`npm run seed`). Each run first applies the profile's settings without load (`npm run up`), because how a pod stops is decided by the spec of the old pod, then starts `demo/rollout/load.mjs` (16 keep-alive clients on `GET /product/<id>`, a request is `ok` only on a `2xx` within 2 s), waits 3 s, runs `npm run up -- -c rev=<now>`, waits until only the new ReplicaSet has pods, all ready, keeps the load 3 s longer and stops it, never before `5000` requests. `rollout-seconds` is from the start of that `up` to that point. `broken` puts the safe settings back afterwards. Exit `1` when `requests` is below 5000 or the safe profile failed a request.
-
-| Profile | Settings | `requests` | `failed` | `rollout-seconds` |
-|---|---|---|---|---|
-| `safe` | `drainMs=5000`, probes, `maxUnavailable: 0`, `maxSurge: 1` | 40 957 / 46 163 / 48 516 | 0 / 0 / 0 | 17.8 / 19.0 / 20.0 |
-| `broken` | `drainMs=0`, no startup or readiness probe, `maxUnavailable: 1`, `maxSurge: 0` | 21 134 / 28 358 | 9 243 / 16 532 | 4.0 / 4.0 |
-
-In `broken` an old pod is killed before its replacement exists and closes its sockets at once, and the new pod is in the Service from the moment its container starts, about 2.65 s before it listens; the failures are almost all closed or reset sockets (`UND_ERR_SOCKET` 9 072 and 16 391, `ECONNRESET` 155 and 130, a few 2 s timeouts). The safe rollout is slower because each pod waits for a ready replacement and drains for 5 s.
-
-### Demo: PodDisruptionBudget
-
-<!-- TODO(hw-28): remove after homework -->
-
-`npm run demo:pdb` (`demo/pdb.sh`) waits until every pod is ready and the budget allows a disruption, then sends two evictions in a row through the Eviction API (`POST /api/v1/namespaces/marketplace/pods/<pod>/eviction` over `kubectl proxy`, so the HTTP status is the API server's own), the call `kubectl drain` and the cluster autoscaler make. `healthy` is the PDB's `status.currentHealthy`; `minAvailable` is `status.desiredHealthy`: the budget is written as `maxUnavailable: 1`, and Kubernetes derives the minimum from the current number of pods (2 − 1 = 1). Exit `1` unless the codes are `201` and `429`. Three runs, identical:
-
-| Key | Value |
-|---|---|
-| `healthy` | 2 |
-| `minAvailable` | 1 |
-| `evict-1` | 201 |
-| `evict-2` | 429 `Cannot evict pod as it would violate the pod's disruption budget.` |
-
-The first eviction takes `disruptionsAllowed` from 1 to 0 at once, so the second, sent right after, is refused until the Deployment's replacement is ready and the evicted pod has finished its drain (6.0 / 7.0 / 6.0 s). Under the load generator the same run lost nothing: 21 636 requests, `failed=0`, because an evicted pod stops through the same `SIGTERM` drain.
-
-- **`maxUnavailable` rather than `minAvailable`.** With the HPA the pod count moves between 2 and 4. `maxUnavailable: 1` always means one pod at a time; a fixed `minAvailable: 1` would let a node drain take three of four pods at once.
-- **What the budget does not cover.** It guards voluntary evictions only. A rollout is limited by the Deployment's own `maxUnavailable`/`maxSurge`, not by the PDB; `kubectl delete pod`, a crashed node or an OOM kill ignore it.
+In production the values would not go through the deploy tool at all. External Secrets Operator runs in the cluster and keeps a K8s Secret in sync with the vault from an `ExternalSecret` object (only that object goes through Pulumi or git, never a value), so a rotation needs no deploy. The Secrets Store CSI driver mounts the values as files straight from the vault into the pod, with no Secret object in etcd unless sync is turned on, and updates the files in place. Better still for this app, which already reads Infisical itself: the pod logs in with its own Kubernetes identity (Infisical Kubernetes Auth, the ServiceAccount token checked through `TokenReview`), with no secret zero to deliver and the 60 s re-read working again. That is planned; the K8s Secret path stays for runs with `SKIP_VAULT=1`. No operator is installed here.
 
 ## Secrets
 
@@ -635,58 +586,6 @@ npm run test:all          # all three at once, output prefixed per suite, fails 
 Integration and e2e tests start their containers once per run (Postgres, RabbitMQ, Kafka, Temporal, MinIO and two Redis instances with the same eviction settings as compose, so nothing depends on a running dev stack) and reset state after every test (`test/support/isolation.ts`: `DELETE` from every table with foreign-key checks off for that one transaction (`SET LOCAL session_replication_role = replica`), about 7 ms where a `TRUNCATE` per table took about 175 ms; then `FLUSHALL` both Redis instances). Sequences are not restarted: a Kafka consumer can commit a row just after the cleanup with an id it drew before it, and a restarted sequence would hand the next test the same id, because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with. The tests poll the outboxes every 100 ms (`OUTBOX_RELAY_INTERVAL_MS`) instead of every second.
 
 `test:all` runs the suites side by side because integration and e2e start their own containers. Inside a suite the files run in `TEST_WORKERS` workers (default `4`; `TEST_WORKERS=1` runs them one by one on a machine with little memory). Every e2e file boots the whole app, and every test wipes the database and Redis, so workers can't share infrastructure: the global setup starts one container set per worker in parallel (e2e: Postgres, RabbitMQ, Kafka, Temporal, MinIO, two Redis; integration: Postgres and two Redis) and each worker connects to its own set by `VITEST_POOL_ID`. Four e2e sets take about 4 GB of memory.
-
-## Grading
-
-<!-- TODO(hw-28): remove after homework -->
-
-Tools: Docker with BuildKit and compose v2 (about 4 GiB free for the node, four pods and the dependencies), Node 24, kind `v0.33.0`, `kubectl` 1.35 or newer, the Pulumi CLI `v3.272.0` (`curl -fsSL https://get.pulumi.com | sh -s -- --version 3.272.0`), `jq`, `curl`, `openssl`, `zstd`. trivy is optional: without it `npm run scan` runs the pinned `aquasec/trivy` image. Ports `30080` (the NodePort), `33310`, `5672`, `9092`, `7233`, `6380`, `6381`, `9010` and `8088` must be free. The grader has no vault, hence `SKIP_VAULT=1`; the values are the dev credentials from `docker-compose.yml` and `secrets/*.example`. Run everything from the repository root, in one shell.
-
-```bash
-cp .env.example .env
-for f in db_password rabbitmq_password redis_password minio_root_password storage_secret_key; do cp secrets/$f.txt.example secrets/$f.txt; done
-docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue minio minio-init edge
-
-export SKIP_VAULT=1
-export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
-export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
-export KAFKA_BROKERS=127.0.0.1:9092 TEMPORAL_ADDRESS=127.0.0.1:7233
-export REDIS_CACHE_URL=redis://default:changeme@127.0.0.1:6380
-export REDIS_QUEUE_URL=redis://default:changeme@127.0.0.1:6381
-export JWT_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
-export JWT_PUBLIC_KEY="$(printf '%s' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
-export REFRESH_TOKEN_PEPPER=grader-pepper
-export GOOGLE_CLIENT_ID=grader-unused GOOGLE_CLIENT_SECRET=grader-unused
-export STORAGE_ENDPOINT=http://127.0.0.1:9010 STORAGE_ACCESS_KEY=media-app STORAGE_SECRET_KEY=changeme-media
-export PULUMI_BACKEND_URL="file://$PWD/.pulumi"
-export PULUMI_CONFIG_PASSPHRASE=hw28-grading
-
-npm ci
-npm run build
-npm run migrate
-npm run seed
-npm --prefix infra ci
-
-printf 'dummy-npm-token' > .npm_token
-npm run image:build
-npm run cluster:up
-npm run up
-
-npm run demo:image
-SCAN_MAX=-1 npm run scan; echo "exit(max=-1)=$?"
-SCAN_MAX=99999 npm run scan; echo "exit(max=99999)=$?"
-npm run demo:rollout
-npm run demo:rollout -- broken
-npm run demo:pdb
-
-npm run destroy && npm run cluster:down
-```
-
-- Names the criteria ask for: namespace `marketplace`; Deployment, Service, PDB and HPA `marketplace-api`; Secret `marketplace-api-secrets`. `kind create` adds the context `kind-marketplace` to the default kubeconfig and makes it current; the Pulumi program deploys only to that context.
-- `npm run migrate` and `npm run seed` run on the host against the compose Postgres: the pods don't migrate, and `demo:rollout` loads `GET /product/<id>` of the first seeded product.
-- The exported `DBHOST`, `REDIS_*_URL`, … are for the commands on the host. The program passes only the secrets on to the cluster and swaps the Redis host for the compose name; the pods reach the dependencies through the compose network the node joins.
-- `npm run up` computes `IMAGE_REF` itself; a bare `cd infra && pulumi preview` without it stops with `Missing setting: IMAGE_REF` after the vault check, so removing a vault variable still names that variable first.
-- Run `demo:pdb` after the rollout demos, not before checking `disruptionsAllowed`: the demo spends the budget, which is back to `1` once the evicted pod is replaced (about 6 s). `demo:rollout -- broken` puts the safe settings back before it prints.
 
 ## Configuration
 

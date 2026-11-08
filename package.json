@@ -38,11 +38,7 @@
     "cluster:down": "kind delete cluster --name ${KIND_CLUSTER:-marketplace}",
     "preview": "bash scripts/with-secrets.sh dev bash scripts/infra.sh preview",
     "up": "bash scripts/with-secrets.sh dev bash scripts/infra.sh up",
-    "destroy": "bash scripts/with-secrets.sh dev bash scripts/infra.sh destroy",
-    "demo:image": "bash demo/image.sh",
-    "demo:image:leaky": "bash demo/leaky/run.sh",
-    "demo:rollout": "bash demo/rollout.sh",
-    "demo:pdb": "bash demo/pdb.sh"
+    "destroy": "bash scripts/with-secrets.sh dev bash scripts/infra.sh destroy"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "~3.1152.0",

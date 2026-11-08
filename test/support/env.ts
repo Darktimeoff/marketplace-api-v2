@@ -34,6 +34,8 @@ process.env.REFRESH_TOKEN_PEPPER = 'test-refresh-token-pepper';
 process.env.OUTBOX_RELAY_INTERVAL_MS = '100';
 process.env.GOOGLE_CLIENT_ID = 'test-google-client';
 process.env.GOOGLE_CLIENT_SECRET = 'test-google-secret';
+process.env.STORAGE_ACCESS_KEY = 'test-storage-access-key';
+process.env.STORAGE_SECRET_KEY = 'test-storage-secret-key';
 
 if (connection.kafkaBrokers) {
   process.env.KAFKA_BROKERS = connection.kafkaBrokers;
@@ -55,4 +57,12 @@ if (connection.temporalAddress) {
 if (connection.redisCacheUrl && connection.redisQueueUrl) {
   process.env.REDIS_CACHE_URL = connection.redisCacheUrl;
   process.env.REDIS_QUEUE_URL = connection.redisQueueUrl;
+}
+
+if (connection.storage) {
+  process.env.STORAGE_ENDPOINT = connection.storage.endpoint;
+  process.env.STORAGE_REGION = 'us-east-1';
+  process.env.STORAGE_BUCKET = connection.storage.bucket;
+  process.env.STORAGE_ACCESS_KEY = connection.storage.accessKey;
+  process.env.STORAGE_SECRET_KEY = connection.storage.secretKey;
 }

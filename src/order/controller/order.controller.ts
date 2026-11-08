@@ -14,7 +14,7 @@ import { OrderPlaceCommandHandler } from '../command-handler/order-place.command
 import { OrderCreateInput } from '../input/order-create.input.js';
 import { OrderDto } from '../dto/order.dto.js';
 import { ResponseDto } from '../../generic/validation/response-dto.decorator.js';
-import { IdempotencyKey } from '../decorator/idempotency-key.decorator.js';
+import { IdempotencyKey } from '../../generic/decorator/idempotency-key.decorator.js';
 import { CheckAbility } from '../../generic/auth/decorator/check-ability.decorator.js';
 import { CurrentAbility } from '../../generic/auth/decorator/current-ability.decorator.js';
 import { Identity } from '../../generic/auth/decorator/identity.decorator.js';

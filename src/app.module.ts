@@ -12,6 +12,7 @@ import { BrandModule } from './brand/brand.module.js';
 import { CategoryModule } from './category/category.module.js';
 import { SellerModule } from './seller/seller.module.js';
 import { ProductVariantModule } from './product-variant/product-variant.module.js';
+import { MediaModule } from './media/media.module.js';
 import { ValidationResponseInterceptor } from './generic/validation/validation-response.interceptor.js';
 import { AuthModule } from './generic/auth/auth.module.js';
 import { AccessTokenGuard } from './generic/auth/access-token.guard.js';
@@ -31,7 +32,8 @@ import { AbilityGuard } from './generic/auth/ability.guard.js';
     BrandModule,
     CategoryModule,
     SellerModule,
-    ProductVariantModule
+    ProductVariantModule,
+    MediaModule,
   ],
   controllers: [],
   providers: [

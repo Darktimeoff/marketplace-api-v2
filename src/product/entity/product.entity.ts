@@ -65,4 +65,4 @@ export class Product {
   variants: ProductVariant[];
 }
 
-export interface ProductCreateEntityInterface extends Pick<Product, 'categoryId' | 'brandId'> {}
+export interface ProductCreateEntityInterface extends Pick<Product, 'publicId' | 'categoryId' | 'brandId'> {}

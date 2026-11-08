@@ -11,6 +11,8 @@ const secretNames: Record<keyof SecretsInterface, true> = {
   REDIS_QUEUE_URL: true,
   REFRESH_TOKEN_PEPPER: true,
   GOOGLE_CLIENT_SECRET: true,
+  STORAGE_ACCESS_KEY: true,
+  STORAGE_SECRET_KEY: true,
 };
 
 export const SECRET_NAMES = Object.keys(secretNames) as (keyof SecretsInterface)[];

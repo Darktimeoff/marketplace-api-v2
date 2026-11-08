@@ -32,7 +32,9 @@
     "migrate:generate": "bash scripts/with-secrets.sh dev npx typeorm migration:generate -d dist/data-source.js",
     "seed": "bash scripts/with-secrets.sh dev node dist/seed.js",
     "edge": "bash scripts/with-secrets.sh dev node dist/edge.js",
-    "image:build": "DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile --secret id=npm_token,src=.npm_token -t marketplace-api:hw28 ."
+    "image:build": "DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile --secret id=npm_token,src=.npm_token -t marketplace-api:hw28 .",
+    "demo:image": "bash demo/image.sh",
+    "demo:image:leaky": "bash demo/leaky/run.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "~3.1152.0",

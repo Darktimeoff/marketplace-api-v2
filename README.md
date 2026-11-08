@@ -474,6 +474,24 @@ The stream is fed from Kafka, not from the code that changes the status. Order w
 - `packages/*/src` stays in the image next to `dist`: the Temporal worker bundles the workflows with webpack at startup in `development` mode, which picks the `development` export condition (`./src/index.ts`) of `@marketplace/contracts-core`. Without it the worker fails with `no valid target file was found`.
 - No `HEALTHCHECK`: distroless has no tool to run one, and Kubernetes uses its own probes.
 
+### Demo: image
+
+<!-- TODO(hw-28): remove after homework -->
+
+`npm run demo:image` reads the built image, not the Dockerfile text, except for `stages` (the `FROM` lines of `docker/Dockerfile`): `shell-inside` tries `sh`, `/bin/sh`, `/bin/bash` and `/busybox/sh` as the entrypoint; `runtime-uid` is `Config.User`, resolved through the image's own `/etc/passwd` when it is a name and `0` when it is empty; the token from `.npm_token` is searched in `docker history --no-trunc`, in `docker image inspect` and in every layer listed by the `manifest.json` of `docker save` (decompressed, the config blob left out). It exits `1` when an invariant breaks. `npm run demo:image:leaky` builds two broken variants from `demo/leaky/` in a throwaway context and runs the same script on them. Three runs each, identical:
+
+| Key | `demo:image` | `ARG` in the final stage | `COPY` + `rm` in the next layer |
+|---|---|---|---|
+| `stages` | 5 | 2 | 2 |
+| `shell-inside` | 0 | 1 | 1 |
+| `runtime-uid` | 65532 | 0 | 0 |
+| `token-in-history` | 0 | 2 (`ARG NPM_TOKEN=…`, `RUN \|1 NPM_TOKEN=…`) | 0 |
+| `token-in-config` | 0 | 0 | 0 |
+| `token-in-layers` | 0 | 0 | 1 |
+| exit | 0 | 1 | 1 |
+
+No single channel sees both leaks: `ARG` lives only in the history, `rm` leaves only a whiteout on top of the layer that still holds the bytes. An `ARG` used only in a builder stage does not show in the final image's history at all (measured: all three counters `0`), so the leaky variant uses it in the stage that becomes the image.
+
 ## Health and graceful shutdown
 
 - `GET /healthz` (liveness) checks nothing but the process: it answers while the event loop runs. A dependency that is down must not get a pod restarted.

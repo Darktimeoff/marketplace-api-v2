@@ -13,6 +13,10 @@ export class HealthShutdownService implements OnModuleDestroy {
     private readonly environment: EnvironmentService,
   ) {}
 
+  isDraining(): boolean {
+    return this.draining;
+  }
+
   check(key: string): HealthIndicatorResult {
     const indicator = this.healthIndicatorService.check(key);
 

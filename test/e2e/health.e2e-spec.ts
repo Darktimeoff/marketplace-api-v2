@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { Agent, get as httpGet, type IncomingHttpHeaders } from 'node:http';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import { DataSource } from 'typeorm';
@@ -25,6 +26,15 @@ describe('Health and graceful shutdown (e2e)', () => {
 
   function get(path: string) {
     return fetch(`${baseUrl}${path}`);
+  }
+
+  function headersOf(path: string, agent: Agent) {
+    return new Promise<IncomingHttpHeaders>((resolve, reject) => {
+      httpGet(`${baseUrl}${path}`, { agent }, (response) => {
+        response.resume();
+        response.on('end', () => resolve(response.headers));
+      }).on('error', reject);
+    });
   }
 
   function login() {
@@ -57,6 +67,9 @@ describe('Health and graceful shutdown (e2e)', () => {
     });
     expect(register.status).toBe(201);
 
+    const agent = new Agent({ keepAlive: true });
+    expect((await headersOf('/healthz', agent)).connection).toBe('keep-alive');
+
     const closed = app.close();
 
     await expect.poll(async () => (await get('/readyz')).status, { timeout: 5000, interval: 20 }).toBe(503);
@@ -66,6 +79,8 @@ describe('Health and graceful shutdown (e2e)', () => {
     expect(await ready.json()).toMatchObject({ error: { shutdown: { status: 'down', reason: 'draining' } } });
     expect((await get('/healthz')).status).toBe(200);
     expect((await login()).status).toBe(200);
+    expect((await headersOf('/healthz', agent)).connection).toBe('close');
+    agent.destroy();
 
     await closed;
 

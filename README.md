@@ -474,6 +474,15 @@ The stream is fed from Kafka, not from the code that changes the status. Order w
 - `packages/*/src` stays in the image next to `dist`: the Temporal worker bundles the workflows with webpack at startup in `development` mode, which picks the `development` export condition (`./src/index.ts`) of `@marketplace/contracts-core`. Without it the worker fails with `no valid target file was found`.
 - No `HEALTHCHECK`: distroless has no tool to run one, and Kubernetes uses its own probes.
 
+### Image scan
+
+`npm run scan` runs trivy on `marketplace-api:hw28` (`SCAN_IMAGE`), counts the findings of the report and compares them with `SCAN_MAX`: `found <= max-allowed` prints `gate=pass` and exits `0`, otherwise `gate=fail` and `1`. A missing report (the scanner failed, the image doesn't exist) or a non-numeric `SCAN_MAX` exits `2`, never `pass`. It prints `image=`, `severity=`, `ignore-unfixed=`, `found=`, `max-allowed=`, `gate=` and, after `#`, the split by severity and by target.
+
+- Counted: `CRITICAL,HIGH` (`SCAN_SEVERITY`) with `--ignore-unfixed` (`SCAN_IGNORE_UNFIXED=false` counts everything): only what an update can fix, so the number is something we can act on.
+- Working threshold `7` (the default in the `scan` npm script, used by CI): the count on 2026-11-08, so a new finding fails the gate and the threshold is lowered as findings are fixed. All 7 are in `libssl3` of the distroless base (fixed in Debian, waiting for a rebuilt `nodejs24-debian12` image). The first scan found 15; the other 8 were closed the same day: `@temporalio/*` 1.24 → 1.25 brought the Rust crate `zip` 8.5.1 → 9.0.5 inside `core-bridge`, `npm update` brought `fast-uri` 3.1.9 and `source-map-js` 1.2.2, and `overrides.multer: 2.5.0` replaces the `2.4.0` that `@nestjs/platform-express` 12.2 pins exactly (drop the override once Nest is ≥ 12.3, which pins `2.5.0` itself). The trivy database changes daily, so the same image can fail tomorrow without a code change; that is the point of the gate, not a flake.
+- trivy `0.76.1` is a binary on `PATH` when there is one, otherwise `docker run aquasec/trivy:0.76.1` with the Docker socket and a `trivy-cache` volume; both gave the same `found`.
+- CI (`.github/workflows/scan.yml`, on pull requests and pushes to `main`) builds the image with a random decoy token, downloads trivy by version and checks its sha256 before running it, then calls `npm run scan`. Actions are pinned by commit (`actions/checkout` `3d3c42e5…` = v7.0.1, `actions/cache` `55cc8345…` = v6.1.0), not by tag: a scanner runs with the job's credentials, and trivy's own release and action tags were replaced with credential-stealing builds in 2026, so a moved tag must not change what runs.
+
 ### Demo: image
 
 <!-- TODO(hw-28): remove after homework -->

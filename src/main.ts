@@ -13,7 +13,7 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
 
-  app.enableShutdownHooks()
+  app.enableShutdownHooks([], { useProcessExit: true })
 
   const environment = app.get<EnvironmentService>(EnvironmentService)
   

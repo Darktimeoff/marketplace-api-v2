@@ -1,0 +1,8 @@
+name: marketplace
+description: marketplace-api in the local kind cluster
+runtime:
+  name: nodejs
+  options:
+    typescript: false
+    packagemanager: npm
+main: index.ts

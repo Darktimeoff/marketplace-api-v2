@@ -69,3 +69,7 @@ AGENTS.md
 
 graphify-out
 .npm_token
+
+infra/node_modules
+infra/.pulumi-state
+infra/Pulumi.*.yaml

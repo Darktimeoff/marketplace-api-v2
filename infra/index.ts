@@ -32,16 +32,9 @@ const terminationGraceSeconds = config.getNumber('terminationGraceSeconds') ?? M
 const minReplicas = config.getNumber('minReplicas') ?? 2;
 const maxReplicas = config.getNumber('maxReplicas') ?? 4;
 const nodePort = config.getNumber('nodePort') ?? 30080;
-const readiness = config.getBoolean('readiness') ?? true;
-const maxUnavailable = config.getNumber('maxUnavailable') ?? 0;
-const maxSurge = config.getNumber('maxSurge') ?? 1;
 
 if (terminationGraceSeconds * 1000 <= drainMs) {
   throw new pulumi.RunError(`terminationGraceSeconds (${terminationGraceSeconds}) must be longer than drainMs (${drainMs} ms)`);
-}
-
-if (maxUnavailable === 0 && maxSurge === 0) {
-  throw new pulumi.RunError('maxUnavailable and maxSurge cannot both be 0: the rollout could never replace a pod');
 }
 
 if (minReplicas < 2) {
@@ -118,7 +111,7 @@ const deployment = new k8s.apps.v1.Deployment(
       progressDeadlineSeconds: 180,
       strategy: {
         type: 'RollingUpdate',
-        rollingUpdate: { maxUnavailable, maxSurge },
+        rollingUpdate: { maxUnavailable: 0, maxSurge: 1 },
       },
       template: {
         metadata: {
@@ -151,22 +144,18 @@ const deployment = new k8s.apps.v1.Deployment(
                 requests: { cpu: '250m', memory: '384Mi' },
                 limits: { memory: '768Mi' },
               },
-              ...(readiness
-                ? {
-                    startupProbe: {
-                      httpGet: { path: '/healthz', port: 'http' },
-                      periodSeconds: 1,
-                      failureThreshold: 60,
-                    },
-                    readinessProbe: {
-                      httpGet: { path: '/readyz', port: 'http' },
-                      periodSeconds: 2,
-                      timeoutSeconds: 1,
-                      failureThreshold: 1,
-                      successThreshold: 1,
-                    },
-                  }
-                : {}),
+              startupProbe: {
+                httpGet: { path: '/healthz', port: 'http' },
+                periodSeconds: 1,
+                failureThreshold: 60,
+              },
+              readinessProbe: {
+                httpGet: { path: '/readyz', port: 'http' },
+                periodSeconds: 2,
+                timeoutSeconds: 1,
+                failureThreshold: 1,
+                successThreshold: 1,
+              },
               livenessProbe: {
                 httpGet: { path: '/healthz', port: 'http' },
                 periodSeconds: 10,

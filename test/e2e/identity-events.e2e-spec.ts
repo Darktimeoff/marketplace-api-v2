@@ -74,7 +74,7 @@ describe('Identity events (e2e)', () => {
 
   async function eventFor(identityPublicId: string): Promise<ReceivedInterface> {
     return vi.waitFor(() => {
-      const match = received.find(({ event }) => event?.data?.identityPublicId === identityPublicId);
+      const match = received.find(({ event }) => event?.data?.publicId === identityPublicId);
       if (!match) throw new Error(`no ${IdentityRegisteredEvent.TYPE} for identity ${identityPublicId} yet`);
       return match;
     }, { timeout: 15000, interval: 100 });
@@ -101,8 +101,7 @@ describe('Identity events (e2e)', () => {
       subject: identity.publicId,
       correlationid: identity.publicId,
       data: {
-        identityId: identity.id,
-        identityPublicId: identity.publicId,
+        publicId: identity.publicId,
         email,
         phoneNumber: null,
         role: 'user',
@@ -121,7 +120,7 @@ describe('Identity events (e2e)', () => {
 
     const { event } = await eventFor(identity.publicId);
 
-    expect(event.data).toMatchObject({ identityId: identity.id, identityPublicId: identity.publicId, email: null, phoneNumber: fullNumber });
+    expect(event.data).toMatchObject({ publicId: identity.publicId, email: null, phoneNumber: fullNumber });
   });
 
   it('writes the event to the outbox in the registration transaction and marks it published once sent', async () => {
@@ -143,7 +142,7 @@ describe('Identity events (e2e)', () => {
       type: IdentityRegisteredEvent.TYPE,
       attempts: 0,
       lastError: null,
-      payload: { identityId: identity.id, identityPublicId: identity.publicId, email },
+      payload: { publicId: identity.publicId, email },
     });
   });
 

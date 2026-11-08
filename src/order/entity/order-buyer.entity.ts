@@ -1,16 +1,15 @@
-import { Column, CreateDateColumn, Entity, PrimaryColumn, Unique } from 'typeorm';
+import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('OrderBuyer')
-@Unique('OrderBuyer_userId_key', ['userId'])
 export class OrderBuyer {
-  @PrimaryColumn({ type: 'uuid', primaryKeyConstraintName: 'OrderBuyer_pkey' })
-  identityPublicId: string;
+  @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS', primaryKeyConstraintName: 'OrderBuyer_pkey' })
+  id: number;
 
-  @Column({ type: 'integer' })
-  userId: number;
+  @Column({ type: 'uuid', unique: true })
+  publicId: string;
 
   @CreateDateColumn({ type: 'timestamptz', default: () => 'now()' })
   createdAt: Date;
 }
 
-export interface OrderBuyerCreateEntityInterface extends Pick<OrderBuyer, 'identityPublicId' | 'userId'> {}
+export interface OrderBuyerCreateEntityInterface extends Pick<OrderBuyer, 'publicId'> {}

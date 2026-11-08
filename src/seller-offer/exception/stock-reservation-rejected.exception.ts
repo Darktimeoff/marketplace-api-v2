@@ -1,6 +1,6 @@
-import type { StockReserveRequest } from "@marketplace/messaging-contracts";
+import type { StockReserveRpc } from "@marketplace/messaging-contracts";
 
-type RejectedResponseDataType = Extract<StockReserveRequest.ResponseDataType, { status: 'rejected' }>;
+type RejectedResponseDataType = Extract<StockReserveRpc.ResponseType, { status: 'rejected' }>;
 
 export class StockReservationRejectedException extends Error {
   constructor(

@@ -9,6 +9,7 @@ import { IdentityOutboxRepository } from '../../src/identity/repository/identity
 import { IdentityOutboxAggregateTypeEnum } from '../../src/identity/enum/identity-outbox-aggregate-type.enum.js';
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
+import { MessageBrokerEnum } from '../../src/generic/messaging/enum/message-broker.enum.js';
 
 @Module({
   imports: [TypeOrmModule.forFeature([IdentityOutbox])],
@@ -39,6 +40,7 @@ describe('IdentityOutboxRepository', () => {
     const id = randomUUID();
     await outbox.create({
       id,
+      broker: MessageBrokerEnum.KAFKA,
       topic: TopicEnum.IDENTITY_EVENTS,
       aggregateType: IdentityOutboxAggregateTypeEnum.IDENTITY,
       aggregateId: id,

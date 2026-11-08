@@ -11,8 +11,8 @@ function abilityOf(role: RoleEnum) {
   return new AbilityFactory().createFor({ identityPublicId: me, role } as AccessTokenClaimsInterface);
 }
 
-function order(ownerIdentityPublicId: string) {
-  return subject('Order', { ownerIdentityPublicId });
+function order(buyerPublicId: string) {
+  return subject('Order', { buyerPublicId });
 }
 
 describe('AbilityFactory', () => {

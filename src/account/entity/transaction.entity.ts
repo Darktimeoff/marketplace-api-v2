@@ -11,7 +11,7 @@ import { TransactionTypeEnum } from '../enum/transaction-type.enum.js';
  */
 @Entity('Transaction')
 @Check('Transaction_deletedAt_order', `"deletedAt" IS NULL OR "deletedAt" >= "createdAt"`)
-@Index('Transaction_customerId_idx', ['customerId'])
+@Index('Transaction_accountId_idx', ['accountId'])
 export class Transaction {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
@@ -20,7 +20,7 @@ export class Transaction {
   publicId: string;
 
   @Column({ type: 'integer' })
-  customerId: number;
+  accountId: number;
 
   @Column({ type: 'numeric', precision: 12, scale: 2, transformer: moneyTransformer })
   amount: string;
@@ -42,9 +42,9 @@ export class Transaction {
 
   // RESTRICT: финансовая история пользователя не должна исчезать вместе с ним.
   @ManyToOne(() => Account, (account) => account.transactions, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'customerId', foreignKeyConstraintName: 'Transaction_customerId_fkey' })
+  @JoinColumn({ name: 'accountId', foreignKeyConstraintName: 'Transaction_accountId_fkey' })
   account: Account;
 }
 
 export interface TransactionCreateEntityInterface
-  extends Pick<Transaction, 'customerId' | 'amount' | 'type' | 'status'> {}
+  extends Pick<Transaction, 'accountId' | 'amount' | 'type' | 'status'> {}

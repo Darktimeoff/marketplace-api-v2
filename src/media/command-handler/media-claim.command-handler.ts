@@ -3,7 +3,7 @@ import { Transactional } from '@nestjs-cls/transactional';
 import { MediaClaimStatusEnum } from '@marketplace/contracts-core';
 import type { MediaClaimRpc } from '@marketplace/messaging-contracts';
 import { MediaRepository } from '../repository/media.repository.js';
-import { MediaMessageService } from '../service/media-message.service.js';
+import { MediaMessage } from '../message/media.message.js';
 import { MediaClaimRejectedException } from '../exception/media-claim-rejected.exception.js';
 
 @Injectable()
@@ -13,7 +13,7 @@ export class MediaClaimCommandHandler {
 
   constructor(
     private readonly media: MediaRepository,
-    private readonly messages: MediaMessageService,
+    private readonly messages: MediaMessage,
   ) {}
 
   async execute(request: MediaClaimRpc.RequestInterface): Promise<MediaClaimRpc.ResponseType> {
@@ -35,7 +35,7 @@ export class MediaClaimCommandHandler {
   private async claimAll(request: MediaClaimRpc.RequestInterface): Promise<MediaClaimRpc.ClaimedResponseInterface> {
     const claimed = await this.media.claim(
       request.mediaIds,
-      request.ownerIdentityPublicId,
+      request.ownerPublicId,
       request.attachTo.type,
       request.attachTo.id,
       this.claimTtlSeconds,

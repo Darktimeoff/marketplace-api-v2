@@ -5,7 +5,7 @@ import type { IdentityTokenResponseInterface } from '@marketplace/contracts-core
 import { IdentityRepository } from '../repository/identity.repository.js';
 import { IdentityExternalAccountRepository } from '../repository/identity-external-account.repository.js';
 import { IdentityOutboxRepository } from '../repository/identity-outbox.repository.js';
-import { IdentityMessageService } from '../service/identity-message.service.js';
+import { IdentityMessage } from '../message/identity.message.js';
 import { TokenService } from '../service/token.service.js';
 import { OidcClientService } from '../service/oidc-client.service.js';
 import { OidcSignInAttemptService } from '../service/oidc-sign-in-attempt.service.js';
@@ -23,7 +23,7 @@ export class IdentityOidcSignInCommandHandler {
     private readonly identities: IdentityRepository,
     private readonly externalAccounts: IdentityExternalAccountRepository,
     private readonly outbox: IdentityOutboxRepository,
-    private readonly messages: IdentityMessageService,
+    private readonly messages: IdentityMessage,
     private readonly tokens: TokenService,
     private readonly oidcClient: OidcClientService,
     private readonly attempts: OidcSignInAttemptService,

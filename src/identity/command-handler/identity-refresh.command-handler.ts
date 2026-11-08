@@ -26,7 +26,7 @@ export class IdentityRefreshCommandHandler {
       const session = await this.sessions.findByTokenHash(tokenHash);
 
       if (session?.usedAt) {
-        this.logger.warn(`refresh token reuse detected: revoking family=${session.familyId} identity=${session.identityId}`);
+        this.logger.warn(`refresh token reuse detected: revoking family=${session.familyId}`);
         await this.revokeFamily(session.familyId);
         await this.denylist.denyFamily(session.familyId);
       }

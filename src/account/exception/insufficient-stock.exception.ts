@@ -1,6 +1,6 @@
-import { AccountCustomerChargeRequest } from "@marketplace/messaging-contracts";
+import type { AccountCustomerChargeRpc } from "@marketplace/messaging-contracts";
 
-type RejectedResponseDataType = Extract<AccountCustomerChargeRequest.ResponseDataType, { status: 'rejected' }>;
+type RejectedResponseDataType = Extract<AccountCustomerChargeRpc.ResponseType, { status: 'rejected' }>;
 
 export class AccountCustomerChargeRejectedException extends Error {
   constructor(

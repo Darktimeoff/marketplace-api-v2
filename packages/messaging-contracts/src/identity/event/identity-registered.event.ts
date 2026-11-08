@@ -9,8 +9,7 @@ export namespace IdentityRegisteredEvent {
   export const SOURCE = SourceEnum.IDENTITY;
 
   export interface DataInterface {
-    identityId: number;
-    identityPublicId: string;
+    publicId: string;
     email: string | null;
     phoneNumber: string | null;
     role: string;

@@ -1,14 +1,19 @@
 import { Check, Column, CreateDateColumn, Entity, Index, PrimaryColumn } from 'typeorm';
 import { TopicEnum } from '@marketplace/messaging-contracts';
 import { UserOutboxAggregateTypeEnum } from '../enum/user-outbox-aggregate-type.enum.js';
+import { MessageBrokerEnum } from '../../generic/messaging/enum/message-broker.enum.js';
 
 @Entity('UserOutbox')
 @Index('UserOutbox_unpublished_idx', ['createdAt'], { where: '"publishedAt" IS NULL' })
+@Check('UserOutbox_broker_known', `"broker" IN ('kafka', 'rabbitmq')`)
 @Check('UserOutbox_attempts_nonneg', `"attempts" >= 0`)
 @Check('UserOutbox_publishedAt_order', `"publishedAt" IS NULL OR "publishedAt" >= "createdAt"`)
 export class UserOutbox {
   @PrimaryColumn({ type: 'uuid', primaryKeyConstraintName: 'UserOutbox_pkey' })
   id: string;
+
+  @Column({ type: 'varchar', length: 16 })
+  broker: MessageBrokerEnum;
 
   @Column({ type: 'varchar', length: 249 })
   topic: TopicEnum;
@@ -39,4 +44,4 @@ export class UserOutbox {
 }
 
 export interface UserOutboxCreateEntityInterface
-  extends Pick<UserOutbox, 'id' | 'topic' | 'aggregateType' | 'aggregateId' | 'type' | 'payload'> {}
+  extends Pick<UserOutbox, 'id' | 'broker' | 'topic' | 'aggregateType' | 'aggregateId' | 'type' | 'payload'> {}

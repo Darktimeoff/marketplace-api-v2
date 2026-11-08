@@ -1,11 +1,9 @@
-import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
+import { Check, Column, CreateDateColumn, DeleteDateColumn, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { Address } from './address.entity.js';
 import { LanguageEnum } from '@marketplace/contracts-core';
 import { GenderEnum } from '../enum/gender.enum.js';
 
 @Entity('User')
-@Unique('User_identityId_key', ['identityId'])
-@Unique('User_identityPublicId_key', ['identityPublicId'])
 @Check('User_dateOfBirth_past', `"dateOfBirth" IS NULL OR "dateOfBirth" < current_date`)
 @Check('User_email_format', `"email" IS NULL OR "email" ~ '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$'`)
 @Check('User_phoneNumber_e164', `"phoneNumber" IS NULL OR "phoneNumber" ~ '^\\+[1-9][0-9]{7,14}$'`)
@@ -14,14 +12,8 @@ export class User {
   @PrimaryGeneratedColumn('identity', { type: 'integer', generatedIdentity: 'ALWAYS' })
   id: number;
 
-  @Column({ type: 'uuid', unique: true, default: () => 'gen_random_uuid()' })
+  @Column({ type: 'uuid', unique: true })
   publicId: string;
-
-  @Column({ type: 'integer' })
-  identityId: number;
-
-  @Column({ type: 'uuid' })
-  identityPublicId: string;
 
   @Column({ type: 'citext', nullable: true })
   email: string | null;
@@ -76,4 +68,4 @@ export class User {
   address: Address | null;
 }
 
-export interface UserCreateEntityInterface extends Pick<User, 'identityId' | 'identityPublicId' | 'email' | 'phoneNumber'> {}
+export interface UserCreateEntityInterface extends Pick<User, 'publicId' | 'email' | 'phoneNumber'> {}

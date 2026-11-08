@@ -10,16 +10,15 @@ export namespace OrderPaidEvent {
   export const SOURCE = SourceEnum.ORDER;
 
   export interface LineInterface {
-    offerId: number;
+    offerPublicId: string;
     quantity: number;
     unitPrice: string;
     unitDiscountPrice: string | null;
   }
 
   export interface DataInterface {
-    orderId: number;
     orderPublicId: string;
-    userId: number;
+    buyerPublicId: string;
     totalAmount: string;
     discountAmount: string;
     currency: CurrencyEnum;

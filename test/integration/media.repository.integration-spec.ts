@@ -5,14 +5,17 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { MediaAttachmentTypeEnum, MediaClaimStatusEnum, MediaKindEnum, MediaStatusEnum } from '@marketplace/contracts-core';
 import { Media } from '../../src/media/entity/media.entity.js';
 import { MediaRepository } from '../../src/media/repository/media.repository.js';
-import { MediaMessageService } from '../../src/media/service/media-message.service.js';
+import { MediaMessage } from '../../src/media/message/media.message.js';
 import { MediaClaimCommandHandler } from '../../src/media/command-handler/media-claim.command-handler.js';
+import { MediaClaimConfirmCommandHandler } from '../../src/media/command-handler/media-claim-confirm.command-handler.js';
+import { MediaOutbox } from '../../src/media/entity/media-outbox.entity.js';
+import { MediaOutboxRepository } from '../../src/media/repository/media-outbox.repository.js';
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Media])],
-  providers: [MediaRepository, MediaMessageService, MediaClaimCommandHandler],
+  imports: [TypeOrmModule.forFeature([Media, MediaOutbox])],
+  providers: [MediaRepository, MediaOutboxRepository, MediaMessage, MediaClaimCommandHandler, MediaClaimConfirmCommandHandler],
 })
 class MediaTestModule {}
 
@@ -40,7 +43,7 @@ describe('MediaRepository', () => {
 
   async function aMedia(overrides: Partial<Media> = {}): Promise<Media> {
     const created = await media.create({
-      ownerIdentityPublicId: owner,
+      ownerPublicId: owner,
       kind: MediaKindEnum.IMAGE,
       storageKey: `media/${owner}/${randomUUID()}.png`,
       mimeType: 'image/png',
@@ -58,7 +61,7 @@ describe('MediaRepository', () => {
   }
 
   function claim(ids: string[], productId: string, by = owner) {
-    return claimHandler.execute({ ownerIdentityPublicId: by, mediaIds: ids, attachTo: { type: PRODUCT, id: productId } });
+    return claimHandler.execute({ ownerPublicId: by, mediaIds: ids, attachTo: { type: PRODUCT, id: productId } });
   }
 
   describe('claim', () => {
@@ -75,7 +78,7 @@ describe('MediaRepository', () => {
     });
 
     it('rejects media of someone else, pending media and media attached elsewhere', async () => {
-      const foreign = await aMedia({ ownerIdentityPublicId: randomUUID() });
+      const foreign = await aMedia({ ownerPublicId: randomUUID() });
       const pending = await aMedia({ status: MediaStatusEnum.PENDING });
       const taken = await aMedia({ attachedToType: PRODUCT, attachedToId: randomUUID(), attachedAt: new Date() });
 
@@ -86,7 +89,7 @@ describe('MediaRepository', () => {
 
     it('claims all or nothing: one bad id rolls back the good ones', async () => {
       const mine = await aMedia();
-      const foreign = await aMedia({ ownerIdentityPublicId: randomUUID() });
+      const foreign = await aMedia({ ownerPublicId: randomUUID() });
 
       const response = await claim([mine.publicId, foreign.publicId], randomUUID());
 
@@ -113,7 +116,7 @@ describe('MediaRepository', () => {
       const productId = randomUUID();
       await claim([photo.publicId], productId);
 
-      expect(await media.confirmClaim([photo.publicId], PRODUCT, productId)).toBe(1);
+      expect(await media.confirmClaim([photo.publicId], PRODUCT, productId)).toEqual([photo.publicId]);
       expect(await reload(photo)).toMatchObject({ attachedToId: productId, claimExpiresAt: null });
     });
 
@@ -121,7 +124,7 @@ describe('MediaRepository', () => {
       const photo = await aMedia();
       const productId = randomUUID();
 
-      expect(await media.confirmClaim([photo.publicId], PRODUCT, productId)).toBe(1);
+      expect(await media.confirmClaim([photo.publicId], PRODUCT, productId)).toEqual([photo.publicId]);
       expect(await reload(photo)).toMatchObject({ attachedToType: PRODUCT, attachedToId: productId, claimExpiresAt: null });
     });
 
@@ -129,8 +132,22 @@ describe('MediaRepository', () => {
       const otherProduct = randomUUID();
       const photo = await aMedia({ attachedToType: PRODUCT, attachedToId: otherProduct, attachedAt: new Date() });
 
-      expect(await media.confirmClaim([photo.publicId], PRODUCT, randomUUID())).toBe(0);
+      expect(await media.confirmClaim([photo.publicId], PRODUCT, randomUUID())).toEqual([]);
       expect(await reload(photo)).toMatchObject({ attachedToId: otherProduct });
+    });
+
+    it('asks for variants of confirmed media once, even when product.created is delivered twice', async () => {
+      const photo = await aMedia();
+      const taken = await aMedia({ attachedToType: PRODUCT, attachedToId: randomUUID(), attachedAt: new Date() });
+      const productId = randomUUID();
+      await claim([photo.publicId], productId);
+      const confirm = testModule.app.get(MediaClaimConfirmCommandHandler);
+
+      await confirm.execute([photo.publicId, taken.publicId], PRODUCT, productId);
+      await confirm.execute([photo.publicId, taken.publicId], PRODUCT, productId);
+
+      const rows = await testModule.dataSource.getRepository(MediaOutbox).find();
+      expect(rows.map(({ id, payload }) => ({ id, payload }))).toEqual([{ id: photo.publicId, payload: { mediaPublicId: photo.publicId } }]);
     });
   });
 
@@ -157,5 +174,36 @@ describe('MediaRepository', () => {
     const found = await media.findPendingCreatedBefore(new Date(Date.now() - 24 * 3_600_000), 10);
 
     expect(found.map((item) => item.id)).toEqual([old.id, older.id]);
+  });
+
+  describe('unattached cleanup', () => {
+    it('finds ready media never attached before the cutoff, and rows already marked deleted', async () => {
+      const unattached = await aMedia();
+      const marked = await aMedia();
+      const reserved = await aMedia();
+      const attached = await aMedia({ attachedToType: PRODUCT, attachedToId: randomUUID(), attachedAt: new Date() });
+      const pending = await aMedia({ status: MediaStatusEnum.PENDING });
+      await aMedia();
+      await claim([reserved.publicId], randomUUID());
+      await testModule.dataSource.query(`UPDATE "Media" SET "createdAt" = now() - interval '2 days' WHERE "id" = ANY($1)`, [[unattached.id, reserved.id, attached.id, pending.id]]);
+      await testModule.dataSource.query(`UPDATE "Media" SET "deletedAt" = now() WHERE "id" = $1`, [marked.id]);
+
+      const found = await media.findUnattachedReadyCreatedBefore(new Date(Date.now() - 24 * 3_600_000), 10);
+
+      expect(found.map((item) => item.id)).toEqual([unattached.id, marked.id]);
+    });
+
+    it('marks only unattached media, and a marked one can no longer be claimed', async () => {
+      const unattached = await aMedia();
+      const claimed = await aMedia();
+      await claim([claimed.publicId], randomUUID());
+
+      expect(await media.markDeletedIfUnattached(claimed.id)).toBe(false);
+      expect(await media.markDeletedIfUnattached(unattached.id)).toBe(true);
+      expect(await media.markDeletedIfUnattached(unattached.id)).toBe(true);
+
+      expect((await claim([unattached.publicId], randomUUID())).status).toBe(MediaClaimStatusEnum.REJECTED);
+      expect((await reload(claimed)).deletedAt).toBeNull();
+    });
   });
 });

@@ -8,7 +8,9 @@ import { HeadObjectCommand, ListMultipartUploadsCommand, NotFound } from '@aws-s
 import { MediaStatusEnum } from '@marketplace/contracts-core';
 import { AppModule } from '../../src/app.module.js';
 import { Media } from '../../src/media/entity/media.entity.js';
-import { MediaOrphanCleanupService } from '../../src/media/service/media-orphan-cleanup.service.js';
+import { MediaOutbox } from '../../src/media/entity/media-outbox.entity.js';
+import { MediaOrphanCleanupCron } from '../../src/media/cron/media-orphan-cleanup.cron.js';
+import { MediaUnattachedCleanupCron } from '../../src/media/cron/media-unattached-cleanup.cron.js';
 import { StorageClientService } from '../../src/generic/storage/storage-client.service.js';
 import { truncateAllTables } from '../support/isolation.js';
 
@@ -94,6 +96,12 @@ describe('Media (e2e)', () => {
       throw error;
     }
   }
+
+  it('does not ask for variants of an upload nobody has attached yet', async () => {
+    await aReadyImage(await aToken());
+
+    expect(await dataSource.getRepository(MediaOutbox).count()).toBe(0);
+  });
 
   describe('single upload', () => {
     it('signs a PUT for a server-made key and becomes ready only after the bytes arrive', async () => {
@@ -224,11 +232,28 @@ describe('Media (e2e)', () => {
     const videoKey = await storageKeyOf(abandonedVideo);
     await dataSource.query(`UPDATE "Media" SET "createdAt" = now() - interval '25 hours' WHERE "publicId" = ANY($1)`, [[abandonedImage.id, abandonedVideo.id]]);
 
-    await app.get(MediaOrphanCleanupService).deleteOrphans();
+    await app.get(MediaOrphanCleanupCron).deleteOrphans();
 
     const remaining = await dataSource.getRepository(Media).find();
     expect(remaining.map(({ publicId }) => publicId)).toEqual([fresh.id]);
     const unfinished = await storage.client.send(new ListMultipartUploadsCommand({ Bucket: storage.bucket, Prefix: videoKey }));
     expect(unfinished.Uploads ?? []).toEqual([]);
+  });
+
+  it('deletes ready media nobody attached for more than a day, with its object, and keeps claimed and fresh ones', async () => {
+    const token = await aToken();
+    const unused = await aReadyImage(token);
+    const claimed = await aReadyImage(token);
+    const fresh = await aReadyImage(token);
+    const unusedKey = await storageKeyOf(unused);
+    await dataSource.query(`UPDATE "Media" SET "attachedToType" = 'product', "attachedToId" = $2, "attachedAt" = now() WHERE "publicId" = $1`, [claimed.id, randomUUID()]);
+    await dataSource.query(`UPDATE "Media" SET "createdAt" = now() - interval '25 hours' WHERE "publicId" = ANY($1)`, [[unused.id, claimed.id]]);
+
+    await app.get(MediaUnattachedCleanupCron).deleteUnattached();
+
+    const remaining = await dataSource.getRepository(Media).find({ withDeleted: true, order: { id: 'ASC' } });
+    expect(remaining.map(({ publicId }) => publicId)).toEqual([claimed.id, fresh.id]);
+    expect((await head(unusedKey)).status).toBe(404);
+    expect((await head(await storageKeyOf(claimed))).status).toBe(200);
   });
 });

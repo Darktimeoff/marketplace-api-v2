@@ -5,7 +5,7 @@ import { moneyTransformer } from '../../generic/transformer/money.transformer.js
 
 @Entity('SellerOffer')
 @Unique('SellerOffer_sellerId_sellerSku', ['sellerId', 'sellerSku'])
-@Unique('SellerOffer_sellerId_variantId', ['sellerId', 'variantId'])
+@Unique('SellerOffer_sellerId_variantPublicId', ['sellerId', 'variantPublicId'])
 @Check('SellerOffer_sellerSku_notBlank', `btrim("sellerSku") <> ''`)
 @Check('SellerOffer_discount_le', `"discountPrice" IS NULL OR "discountPrice" <= "price"`)
 @Check('SellerOffer_onHandQuantity_nonneg', `"onHandQuantity" >= 0`)
@@ -21,8 +21,8 @@ export class SellerOffer {
   @Column({ type: 'integer' })
   sellerId: number;
 
-  @Column({ type: 'integer' })
-  variantId: number;
+  @Column({ type: 'uuid' })
+  variantPublicId: string;
 
   // Уникален парой (sellerId, sellerSku): SKU — артикул продавца, а не платформы.
   @Column({ type: 'varchar', length: 64 })

@@ -5,4 +5,5 @@ export enum SourceEnum {
   IDENTITY = '/identity-service',
   USER = '/user-service',
   PRODUCT = '/product-service',
+  MEDIA = '/media-service',
 }

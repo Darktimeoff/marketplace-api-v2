@@ -25,7 +25,7 @@ describe('Registration provisioning over Kafka (e2e)', () => {
   let dataSource: DataSource;
   let kafka: KafkaJS.Kafka;
   let producer: KafkaJS.Producer;
-  let userCreate: { execute: (input: { identityId: number; email: string | null; phoneNumber: string | null }) => Promise<void> };
+  let userCreate: { execute: (input: { publicId: string; email: string | null; phoneNumber: string | null }) => Promise<void> };
   let userGateway: { handle: (event: unknown) => Promise<void> };
   const consumers: KafkaJS.Consumer[] = [];
   const identityEvents: ReceivedInterface[] = [];
@@ -66,13 +66,13 @@ describe('Registration provisioning over Kafka (e2e)', () => {
     const { Test } = await import('@nestjs/testing');
     const { AppModule } = await import('../../src/app.module.js');
     const { UserCreateCommandHandler } = await import('../../src/user/command-handler/user-create.command-handler.js');
-    const { UserIdentityEventsGateway } = await import('../../src/user/gateway/user-identity-events.gateway.js');
+    const { UserIdentityEventsConsumer } = await import('../../src/user/consumer/user-identity-events.consumer.js');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     await app.init();
     dataSource = app.get(DataSource);
     userCreate = app.get(UserCreateCommandHandler);
-    userGateway = app.get(UserIdentityEventsGateway) as unknown as { handle: (event: unknown) => Promise<void> };
+    userGateway = app.get(UserIdentityEventsConsumer) as unknown as { handle: (event: unknown) => Promise<void> };
 
     producer = kafka.producer();
     await producer.connect();
@@ -112,8 +112,8 @@ describe('Registration provisioning over Kafka (e2e)', () => {
     const email = `jane-${randomUUID()}@example.com`;
     await request(app.getHttpServer()).post('/auth/register').send({ email, password: 'correct-horse' }).expect(201);
     const identity = await dataSource.getRepository(Identity).findOneByOrFail({ email });
-    const user = await waitFor(async () => (await dataSource.getRepository(User).findOneBy({ identityId: identity.id })) ?? undefined, 'the user');
-    const account = await waitFor(async () => (await dataSource.getRepository(Account).findOneBy({ customerId: user.id })) ?? undefined, 'the account');
+    const user = await waitFor(async () => (await dataSource.getRepository(User).findOneBy({ publicId: identity.publicId })) ?? undefined, 'the user');
+    const account = await waitFor(async () => (await dataSource.getRepository(Account).findOneBy({ publicId: user.publicId })) ?? undefined, 'the account');
     return { identity, user, account };
   }
 
@@ -127,10 +127,10 @@ describe('Registration provisioning over Kafka (e2e)', () => {
   it('creates the user and a zero-balance account after a registration', async () => {
     const { identity, user, account } = await registerAndProvision();
 
-    expect(user).toMatchObject({ identityId: identity.id, identityPublicId: identity.publicId, email: identity.email, phoneNumber: null, firstName: null, lastName: null });
+    expect(user).toMatchObject({ publicId: identity.publicId, email: identity.email, phoneNumber: null, firstName: null, lastName: null });
     expect(account.balance).toBe('0.00');
-    const buyer = await waitFor(async () => (await dataSource.getRepository(OrderBuyer).findOneBy({ identityPublicId: identity.publicId })) ?? undefined, 'the order buyer');
-    expect(buyer.userId).toBe(user.id);
+    const buyer = await waitFor(async () => (await dataSource.getRepository(OrderBuyer).findOneBy({ publicId: identity.publicId })) ?? undefined, 'the order buyer');
+    expect(buyer.id).toEqual(expect.any(Number));
 
     const received = await waitFor(() => userEvents.find(({ key }) => key === user.publicId), 'user.created');
     const outboxRow = await waitFor(async () => {
@@ -149,10 +149,7 @@ describe('Registration provisioning over Kafka (e2e)', () => {
       subject: user.publicId,
       correlationid: user.publicId,
       data: {
-        userId: user.id,
-        userPublicId: user.publicId,
-        identityId: identity.id,
-        identityPublicId: identity.publicId,
+        publicId: identity.publicId,
         email: identity.email,
         phoneNumber: null,
         firstName: null,
@@ -171,10 +168,10 @@ describe('Registration provisioning over Kafka (e2e)', () => {
       .expect(201);
     const identity = await dataSource.getRepository(Identity).findOneByOrFail({ loginPhone: { fullNumber } });
 
-    const user = await waitFor(async () => (await dataSource.getRepository(User).findOneBy({ identityId: identity.id })) ?? undefined, 'the user');
+    const user = await waitFor(async () => (await dataSource.getRepository(User).findOneBy({ publicId: identity.publicId })) ?? undefined, 'the user');
 
     expect(user).toMatchObject({ email: null, phoneNumber: fullNumber });
-    await waitFor(async () => (await dataSource.getRepository(Account).findOneBy({ customerId: user.id })) ?? undefined, 'the account');
+    await waitFor(async () => (await dataSource.getRepository(Account).findOneBy({ publicId: user.publicId })) ?? undefined, 'the account');
   });
 
   it('creates one user and one account when identity.registered is delivered again', async () => {
@@ -186,8 +183,8 @@ describe('Registration provisioning over Kafka (e2e)', () => {
     await sendIdentityEvent(original.value);
 
     await waitFor(() => (execute.mock.settledResults.filter(({ type }) => type === 'fulfilled').length >= 2 ? true : undefined), 'both redeliveries');
-    expect(await dataSource.getRepository(User).countBy({ identityId: identity.id })).toBe(1);
-    expect(await dataSource.getRepository(Account).countBy({ customerId: user.id })).toBe(1);
+    expect(await dataSource.getRepository(User).countBy({ publicId: identity.publicId })).toBe(1);
+    expect(await dataSource.getRepository(Account).countBy({ publicId: user.publicId })).toBe(1);
     expect(await dataSource.getRepository(UserOutbox).countBy({ aggregateId: user.publicId })).toBe(1);
   });
 
@@ -196,12 +193,12 @@ describe('Registration provisioning over Kafka (e2e)', () => {
 
     const { user, account } = await registerAndProvision();
 
-    expect(account.customerId).toBe(user.id);
+    expect(account.publicId).toBe(user.publicId);
   });
 
   it.each([
     ['a payload that is not JSON', '{not json'],
-    ['an identity.registered without identityId', JSON.stringify({ specversion: '1.0', id: randomUUID(), type: IdentityRegisteredEvent.TYPE, data: { identityPublicId: randomUUID() } })],
+    ['an identity.registered without the person publicId', JSON.stringify({ specversion: '1.0', id: randomUUID(), type: IdentityRegisteredEvent.TYPE, data: { email: null, phoneNumber: null } })],
   ])('sends %s to user.profile.dlt and keeps consuming', async (_, value) => {
     await sendIdentityEvent(value);
 

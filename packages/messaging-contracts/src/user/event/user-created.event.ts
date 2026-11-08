@@ -10,10 +10,7 @@ export namespace UserCreatedEvent {
   export const SOURCE = SourceEnum.USER;
 
   export interface DataInterface {
-    userId: number;
-    userPublicId: string;
-    identityId: number;
-    identityPublicId: string;
+    publicId: string;
     email: string | null;
     phoneNumber: string | null;
     firstName: string | null;

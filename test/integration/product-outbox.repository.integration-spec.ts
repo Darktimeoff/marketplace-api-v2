@@ -9,6 +9,7 @@ import { ProductOutboxRepository } from '../../src/product/repository/product-ou
 import { ProductOutboxAggregateTypeEnum } from '../../src/product/enum/product-outbox-aggregate-type.enum.js';
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
+import { MessageBrokerEnum } from '../../src/generic/messaging/enum/message-broker.enum.js';
 
 @Module({
   imports: [TypeOrmModule.forFeature([ProductOutbox])],
@@ -39,6 +40,7 @@ describe('ProductOutboxRepository', () => {
     const id = randomUUID();
     await outbox.create({
       id,
+      broker: MessageBrokerEnum.KAFKA,
       topic: TopicEnum.PRODUCT_EVENTS,
       aggregateType: ProductOutboxAggregateTypeEnum.PRODUCT,
       aggregateId: id,

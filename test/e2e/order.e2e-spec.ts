@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
@@ -36,16 +37,17 @@ describe('Order (e2e)', () => {
     await app.close();
   });
 
-  async function fundBuyer(customerId: number, amount: string): Promise<void> {
-    await dataSource.query(
-      `INSERT INTO "Account" ("customerId", "balance") VALUES ($1, $2)
-       ON CONFLICT ("customerId") DO UPDATE SET "balance" = "Account"."balance" + EXCLUDED."balance"`,
-      [customerId, amount],
+  async function fundBuyer(publicId: string, amount: string): Promise<void> {
+    const [account]: { id: number }[] = await dataSource.query(
+      `INSERT INTO "Account" ("publicId", "balance") VALUES ($1, $2)
+       ON CONFLICT ("publicId") DO UPDATE SET "balance" = "Account"."balance" + EXCLUDED."balance"
+       RETURNING "id"`,
+      [publicId, amount],
     );
     const transactions = dataSource.manager.getRepository(Transaction);
     await transactions.save(
       transactions.create({
-        customerId,
+        accountId: account.id,
         amount,
         type: TransactionTypeEnum.DEPOSIT,
         status: TransactionStatusEnum.SUCCESS,
@@ -59,7 +61,7 @@ describe('Order (e2e)', () => {
   }
 
   async function aPlacedOrder(owner: TestBuyerInterface): Promise<number> {
-    await fundBuyer(owner.id, '1000.00');
+    await fundBuyer(owner.identityPublicId, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, { price: '50.00', onHandQuantity: 5 });
     const response = await request(app.getHttpServer())
       .post('/order')
@@ -70,7 +72,7 @@ describe('Order (e2e)', () => {
           phone: { countryCode: CountryCodeEnum.UA, rawNumber: '+380501234567', fullNumber: '+380501234567', nationalNumber: '0501234567' },
           address: { addressLine: 'Khreshchatyk St, 1', city: 'Kyiv' },
         },
-        items: [{ offerId: offer.id, quantity: 1 }],
+        items: [{ offerPublicId: offer.publicId, quantity: 1 }],
         currency: CurrencyEnum.UAH,
       })
       .expect(202);
@@ -79,7 +81,7 @@ describe('Order (e2e)', () => {
 
   it('creates an order and reads it back over HTTP', async () => {
     const buyer = await aBuyer(app, dataSource);
-    await fundBuyer(buyer.id, '1000.00');
+    await fundBuyer(buyer.identityPublicId, '1000.00');
     const offer = await aSellerOffer(dataSource.manager, {
       price: '50.00',
       onHandQuantity: 5,
@@ -102,7 +104,7 @@ describe('Order (e2e)', () => {
             city: 'Kyiv',
           },
         },
-        items: [{ offerId: offer.id, quantity: 2 }],
+        items: [{ offerPublicId: offer.publicId, quantity: 2 }],
         currency: CurrencyEnum.UAH,
       })
       .expect(202);
@@ -123,7 +125,6 @@ describe('Order (e2e)', () => {
 
     expect(readResponse.body).toMatchObject({
       id: orderId,
-      publicId: createResponse.body.publicId,
       status: 'paid',
       totalAmount: '100.00',
     });
@@ -138,7 +139,8 @@ describe('Order (e2e)', () => {
   });
 
   it('returns 404 for a non-existent order id', async () => {
-    await get('/order/999999', await aBuyer(app, dataSource)).expect(404);
+    await get(`/order/${randomUUID()}`, await aBuyer(app, dataSource)).expect(404);
+    await get('/order/999999', await aBuyer(app, dataSource)).expect(400);
   });
 
   describe('ownership', () => {

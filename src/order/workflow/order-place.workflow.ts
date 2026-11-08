@@ -30,7 +30,7 @@ const { releaseStock, refundCustomer, markPaid, markFailed } = proxyActivities<O
 export async function orderPlaceWorkflow(input: OrderPlaceWorkflowInputInterface): Promise<OrderStatusEnum> {
   const charge: OrderPlaceChargeInterface = {
     orderPublicId: input.orderPublicId,
-    userId: input.userId,
+    buyerPublicId: input.buyerPublicId,
     totalAmount: input.totalAmount,
   };
   let isChargeSent = false;
@@ -52,7 +52,7 @@ export async function orderPlaceWorkflow(input: OrderPlaceWorkflowInputInterface
         await releaseStock(input.orderPublicId);
       }
 
-      await markFailed(input.orderId, failure);
+      await markFailed(input.orderPublicId, failure);
     });
 
     if (failureType === undefined) {
@@ -62,7 +62,7 @@ export async function orderPlaceWorkflow(input: OrderPlaceWorkflowInputInterface
     return failure.status;
   }
 
-  await markPaid(input.orderId);
+  await markPaid(input.orderPublicId);
   
   return OrderStatusEnum.paid;
 }

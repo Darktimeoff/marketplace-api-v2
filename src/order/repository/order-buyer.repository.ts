@@ -15,13 +15,13 @@ export class OrderBuyerRepository {
       .into(OrderBuyer)
       .values(input)
       .orIgnore()
-      .returning(['identityPublicId'])
+      .returning(['id'])
       .execute();
 
     return result.raw.length > 0;
   }
 
-  findByIdentityPublicId(identityPublicId: OrderBuyer['identityPublicId']): Promise<OrderBuyer | null> {
-    return this.txHost.tx.getRepository(OrderBuyer).findOneBy({ identityPublicId });
+  findByPublicId(publicId: OrderBuyer['publicId']): Promise<OrderBuyer | null> {
+    return this.txHost.tx.getRepository(OrderBuyer).findOneBy({ publicId });
   }
 }

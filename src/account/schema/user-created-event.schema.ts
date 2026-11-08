@@ -5,8 +5,10 @@ export const userCreatedEventSchema = z.object({
   specversion: z.literal('1.0'),
   id: z.uuid(),
   type: z.literal(UserCreatedEvent.TYPE),
-  data: z.object({
-    userId: z.int().positive(),
-    userPublicId: z.uuid(),
-  }),
+  data: z
+    .object({
+      publicId: z.uuid().optional(),
+      identityPublicId: z.uuid().optional(),
+    })
+    .transform(({ publicId, identityPublicId }) => ({ publicId: publicId ?? identityPublicId ?? null })),
 });

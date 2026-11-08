@@ -1,4 +1,4 @@
-import { Controller, Headers, MessageEvent, Param, ParseIntPipe, Sse, UseGuards } from '@nestjs/common';
+import { Controller, Headers, MessageEvent, Param, ParseUUIDPipe, Sse, UseGuards } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { OrderAccessGuard } from '../guard/order-access.guard.js';
 import { OrderStatusEvent } from '../interface/order-status-event.interface.js';
@@ -13,7 +13,7 @@ export class OrdersController {
   @UseGuards(OrderAccessGuard)
   @Sse(':id/events')
   events(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseUUIDPipe) id: string,
     @Headers('Last-Event-ID') lastEventIdHeader: string | undefined,
   ): Observable<MessageEvent> {
     const lastEventId = lastEventIdHeader === undefined ? 0 : Number(lastEventIdHeader);
@@ -44,7 +44,7 @@ export class OrdersController {
     subscriber.next({
       id: String(event.id),
       type: 'order.status',
-      data: { orderId: event.orderId, status: event.status },
+      data: { orderId: event.orderPublicId, status: event.status },
     });
     return event.id;
   }

@@ -13,8 +13,8 @@ export class OrderLine {
   @PrimaryColumn({ type: 'integer' })
   orderId: number;
 
-  @PrimaryColumn({ type: 'integer' })
-  offerId: number;
+  @PrimaryColumn({ type: 'uuid' })
+  offerPublicId: string;
 
   @Column({ type: 'integer' })
   quantity: number;
@@ -41,4 +41,4 @@ export class OrderLine {
 }
 
 export interface OrderLineCreateEntityInterface
-  extends Pick<OrderLine, 'orderId' | 'offerId' | 'quantity' | 'unitPrice' | 'unitDiscountPrice'> {}
+  extends Pick<OrderLine, 'orderId' | 'offerPublicId' | 'quantity' | 'unitPrice' | 'unitDiscountPrice'> {}

@@ -464,6 +464,16 @@ Running the job in its own container without network access would be the next la
 
 The stream is fed from Kafka, not from the code that changes the status. Order writes `order.created`, `order.paid` and `order.failed` through `OrderOutbox` in the same transaction as each status change; `OrderNotifyEventsConsumer` consumes `order.events` as a broadcast consumer on every instance and records each event in `OrderNotifyService`, which pushes it to that order's SSE listeners and keeps the last 100 per order. The SSE `id` is the Kafka offset + 1: all events of one order are on one partition (key = `publicId`), so ids only grow per order and are the same on every instance, and a reconnect with `Last-Event-ID` resumes correctly on any instance. Offset + 1 because the first message of a partition has offset 0, which `Last-Event-ID` would treat as "nothing seen yet". The history is in memory: it is rebuilt from new events after a restart, not from the past. A status reaches the stream about a second after the change (the outbox relay's poll interval). SSE fits one-way notifications: the browser's `EventSource` reconnects by itself and sends `Last-Event-ID`.
 
+## Container image
+
+`npm run image:build` builds `docker/Dockerfile` with BuildKit into `marketplace-api:hw28`:
+
+- `deps` and `prod-deps` run `npm ci` on `node:24-bookworm-slim` (glibc 2.36, the same as the runtime, so the prebuilt native modules of `sharp`, `argon2`, `@confluentinc/kafka-javascript` and `@temporalio/core-bridge` load as they are); `build` compiles; `ffmpeg` provides the static `ffmpeg`/`ffprobe` that media variants call; `runtime` is `gcr.io/distroless/nodejs24-debian12:nonroot`: no shell, no package manager, uid `65532`.
+- The registry token reaches `npm ci` only as a BuildKit secret (`--secret id=npm_token,src=.npm_token`, mounted as `NPM_TOKEN` for that one `RUN`); `.npmrc` holds `${NPM_TOKEN}`, not the value. `ARG` would keep the value in the image history and `COPY` + `rm` in the bytes of an earlier layer. There is no private registry yet, so `.npm_token` is a decoy for the scope `@marketplace-private` on `npm.invalid`, which no dependency uses.
+- `.dockerignore` is an allowlist: only the manifests, the compiler configs, `src` and the workspace packages reach the build context, so a new file in the repository (state, keys, env files) never does by accident.
+- `packages/*/src` stays in the image next to `dist`: the Temporal worker bundles the workflows with webpack at startup in `development` mode, which picks the `development` export condition (`./src/index.ts`) of `@marketplace/contracts-core`. Without it the worker fails with `no valid target file was found`.
+- No `HEALTHCHECK`: distroless has no tool to run one, and Kubernetes uses its own probes.
+
 ## Health and graceful shutdown
 
 - `GET /healthz` (liveness) checks nothing but the process: it answers while the event loop runs. A dependency that is down must not get a pod restarted.

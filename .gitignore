@@ -68,3 +68,4 @@ secrets/*
 AGENTS.md
 
 graphify-out
+.npm_token

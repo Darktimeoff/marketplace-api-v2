@@ -5,7 +5,7 @@ import { createStorageClient } from './generic/storage/create-storage-client.js'
 import { requiredEnvironment, storageClientOptionsFromEnvironment } from './generic/storage/storage-environment.js';
 import { MEDIA_UPLOAD_TYPES } from './media/constant/media-upload.constant.js';
 
-const PUBLIC_PREFIXES = ['media/', 'assets/'];
+const PUBLIC_PREFIXES = ['media/'];
 
 const client = createStorageClient(storageClientOptionsFromEnvironment());
 const bucket = requiredEnvironment('STORAGE_BUCKET');
@@ -15,11 +15,7 @@ function isPublicKey(key: string): boolean {
   return PUBLIC_PREFIXES.some((prefix) => key.startsWith(prefix)) && !key.split('/').includes('..');
 }
 
-function safetyHeaders(key: string, contentType: string): Record<string, string> {
-  if (!key.startsWith('media/')) {
-    return { 'content-type': contentType, 'x-content-type-options': 'nosniff' };
-  }
-
+function safetyHeaders(contentType: string): Record<string, string> {
   if (contentType in MEDIA_UPLOAD_TYPES) {
     return { 'content-type': contentType, 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; sandbox" };
   }
@@ -43,7 +39,7 @@ async function serve(request: IncomingMessage, response: ServerResponse): Promis
   try {
     const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     response.writeHead(200, {
-      ...safetyHeaders(key, object.ContentType ?? 'application/octet-stream'),
+      ...safetyHeaders(object.ContentType ?? 'application/octet-stream'),
       'content-length': object.ContentLength,
       ...(object.CacheControl ? { 'cache-control': object.CacheControl } : {}),
       ...(object.ETag ? { etag: object.ETag } : {}),

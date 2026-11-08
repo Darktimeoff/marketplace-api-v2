@@ -350,18 +350,18 @@ owner  ─GET /media/:id──────────────────�
 
 | Variable | Source | Used by | Notes |
 |---|---|---|---|
-| `STORAGE_ACCESS_KEY` | Infisical | API, `edge`, `assets:publish`, demos | the `media-app` user, not the MinIO root |
+| `STORAGE_ACCESS_KEY` | Infisical | API, `edge` | the `media-app` user, not the MinIO root |
 | `STORAGE_SECRET_KEY` | Infisical (locally the same value as `secrets/storage_secret_key.txt`) | same | the right to read and write every file |
 | `STORAGE_ENDPOINT` | `.env` | same | empty = AWS S3 |
 | `STORAGE_REGION` | `.env` | same | |
 | `STORAGE_BUCKET` | `.env` | same, `minio-init` | |
-| `MEDIA_PUBLIC_BASE_URL` | `.env` | API (`ProductMedia` URLs), `demo:cdn` | |
-| `EDGE_ORIGIN_PORT` | environment, default `8787` | `edge`, `demo:cdn` | must match `proxy_pass` in `nginx/edge.conf` |
+| `MEDIA_PUBLIC_BASE_URL` | `.env` | API (`ProductMedia` URLs) | |
+| `EDGE_ORIGIN_PORT` | environment, default `8787` | `edge` | must match `proxy_pass` in `nginx/edge.conf` |
 | `MINIO_ROOT_USER` | compose, default `root` | `minio`, `minio-init` | admin only, never used by the app |
 | `minio_root_password` | `secrets/minio_root_password.txt` (docker secret) | `minio`, `minio-init` | |
 | `storage_secret_key` | `secrets/storage_secret_key.txt` (docker secret) | `minio-init` creates `media-app` with it | |
 
-`npm run edge`, `npm run assets:publish` and the three demos all run through `scripts/with-secrets.sh dev`, like `migrate` and `seed`. The storage key is worth more than a database URL: it reads and writes every file, and on AWS a CloudFront signing key would grant access to all private content of a distribution, so neither lives in an env file.
+`npm run edge` runs through `scripts/with-secrets.sh dev`, like `migrate` and `seed`. The storage key is worth more than a database URL: it reads and writes every file, and on AWS a CloudFront signing key would grant access to all private content of a distribution, so neither lives in an env file.
 
 ### Storage: one private bucket, one least-privilege user
 
@@ -400,9 +400,9 @@ Finished uploads nobody uses are billed too. A claim that is never confirmed (th
 
 ### CDN: chosen form and the AWS variant
 
-Locally (the graded form): `edge` is nginx with `proxy_cache` in compose; on a miss it asks the shim (`src/edge.ts`, ~60 lines of `node:http`, run with `npm run edge`), which fetches the object from the private bucket with the storage key and returns it with the object's `Cache-Control`. nginx has no `proxy_cache_valid`, so it caches exactly what the origin marks cacheable and adds `X-Cache: HIT|MISS`. That is the point of OAC: the cache layer reads the bucket, the public can't. The shim runs on the host because the credentials come from the vault through `with-secrets.sh`, which a container started by `docker compose up` doesn't have; nginx reaches it at `host.docker.internal` (`host-gateway`). It listens on `0.0.0.0:8787` so the bridge network can reach it; locally that exposes `media/` and `assets/` read-only to the LAN past the cache, which a production CloudFront doesn't have.
+Locally (the graded form): `edge` is nginx with `proxy_cache` in compose; on a miss it asks the shim (`src/edge.ts`, ~60 lines of `node:http`, run with `npm run edge`), which fetches the object from the private bucket with the storage key and returns it with the object's `Cache-Control`. nginx has no `proxy_cache_valid`, so it caches exactly what the origin marks cacheable and adds `X-Cache: HIT|MISS`. That is the point of OAC: the cache layer reads the bucket, the public can't. The shim runs on the host because the credentials come from the vault through `with-secrets.sh`, which a container started by `docker compose up` doesn't have; nginx reaches it at `host.docker.internal` (`host-gateway`). It listens on `0.0.0.0:8787` so the bridge network can reach it; locally that exposes `media/` read-only to the LAN past the cache, which a production CloudFront doesn't have.
 
-The shim serves only `media/` and `assets/`. Under `media/` it serves inline only the allowlisted types and sends anything else as `application/octet-stream` with `Content-Disposition: attachment` and `Content-Security-Policy: sandbox`; every response has `X-Content-Type-Options: nosniff`.
+The shim serves only `media/`. It serves inline only the allowlisted types and sends anything else as `application/octet-stream` with `Content-Disposition: attachment` and `Content-Security-Policy: sandbox`; every response has `X-Content-Type-Options: nosniff`.
 
 On AWS: Block Public Access on, CloudFront with Origin Access Control, and a bucket policy that lets only that distribution read. The `AWS:SourceArn` condition is required: without it any CloudFront distribution in any account could read the bucket.
 
@@ -414,7 +414,7 @@ On AWS: Block Public Access on, CloudFront with Origin Access Control, and a buc
     "Effect": "Allow",
     "Principal": { "Service": "cloudfront.amazonaws.com" },
     "Action": "s3:GetObject",
-    "Resource": ["arn:aws:s3:::marketplace-media/media/*", "arn:aws:s3:::marketplace-media/assets/*"],
+    "Resource": "arn:aws:s3:::marketplace-media/media/*",
     "Condition": { "StringEquals": { "AWS:SourceArn": "arn:aws:cloudfront::<account-id>:distribution/<distribution-id>" } }
   }]
 }
@@ -424,7 +424,7 @@ Browsers PUT to the bucket's origin, so the bucket needs CORS for `PUT` from the
 
 ### Updates without invalidation
 
-`Cache-Control: public, max-age=31536000, immutable` is set on the object at upload (signed into the presigned PUT, set on `CreateMultipartUpload`, or by `assets:publish`), not on the edge: an object without it is fetched from the bucket on every request. A key never changes content: media keys carry a uuid, and static assets carry the content hash (`npm run assets:publish -- app.css` uploads `assets/app.117f8504.css` and skips files whose hash already exists). New content gets a new URL, the old cache entry harms nobody, and nothing is invalidated: CloudFront invalidations cost money past the free tier, propagate eventually, can't be undone and never reach browser or proxy caches. Only the entry point that names the hashed files (`index.html`, a manifest) is served with `no-cache`.
+`Cache-Control: public, max-age=31536000, immutable` is set on the object at upload (signed into the presigned PUT, or set on `CreateMultipartUpload`), not on the edge: an object without it is fetched from the bucket on every request. A key never changes content: media keys carry a uuid. New content gets a new URL, the old cache entry harms nobody, and nothing is invalidated: CloudFront invalidations cost money past the free tier, propagate eventually, can't be undone and never reach browser or proxy caches. Only the entry point that names the hashed files (`index.html`, a manifest) is served with `no-cache`.
 
 ### Attaching media to a product
 
@@ -458,29 +458,6 @@ Running the job in its own container without network access would be the next la
 
 **Reading them.** Product never reads media's tables. `ProductMediaEventsConsumer` (group `product.media-variants`) copies `media.variants.generated` into `ProductMediaVariant` rows and `ProductMedia.thumbHash` (idempotent by `(productMediaId, name)`). `GET /product/:publicId` (public) answers each media with `thumbHash` and `variants: [{ name, mimeType, url, width, height }]`, URLs on `MEDIA_PUBLIC_BASE_URL` like the original; a client builds `srcset` from the widths and shows the ThumbHash until the first variant arrives. `POST /product` answers `thumbHash: null, variants: []`, since generation starts after its commit.
 
-### Demo runs
-
-Three runs of each demo on this machine (MinIO, nginx edge, the whole stack in compose). The output is deterministic; extra lines start with `#`.
-
-| Key | `demo:upload` ×3 | | Key | `demo:multipart` ×3 | | Key | `demo:cdn` ×3 |
-|---|---|---|---|---|---|---|---|
-| `intent` | 200 200 200 | | `head-before-complete` | 404 404 404 | | `direct` | 403 403 403 |
-| `key-from-server` | 1 1 1 | | `resumed-parts` | 1 1 1 | | `edge-miss` | 200 200 200 |
-| `api-alive` | 0 0 0 | | `complete` | 200 200 200 | | `edge-hit` | 200 200 200 |
-| `put-offline` | 200 200 200 | | `size-match` | 1 1 1 | | `cache-hit` | 1 1 1 |
-| `commit` | 200 200 200 | | `etag-multipart` | 1 1 1 | | `new-name` | 1 1 1 |
-| `commit-without-bytes` | 409 409 409 | | | | | `new-url` | 200 200 200 |
-| `tampered` | 403 403 403 | | | | | `content-changed` | 1 1 1 |
-| `expired` | 403 403 403 | | | | | `invalidations` | 0 0 0 |
-
-What each demo does:
-
-- **`demo:upload`** starts the API on `:3101`, requests an upload with `fileName: '../../etc/passwd'`, stops the API (`api-alive` checks the port with a raw socket, not `fetch`), and PUTs the bytes from a separate process whose environment holds nothing but `PATH`. It then starts the API on `:3102` (a different port: `fetch` keeps a connection pool per host and port, and a restarted port can hand out a dead socket), commits, commits an upload that never got bytes (`409`), swaps the key inside a presigned URL (`403 SignatureDoesNotMatch`) and PUTs with a URL signed for one second, two seconds later (`403 Request has expired`).
-- **`demo:multipart`** aborts the demo user's unfinished uploads and deletes their objects first, then requests an 11 MiB video (3 parts of 5 MiB, 5 MiB, 1 MiB). Process A uploads two parts and exits with `137`; `HeadObject` answers `404` although 10 MiB are stored; process B, a fresh process, asks `/parts`, learns that 2 of 3 are there and uploads one; `complete` assembles the object, whose size matches and whose ETag ends in `-3` and differs from the file's MD5. Run twice in a row, the second run starts from a clean state.
-- **`demo:cdn`** deletes previous demo assets, starts the shim, publishes `demo-app.css` (a per-run build comment makes the hash new, so the first request is a real `MISS` although nginx keeps its cache between runs), checks the anonymous direct request, two requests through the edge, then publishes changed content and checks that it got a new name and is served under the new URL while the old URL still returns the old file.
-
-Each demo verifies its own invariants and exits `1` if one breaks: with the bucket made public (`mc anonymous set download`), `demo:cdn` prints `direct=200`, `# invariant broken: direct=200` and exits `1`.
-
 ## Realtime order status (SSE)
 
 `GET /orders/:id/events?buyerPublicId=<uuid>` (`:id` is the order's uuid) streams the order's status as SSE `order.status` events: `pending_payment`, then `paid`, or `canceled` / `failed_payment`. The buyer id is an ownership hint, not authentication.
@@ -513,50 +490,6 @@ Integration and e2e tests start their containers once per run (Postgres, RabbitM
 
 `test:all` runs the suites side by side because integration and e2e start their own containers. Inside a suite the files run in `TEST_WORKERS` workers (default `4`; `TEST_WORKERS=1` runs them one by one on a machine with little memory). Every e2e file boots the whole app, and every test wipes the database and Redis, so workers can't share infrastructure: the global setup starts one container set per worker in parallel (e2e: Postgres, RabbitMQ, Kafka, Temporal, MinIO, two Redis; integration: Postgres and two Redis) and each worker connects to its own set by `VITEST_POOL_ID`. Four e2e sets take about 4 GB of memory.
 
-## Grading
-
-<!-- TODO(hw-26): remove after homework -->
-
-The demos start the API themselves, so they need the whole stack (Postgres, RabbitMQ, Kafka, Temporal, both Redis instances, MinIO and the nginx edge). The values below are the dev credentials from `docker-compose.yml` and `secrets/*.example`; the grader has no vault, hence `SKIP_VAULT=1`.
-
-```bash
-cp .env.example .env
-for f in db_password rabbitmq_password redis_password minio_root_password storage_secret_key; do cp secrets/$f.txt.example secrets/$f.txt; done
-docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue minio minio-init edge
-
-export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
-export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
-export KAFKA_BROKERS=127.0.0.1:9092
-export TEMPORAL_ADDRESS=127.0.0.1:7233
-export REDIS_CACHE_URL=redis://default:changeme@127.0.0.1:6380
-export REDIS_QUEUE_URL=redis://default:changeme@127.0.0.1:6381
-export JWT_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
-export JWT_PUBLIC_KEY="$(printf '%s' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
-export REFRESH_TOKEN_PEPPER=grader-pepper
-export GOOGLE_CLIENT_SECRET=grader-unused
-export STORAGE_ENDPOINT=http://127.0.0.1:9010
-export STORAGE_REGION=us-east-1
-export STORAGE_BUCKET=marketplace-media
-export STORAGE_ACCESS_KEY=media-app
-export STORAGE_SECRET_KEY=changeme-media
-export MEDIA_PUBLIC_BASE_URL=http://127.0.0.1:8088
-export SKIP_VAULT=1
-
-npm ci
-npm run build
-npm run migrate
-
-npm run demo:upload
-npm run demo:multipart
-npm run demo:cdn
-```
-
-- `--wait` matters: without it the demos start before MinIO and Postgres accept connections. `minio-init` stays up with a healthcheck so that `--wait` returns `0`.
-- Name the services: the compose file also has the Infisical stack, which needs credentials of its own.
-- `npm run build` is required: the demos, the API they start, the edge shim and `migrate` run the compiled `dist/`.
-- Free ports `3101`–`3103` (the API instances the demos start) and `8787` (the edge shim `demo:cdn` starts) before running the demos; a demo refuses to start a process on a busy port.
-- The MinIO data is a named volume; each demo cleans up its own objects and rows first, so they can run any number of times.
-
 ## Configuration
 
 Validated at startup with zod (`src/generic/environment/environment.schema.ts`); `npm run check:env` fails if `.env.example` drifts from the schema.
@@ -581,7 +514,7 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `OIDC_REDIRECT_BASE_URL` | no | `http://localhost:3000` | base of the callbacks: `<base>/auth/<provider>/callback` must match the redirect URI registered at the provider exactly |
 | `STORAGE_ENDPOINT` | no | empty | S3-compatible endpoint (`http://localhost:9010` for MinIO); empty means AWS S3 and virtual-hosted URLs |
 | `STORAGE_REGION` | no | `us-east-1` | bucket region, part of every signature |
-| `STORAGE_BUCKET` | no | `marketplace-media` | the one private bucket (`media/`, `assets/`) |
+| `STORAGE_BUCKET` | no | `marketplace-media` | the one private bucket (`media/`) |
 | `MEDIA_PUBLIC_BASE_URL` | no | `http://localhost:8088` | CDN base that public media URLs are built on (the nginx edge locally, a CloudFront domain in production) |
 | `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
 

@@ -538,8 +538,22 @@ kind `v0.33.0`, one node `kindest/node:v1.36.4` (pinned by digest in `k8s/kind-c
 - **Service.** `NodePort` `30080`, published by kind on `127.0.0.1:30080`; PDB `maxUnavailable: 1`.
 - **Image.** Pulumi knows the image only as the string in the pod spec, so the program never uses the moving tag `hw28`: with it a rebuilt image changed nothing in the spec, `up` answered `unchanged` and the old pods kept the old code, while any pod the HPA or a restart created took the new image under the same tag, two versions side by side. `scripts/infra.sh` passes `IMAGE_REF` = the immutable tag that `cluster:up` loaded, and stops with `image … is not in the cluster: run npm run cluster:up` when the node lacks it (otherwise the pods would sit in `ErrImagePull` until the progress deadline). The tag is the digest of the platform manifest, not the image id: with the containerd image store the id is the digest of the index, which carries a BuildKit attestation with the build time and changed on every rebuild (`7ec60ae62793`, `88b4dff57f57` for the same code), while the platform manifest stayed `df05608f3ad1`. Measured: a rebuild without changes → `8 unchanged`; a changed log line → `ee274e37ebf3` and a rolling update; the change reverted → back to `df05608f3ad1` from the build cache, and the Deployment reused its old ReplicaSet. Old tags stay on the host and the node until removed (`docker image rm`, `cluster:down`).
 - **`REV`.** The `rev` config value (`npm run up -- -c rev=2`) goes into the pod env, so changing it rolls the same image again; a code change doesn't need it.
+- **Rollout settings.** `drainMs`, `readiness` (`false` drops the startup and readiness probes), `maxUnavailable` and `maxSurge` are config values with the safe defaults above, so the demo can switch them off; the program refuses `maxUnavailable` and `maxSurge` both `0`, a rollout that could never replace a pod.
 
 Measured: `up` from nothing 11.6 s (8 resources; the first pod ready after 4 s), `destroy` 11.6 s, `up` with nothing changed 2 s. A quick check before the load demo: `rev=1 → 2` took 10.4 s while a sequential `curl` loop sent 12 062 requests to `/healthz`, all `200`.
+
+### Demo: rollout
+
+<!-- TODO(hw-28): remove after homework -->
+
+`npm run demo:rollout` (`demo/rollout.sh`, profile `safe`) or `npm run demo:rollout -- broken`. It needs the stack up and a product in the database (`npm run seed`). Each run first applies the profile's settings without load (`npm run up`), because how a pod stops is decided by the spec of the old pod, then starts `demo/rollout/load.mjs` (16 keep-alive clients on `GET /product/<id>`, a request is `ok` only on a `2xx` within 2 s), waits 3 s, runs `npm run up -- -c rev=<now>`, waits until only the new ReplicaSet has pods, all ready, keeps the load 3 s longer and stops it, never before `5000` requests. `rollout-seconds` is from the start of that `up` to that point. `broken` puts the safe settings back afterwards. Exit `1` when `requests` is below 5000 or the safe profile failed a request.
+
+| Profile | Settings | `requests` | `failed` | `rollout-seconds` |
+|---|---|---|---|---|
+| `safe` | `drainMs=5000`, probes, `maxUnavailable: 0`, `maxSurge: 1` | 40 957 / 46 163 / 48 516 | 0 / 0 / 0 | 17.8 / 19.0 / 20.0 |
+| `broken` | `drainMs=0`, no startup or readiness probe, `maxUnavailable: 1`, `maxSurge: 0` | 21 134 / 28 358 | 9 243 / 16 532 | 4.0 / 4.0 |
+
+In `broken` an old pod is killed before its replacement exists and closes its sockets at once, and the new pod is in the Service from the moment its container starts, about 2.65 s before it listens; the failures are almost all closed or reset sockets (`UND_ERR_SOCKET` 9 072 and 16 391, `ECONNRESET` 155 and 130, a few 2 s timeouts). The safe rollout is slower because each pod waits for a ready replacement and drains for 5 s.
 
 ## Secrets
 

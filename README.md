@@ -517,23 +517,50 @@ No single channel sees both leaks: `ARG` lives only in the history, `rm` leaves 
 
 ### Cluster
 
-kind `v0.33.0`, one node `kindest/node:v1.36.4` (pinned by digest in `k8s/kind-config.yaml`; v1.36 because the local `kubectl` is v1.35 and a client supports one minor version of skew), on Docker with 31 GiB of memory. Measured on this machine: `kind create … --wait 120s` until the node is `Ready` 27.7 / 29.2 / 30.6 s, joining the compose network and `kind load docker-image` 12.9–15.6 s, the idle node 640 MiB.
+kind `v0.33.0`, one node `kindest/node:v1.36.4` (pinned by digest in `k8s/kind-config.yaml`; v1.36 because the local `kubectl` is v1.35 and a client supports one minor version of skew), on Docker with 31 GiB of memory (`docker info`: `Total Memory: 31.02GiB`). kind gives the node no memory limit of its own: it takes what it uses from Docker's total, measured with `docker stats` at 640 MiB idle and 2.1 GiB with four API pods (about 217 MiB each, `kubectl top`); the compose dependencies the pods use add about 1.7 GiB (Kafka 1.2 GiB of it). Measured on this machine: `kind create … --wait 120s` until the node is `Ready` 27.7 / 29.2 / 30.6 s, joining the compose network and `kind load docker-image` 12.9–15.6 s.
 
-- `npm run cluster:up` (`scripts/cluster-up.sh`) creates the cluster unless it exists, connects the node to the compose network `marketplace-api-v2_default` and loads `marketplace-api:hw28` into it together with an immutable tag `marketplace-api:<first 12 hex of the image's linux/amd64 manifest digest>` (`scripts/lib/image.sh`). Run it again after every `image:build`: an image built on the host does not exist in the cluster, and the pod would hang in `ErrImagePull` whatever its `imagePullPolicy`. kind reloads the image every time (about 8 s) because Docker's containerd image store reports the manifest-list digest as the image id and the node the config digest, so they never match.
+- `npm run cluster:up` (`scripts/cluster-up.sh`) creates the cluster unless it exists, connects the node to the network of the running compose `db` container (`marketplace-api-v2_default` here; compose names it after the checkout's directory, so the script reads it, and `COMPOSE_NETWORK` overrides it) and loads `marketplace-api:hw28` into it together with an immutable tag `marketplace-api:<first 12 hex of the image's linux/amd64 manifest digest>` (`scripts/lib/image.sh`). Run it again after every `image:build`: an image built on the host does not exist in the cluster, and the pod would hang in `ErrImagePull` whatever its `imagePullPolicy`. kind reloads the image every time (about 8 s) because Docker's containerd image store reports the manifest-list digest as the image id and the node the config digest, so they never match.
 - `cluster:up` also applies metrics-server `v0.9.0` (`kubectl apply -k k8s/metrics-server`): `components.yaml` is the release manifest unchanged, the kustomization pins the image by digest and adds `--kubelet-insecure-tls`, because kind's kubelets serve a self-signed certificate without IP SANs and metrics-server would refuse to scrape them. On a real cluster the kubelet certificates are signed by the cluster CA and the flag goes away. Without it the HPA has no CPU numbers (`cpu: <unknown>/70%`) and can only hold `minReplicas`.
 - `npm run cluster:down` deletes it.
 - Only the API runs in the cluster. Postgres (through pgbouncer), Kafka, RabbitMQ, Temporal, both Redis instances and MinIO stay in compose, as managed services would stay outside a production cluster. With the node on the compose network, pods resolve the compose service names through CoreDNS and Docker's DNS (checked from a pod: `db-bouncer:5432`, `kafka:29092`, `rabbitmq:5672`, `temporal:7233`, `redis-cache:6379`, `redis-queue:6379`, `minio:9000` all open), so Kafka's internal listener, which already advertises `kafka:29092`, works without another listener.
 - The scripts use `$KUBECONFIG` when it is set; locally the cluster lives in `~/.kube/kind-marketplace`, so creating it doesn't switch the default context of another kubeconfig.
 
+### Variables
+
+What the Pulumi program reads. Rows marked «сховище» come from Infisical (the vault of homework #11) through `scripts/with-secrets.sh`, or are exported with `SKIP_VAULT=1`; without any of them `pulumi preview` stops and names it. None of them is written to a file.
+
+| Variable | Source | Why |
+|---|---|---|
+| `DBPASSWORD` | сховище (Infisical, #11) | Postgres password, K8s Secret → pod |
+| `DBUSER` | сховище (Infisical, #11) | Postgres user, K8s Secret → pod |
+| `RABBITMQ_USER` | сховище (Infisical, #11) | RabbitMQ user, K8s Secret → pod |
+| `RABBITMQ_PASSWORD` | сховище (Infisical, #11) | RabbitMQ password, K8s Secret → pod |
+| `JWT_PRIVATE_KEY` | сховище (Infisical, #11) | signs access tokens, K8s Secret → pod |
+| `JWT_PUBLIC_KEY` | сховище (Infisical, #11) | verification keys (PEM list), K8s Secret → pod |
+| `REDIS_CACHE_URL` | сховище (Infisical, #11) | redis-cache URL with its password; the program swaps the host for `redis-cache:6379`, K8s Secret → pod |
+| `REDIS_QUEUE_URL` | сховище (Infisical, #11) | redis-queue URL with its password; host swapped for `redis-queue:6379`, K8s Secret → pod |
+| `REFRESH_TOKEN_PEPPER` | сховище (Infisical, #11) | HMAC pepper of refresh tokens, K8s Secret → pod |
+| `GOOGLE_CLIENT_SECRET` | сховище (Infisical, #11) | Sign in with Google, K8s Secret → pod |
+| `STORAGE_ACCESS_KEY` | сховище (Infisical, #11) | S3/MinIO access key, K8s Secret → pod |
+| `STORAGE_SECRET_KEY` | сховище (Infisical, #11) | S3/MinIO secret key, K8s Secret → pod |
+| `PULUMI_CONFIG_PASSPHRASE` | сховище (Infisical, #11) | encrypts the secrets in the Pulumi state; not passed to the cluster |
+| `GOOGLE_CLIENT_ID` | `.env` (not a secret: it is in every Google sign-in URL) | Sign in with Google; plain env in the pod |
+| `IMAGE_REF` | `scripts/infra.sh` (computed) | the immutable image tag `cluster:up` loaded |
+| `PULUMI_BACKEND_URL` | environment, default `file://<repo>/infra/.pulumi-state` | local file backend, no `pulumi login` |
+| `KUBECONFIG` | environment, optional | which kubeconfig holds the `kind-marketplace` context |
+| `SKIP_VAULT` | environment | `1` skips Infisical: the values above must then be exported |
+
+The non-secret settings of the pod (`db-bouncer:5432`, `kafka:29092`, `DRAIN_MS`, …) are written in the program, see below.
+
 ### Deploy (Pulumi)
 
-`infra/` is a Pulumi TypeScript program (CLI `v3.272.0`, `@pulumi/pulumi` 3.272.0, `@pulumi/kubernetes` 4.34.2). Node 24 runs `index.ts` itself (type stripping, `typescript: false` in `Pulumi.yaml`), so there is no ts-node or build step. `npm run preview`, `npm run up` and `npm run destroy` go through `scripts/with-secrets.sh dev` and `scripts/infra.sh`, which uses a file backend (`PULUMI_BACKEND_URL`, by default `file://<repo>/infra/.pulumi-state`), selects or creates the stack `dev` and installs `infra/node_modules` on the first run. Every command runs with `--refresh`: after `cluster:down` and `cluster:up` the state still lists the old resources, and without a refresh `up` answered `8 unchanged` against an empty cluster (measured); with it the same `up` recreated the 6 missing resources. The state and `infra/Pulumi.dev.yaml` are not committed: the passphrase salt in the stack file belongs to whoever created the stack.
+`infra/` is a Pulumi TypeScript program (CLI `v3.272.0`, `@pulumi/pulumi` 3.272.0, `@pulumi/kubernetes` 4.34.2). Node 24 runs `index.ts` itself (type stripping, `typescript: false` in `Pulumi.yaml`), so there is no ts-node or build step. `npm run preview`, `npm run up` and `npm run destroy` go through `scripts/with-secrets.sh dev` and `scripts/infra.sh`, which uses a file backend (`PULUMI_BACKEND_URL`, by default `file://<repo>/infra/.pulumi-state`), selects or creates the stack `dev` and installs `infra/node_modules` on the first run. Every command runs with `--refresh`: after `cluster:down` and `cluster:up` the state still lists the old resources, and without a refresh `up` answered `8 unchanged` against an empty cluster (measured); with it the same `up` recreated the 6 missing resources. The homework warns that `pulumi refresh` drops a K8s Secret from the state so the next `up` fails with `already exists`; with `data` (not `stringData`) and the provider's server-side apply it doesn't happen here (measured: the Secret is in `pulumi stack export` before and after `pulumi refresh`, its data still wrapped as a secret, and the next `up` reports `8 unchanged`). The state and `infra/Pulumi.dev.yaml` are not committed: the passphrase salt in the stack file belongs to whoever created the stack.
 
 - **Vault first.** Before declaring anything, the program checks the twelve app secrets (`infra/vault.ts`, kept equal to `SECRET_NAMES` by `test/infra/vault.spec.ts`) and `PULUMI_CONFIG_PASSPHRASE`, and stops with `error: Missing from the vault: <names>` (`pulumi.RunError`, no stack trace). Each of the thirteen removed one at a time fails `preview` with its own name.
 - **Secret.** The values go into `marketplace-api-secrets` as `data` (base64), wrapped in `pulumi.secret`, so the state stores them encrypted with the passphrase and `preview` prints `data: [secret]`. Base64 is an encoding, not encryption: whoever can `get secret` in the namespace reads them. The pod reads each through `secretKeyRef`; a pod-template annotation carries the sha256 of all values, so a rotated secret rolls the pods on the next `up` (an env var from a Secret never changes in a running pod).
 - **Redis URLs.** The vault holds them with the host the app uses outside Docker (`localhost:6380`, `localhost:6381`); the program keeps the user and password from the vault and only swaps the address for the compose name (`redis-cache:6379`, `redis-queue:6379`, configurable as `redisCacheAddress`/`redisQueueAddress`). The other settings the pod needs (`db-bouncer:5432`, `kafka:29092`, …) are written in the program, because `.env` describes a process on the host and is not read at all with `SKIP_VAULT=1`. The pod itself runs with `SKIP_VAULT=1`: inside the cluster the Secret is the source, so the `INFISICAL_*` variables are placeholders the schema requires. `GOOGLE_CLIENT_ID` is not a secret (it travels in the browser URL) but is per environment, so the program takes it from the environment (`.env` through the wrapper) and stops with `error: Missing setting: GOOGLE_CLIENT_ID` without it; `OIDC_REDIRECT_BASE_URL` is `http://localhost:30080`.
-- **Rollout.** `maxUnavailable: 0`, `maxSurge: 1`: a new pod must be ready before an old one gets `SIGTERM`. `terminationGracePeriodSeconds` defaults to `ceil(drainMs / 1000) + 10` = 15 s, and the program refuses a grace period that isn't longer than `drainMs`. The probes are split: `startupProbe` and `livenessProbe` on `/healthz` (restart only a hung process), `readinessProbe` on `/readyz` every 2 s with `failureThreshold: 1` (out of the Service as soon as the drain starts or Postgres stops answering).
-- **Replicas.** The Deployment has no `replicas`: with an HPA a fixed value would be applied again on every `up` and undo the scaling. The HPA (`autoscaling/v2`, CPU 70 %, 2–4 pods) owns the field; `kubectl get deploy -o json --show-managed-fields` shows `spec.replicas` owned by `kube-controller-manager` through the `scale` subresource and not by `pulumi-kubernetes`, and a second `up` reports `8 unchanged`. A new Deployment starts with one pod and the HPA raises it to `minReplicas` within its 15 s loop even without metrics; the program refuses `minReplicas` below 2. Measured with metrics-server: idle pods use 18m CPU and about 225 MiB each (`7%/70%`); 64 concurrent connections on `/healthz` for 120 s took it to `246%/70%` and the HPA to 4 pods within about 45 s, with 1 872 885 requests and no error during the scale-up.
+- **Rollout.** `maxUnavailable: 0`, `maxSurge: 1`: a new pod must be ready before an old one gets `SIGTERM`. `terminationGracePeriodSeconds` defaults to `ceil(drainMs / 1000) + 10` = 15 s, and the program refuses a grace period that isn't longer than `drainMs`. The probes are split: `startupProbe` and `livenessProbe` on `/healthz` (restart only a hung process), `readinessProbe` on `/readyz` every 2 s with `failureThreshold: 1` (out of the Service as soon as the drain starts or Postgres stops answering). The `startupProbe` (`/healthz` every 1 s, 60 failures) holds the other two off until the process first answers, so a slow start has 60 s before a restart while a hung running process is restarted after 30 s (liveness every 10 s, 3 failures); without it the same liveness would also kill a start slower than 30 s, and raising `initialDelaySeconds` instead would delay noticing a hang for the pod's whole life.
+- **Replicas.** No `spec.replicas` in the program; see *Replicas and the HPA* below.
 - **Pod.** `runAsUser: 65532` (the distroless `nonroot` user), `runAsNonRoot`, `readOnlyRootFilesystem` with an `emptyDir` on `/tmp` for the ffmpeg work files, all capabilities dropped, `RuntimeDefault` seccomp, no service account token. Requests `250m`/`384Mi` (CPU requests are what the HPA percentage is measured against), memory limit `768Mi`, no CPU limit.
 - **Service.** `NodePort` `30080`, published by kind on `127.0.0.1:30080`; PDB `maxUnavailable: 1`.
 - **Image.** Pulumi knows the image only as the string in the pod spec, so the program never uses the moving tag `hw28`: with it a rebuilt image changed nothing in the spec, `up` answered `unchanged` and the old pods kept the old code, while any pod the HPA or a restart created took the new image under the same tag, two versions side by side. `scripts/infra.sh` passes `IMAGE_REF` = the immutable tag that `cluster:up` loaded, and stops with `image … is not in the cluster: run npm run cluster:up` when the node lacks it (otherwise the pods would sit in `ErrImagePull` until the progress deadline). The tag is the digest of the platform manifest, not the image id: with the containerd image store the id is the digest of the index, which carries a BuildKit attestation with the build time and changed on every rebuild (`7ec60ae62793`, `88b4dff57f57` for the same code), while the platform manifest stayed `df05608f3ad1`. Measured: a rebuild without changes → `8 unchanged`; a changed log line → `ee274e37ebf3` and a rolling update; the change reverted → back to `df05608f3ad1` from the build cache, and the Deployment reused its old ReplicaSet. Old tags stay on the host and the node until removed (`docker image rm`, `cluster:down`).
@@ -541,6 +568,16 @@ kind `v0.33.0`, one node `kindest/node:v1.36.4` (pinned by digest in `k8s/kind-c
 - **Rollout settings.** `drainMs`, `readiness` (`false` drops the startup and readiness probes), `maxUnavailable` and `maxSurge` are config values with the safe defaults above, so the demo can switch them off; the program refuses `maxUnavailable` and `maxSurge` both `0`, a rollout that could never replace a pod.
 
 Measured: `up` from nothing 11.6 s (8 resources; the first pod ready after 4 s), `destroy` 11.6 s, `up` with nothing changed 2 s. A quick check before the load demo: `rev=1 → 2` took 10.4 s while a sequential `curl` loop sent 12 062 requests to `/healthz`, all `200`.
+
+### Replicas and the HPA
+
+`spec.replicas` of a Deployment has one writer too many as soon as an HPA targets it. The HPA writes it through the `scale` subresource every 15 s; a program that also declares `replicas: 2` writes it on every `up`. With server-side apply that is a conflict of field ownership between two managers: the next `up` either takes the field back and resets the pod count to the declared number, so a deploy during a load peak scales the service down to 2 until the HPA's next loop, or stops on the field conflict, depending on whether the apply is forced. Without metrics-server (kind's default) the conflict is invisible, because the HPA has no CPU numbers (`cpu: <unknown>/70%`) and never writes; with metrics-server, as here, it is real. So the program leaves `replicas` out and the HPA (`autoscaling/v2`, CPU 70 %, `minReplicas: 2`, `maxReplicas: 4`) is the only owner: `kubectl get deploy -o json --show-managed-fields` shows `spec.replicas` under `kube-controller-manager` (subresource `scale`) and not under `pulumi-kubernetes`, and a second `up` reports `8 unchanged`. The price is the first creation: a new Deployment starts with Kubernetes' default of one pod and the HPA raises it to `minReplicas` within one loop, even without metrics (measured: the second pod about 20 s after the first); the program refuses `minReplicas` below 2, since one pod can't be drained without downtime. Measured with metrics-server: idle pods use 18m CPU (`7%/70%`); 64 concurrent connections on `/healthz` for 120 s took it to `246%/70%` and the HPA to 4 pods within about 45 s, with 1 872 885 requests and no error during the scale-up.
+
+### Secrets in the cluster
+
+The runtime secrets travel vault → `scripts/with-secrets.sh` → Pulumi program → K8s Secret → `secretKeyRef` in the pod, and no value is in the Deployment manifest (`kubectl get deploy -o json` holds the references and a sha256 checksum, none of the thirteen values). The build secret (`.npm_token`, BuildKit `--mount=type=secret`) is a different thing: it protects the image during `docker build`; the K8s Secret protects git and the manifests at run time; neither replaces the other. Base64 in `data` is an encoding, not encryption: a local cluster stores it in etcd in plain text (no `EncryptionConfiguration` by default), and anyone allowed to `get secret` in the namespace reads it, so putting a value into a Secret means taking it out of git, not encrypting it. This path also keeps copies in two more places, etcd and the Pulumi state (encrypted with the passphrase), and makes rotation a deploy: a rotated JWT key reaches the pods only on the next `npm run up`, which rolls them through the checksum annotation, while the app's own 60 s re-read of the vault does nothing with `SKIP_VAULT=1`.
+
+In production the values would not go through the deploy tool at all. External Secrets Operator runs in the cluster and keeps a K8s Secret in sync with the vault from an `ExternalSecret` object (only that object goes through Pulumi or git, never a value), so a rotation needs no deploy. The Secrets Store CSI driver mounts the values as files straight from the vault into the pod, with no Secret object in etcd unless sync is turned on, and updates the files in place. Better still for this app, which already reads Infisical itself: the pod logs in with its own Kubernetes identity (Infisical Kubernetes Auth, the ServiceAccount token checked through `TokenReview`), with no secret zero to deliver and the 60 s re-read working again. That is planned after the homework; the K8s Secret path stays for grading with `SKIP_VAULT=1`. No operator is installed here.
 
 ### Demo: rollout
 
@@ -598,6 +635,58 @@ npm run test:all          # all three at once, output prefixed per suite, fails 
 Integration and e2e tests start their containers once per run (Postgres, RabbitMQ, Kafka, Temporal, MinIO and two Redis instances with the same eviction settings as compose, so nothing depends on a running dev stack) and reset state after every test (`test/support/isolation.ts`: `DELETE` from every table with foreign-key checks off for that one transaction (`SET LOCAL session_replication_role = replica`), about 7 ms where a `TRUNCATE` per table took about 175 ms; then `FLUSHALL` both Redis instances). Sequences are not restarted: a Kafka consumer can commit a row just after the cleanup with an id it drew before it, and a restarted sequence would hand the next test the same id, because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with. The tests poll the outboxes every 100 ms (`OUTBOX_RELAY_INTERVAL_MS`) instead of every second.
 
 `test:all` runs the suites side by side because integration and e2e start their own containers. Inside a suite the files run in `TEST_WORKERS` workers (default `4`; `TEST_WORKERS=1` runs them one by one on a machine with little memory). Every e2e file boots the whole app, and every test wipes the database and Redis, so workers can't share infrastructure: the global setup starts one container set per worker in parallel (e2e: Postgres, RabbitMQ, Kafka, Temporal, MinIO, two Redis; integration: Postgres and two Redis) and each worker connects to its own set by `VITEST_POOL_ID`. Four e2e sets take about 4 GB of memory.
+
+## Grading
+
+<!-- TODO(hw-28): remove after homework -->
+
+Tools: Docker with BuildKit and compose v2 (about 4 GiB free for the node, four pods and the dependencies), Node 24, kind `v0.33.0`, `kubectl` 1.35 or newer, the Pulumi CLI `v3.272.0` (`curl -fsSL https://get.pulumi.com | sh -s -- --version 3.272.0`), `jq`, `curl`, `openssl`, `zstd`. trivy is optional: without it `npm run scan` runs the pinned `aquasec/trivy` image. Ports `30080` (the NodePort), `33310`, `5672`, `9092`, `7233`, `6380`, `6381`, `9010` and `8088` must be free. The grader has no vault, hence `SKIP_VAULT=1`; the values are the dev credentials from `docker-compose.yml` and `secrets/*.example`. Run everything from the repository root, in one shell.
+
+```bash
+cp .env.example .env
+for f in db_password rabbitmq_password redis_password minio_root_password storage_secret_key; do cp secrets/$f.txt.example secrets/$f.txt; done
+docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue minio minio-init edge
+
+export SKIP_VAULT=1
+export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
+export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
+export KAFKA_BROKERS=127.0.0.1:9092 TEMPORAL_ADDRESS=127.0.0.1:7233
+export REDIS_CACHE_URL=redis://default:changeme@127.0.0.1:6380
+export REDIS_QUEUE_URL=redis://default:changeme@127.0.0.1:6381
+export JWT_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
+export JWT_PUBLIC_KEY="$(printf '%s' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
+export REFRESH_TOKEN_PEPPER=grader-pepper
+export GOOGLE_CLIENT_ID=grader-unused GOOGLE_CLIENT_SECRET=grader-unused
+export STORAGE_ENDPOINT=http://127.0.0.1:9010 STORAGE_ACCESS_KEY=media-app STORAGE_SECRET_KEY=changeme-media
+export PULUMI_BACKEND_URL="file://$PWD/.pulumi"
+export PULUMI_CONFIG_PASSPHRASE=hw28-grading
+
+npm ci
+npm run build
+npm run migrate
+npm run seed
+npm --prefix infra ci
+
+printf 'dummy-npm-token' > .npm_token
+npm run image:build
+npm run cluster:up
+npm run up
+
+npm run demo:image
+SCAN_MAX=-1 npm run scan; echo "exit(max=-1)=$?"
+SCAN_MAX=99999 npm run scan; echo "exit(max=99999)=$?"
+npm run demo:rollout
+npm run demo:rollout -- broken
+npm run demo:pdb
+
+npm run destroy && npm run cluster:down
+```
+
+- Names the criteria ask for: namespace `marketplace`; Deployment, Service, PDB and HPA `marketplace-api`; Secret `marketplace-api-secrets`. `kind create` adds the context `kind-marketplace` to the default kubeconfig and makes it current; the Pulumi program deploys only to that context.
+- `npm run migrate` and `npm run seed` run on the host against the compose Postgres: the pods don't migrate, and `demo:rollout` loads `GET /product/<id>` of the first seeded product.
+- The exported `DBHOST`, `REDIS_*_URL`, … are for the commands on the host. The program passes only the secrets on to the cluster and swaps the Redis host for the compose name; the pods reach the dependencies through the compose network the node joins.
+- `npm run up` computes `IMAGE_REF` itself; a bare `cd infra && pulumi preview` without it stops with `Missing setting: IMAGE_REF` after the vault check, so removing a vault variable still names that variable first.
+- Run `demo:pdb` after the rollout demos, not before checking `disruptionsAllowed`: the demo spends the budget, which is back to `1` once the evicted pod is replaced (about 6 s). `demo:rollout -- broken` puts the safe settings back before it prints.
 
 ## Configuration
 

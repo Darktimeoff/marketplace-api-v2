@@ -73,3 +73,5 @@ graphify-out
 infra/node_modules
 infra/.pulumi-state
 infra/Pulumi.*.yaml
+
+.pulumi

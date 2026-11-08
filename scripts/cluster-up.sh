@@ -4,12 +4,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLUSTER="${KIND_CLUSTER:-marketplace}"
 IMAGE="${IMAGE:-marketplace-api:hw28}"
-COMPOSE_NETWORK="${COMPOSE_NETWORK:-marketplace-api-v2_default}"
 NODE="$CLUSTER-control-plane"
 
 source "$ROOT/scripts/lib/image.sh"
 
 docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "image $IMAGE not found: run npm run image:build" >&2; exit 1; }
+DB_CONTAINER="$(docker compose -f "$ROOT/docker-compose.yml" ps -q db 2>/dev/null | head -1)"
+if [ -z "${COMPOSE_NETWORK:-}" ] && [ -n "$DB_CONTAINER" ]; then
+  COMPOSE_NETWORK="$(docker inspect -f '{{range $name, $network := .NetworkSettings.Networks}}{{$name}}{{"\n"}}{{end}}' "$DB_CONTAINER" | head -1)"
+fi
+[ -n "${COMPOSE_NETWORK:-}" ] || { echo "compose service db is not running: start the dependencies with docker compose up first" >&2; exit 1; }
 docker network inspect "$COMPOSE_NETWORK" >/dev/null 2>&1 || { echo "network $COMPOSE_NETWORK not found: start the dependencies with docker compose up first" >&2; exit 1; }
 
 if kind get clusters | grep -qx "$CLUSTER"; then

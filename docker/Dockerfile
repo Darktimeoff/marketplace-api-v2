@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-bookworm-slim AS deps
+FROM node:24-trixie-slim AS deps
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ COPY . .
 
 RUN npm run build
 
-FROM node:24-bookworm-slim AS prod-deps
+FROM node:24-trixie-slim AS prod-deps
 
 WORKDIR /app
 
@@ -32,7 +32,7 @@ RUN --mount=type=secret,id=npm_token,env=NPM_TOKEN,required=true \
 
 FROM mwader/static-ffmpeg:8.0 AS ffmpeg
 
-FROM gcr.io/distroless/nodejs24-debian12:nonroot AS runtime
+FROM gcr.io/distroless/nodejs24-debian13:nonroot AS runtime
 
 WORKDIR /app
 

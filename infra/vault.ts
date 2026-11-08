@@ -5,8 +5,7 @@ export const VAULT_SECRET_NAMES = [
   'RABBITMQ_PASSWORD',
   'JWT_PRIVATE_KEY',
   'JWT_PUBLIC_KEY',
-  'REDIS_CACHE_URL',
-  'REDIS_QUEUE_URL',
+  'REDIS_PASSWORD',
   'REFRESH_TOKEN_PEPPER',
   'GOOGLE_CLIENT_SECRET',
   'STORAGE_ACCESS_KEY',
@@ -25,10 +24,4 @@ export function missingVaultVariables(environment: NodeJS.ProcessEnv): string[] 
 
 export function pickVaultSecrets(environment: NodeJS.ProcessEnv): VaultSecretsType {
   return Object.fromEntries(VAULT_SECRET_NAMES.map((name) => [name, environment[name] ?? ''])) as VaultSecretsType;
-}
-
-export function withAddress(url: string, address: string): string {
-  const parsed = new URL(url);
-  parsed.host = address;
-  return parsed.toString();
 }

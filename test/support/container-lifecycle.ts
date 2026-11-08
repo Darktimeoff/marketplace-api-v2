@@ -29,9 +29,16 @@ export interface TestDbConnection {
   kafkaBrokers?: string;
   kafkaContainerId?: string;
   temporalAddress?: string;
-  redisCacheUrl?: string;
-  redisQueueUrl?: string;
+  redis?: TestRedisConnection;
   storage?: TestStorageConnection;
+}
+
+export interface TestRedisConnection {
+  cacheHost: string;
+  cachePort: number;
+  queueHost: string;
+  queuePort: number;
+  password: string;
 }
 
 export interface TestStorageConnection {
@@ -87,7 +94,7 @@ async function startSet(
     withStorage ? startStorage(started) : undefined,
   ]);
 
-  return { ...postgres, broker, ...kafka, temporalAddress: temporal, ...redis, storage };
+  return { ...postgres, broker, ...kafka, temporalAddress: temporal, redis, storage };
 }
 
 async function startPostgres(started: StartedTestContainer[]): Promise<TestDbConnection> {
@@ -156,13 +163,19 @@ async function startTemporal(started: StartedTestContainer[]): Promise<string> {
   return `${temporal.getHost()}:${temporal.getMappedPort(7233)}`;
 }
 
-async function startRedisPair(started: StartedTestContainer[]): Promise<Pick<TestDbConnection, 'redisCacheUrl' | 'redisQueueUrl'>> {
+async function startRedisPair(started: StartedTestContainer[]): Promise<TestRedisConnection> {
   const [redisCache, redisQueue] = await Promise.all([
     startRedis(['--maxmemory', '64mb', '--maxmemory-policy', 'allkeys-lru', '--save', '', '--appendonly', 'no']),
     startRedis(['--maxmemory', '256mb', '--maxmemory-policy', 'noeviction', '--appendonly', 'yes', '--appendfsync', 'everysec']),
   ]);
   started.push(redisCache, redisQueue);
-  return { redisCacheUrl: redisUrl(redisCache), redisQueueUrl: redisUrl(redisQueue) };
+  return {
+    cacheHost: redisCache.getHost(),
+    cachePort: redisCache.getMappedPort(6379),
+    queueHost: redisQueue.getHost(),
+    queuePort: redisQueue.getMappedPort(6379),
+    password: REDIS_TEST_PASSWORD,
+  };
 }
 
 const REDIS_TEST_PASSWORD = 'test';
@@ -173,10 +186,6 @@ function startRedis(args: string[]): Promise<StartedTestContainer> {
     .withExposedPorts(6379)
     .withWaitStrategy(Wait.forLogMessage(/Ready to accept connections/))
     .start();
-}
-
-function redisUrl(container: StartedTestContainer): string {
-  return `redis://default:${REDIS_TEST_PASSWORD}@${container.getHost()}:${container.getMappedPort(6379)}`;
 }
 
 const STORAGE_TEST_USER = 'test';

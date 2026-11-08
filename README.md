@@ -69,7 +69,7 @@ export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
 export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
 export KAFKA_BROKERS=localhost:9092
 export TEMPORAL_ADDRESS=localhost:7233
-export REDIS_CACHE_URL=redis://default:changeme@localhost:6380 REDIS_QUEUE_URL=redis://default:changeme@localhost:6381
+export REDIS_CACHE_HOST=localhost REDIS_CACHE_PORT=6380 REDIS_QUEUE_HOST=localhost REDIS_QUEUE_PORT=6381 REDIS_PASSWORD=changeme
 export JWT_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
 export JWT_PUBLIC_KEY="$(printf '%s' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
 export REFRESH_TOKEN_PEPPER=local-pepper GOOGLE_CLIENT_SECRET=unused-locally
@@ -257,8 +257,7 @@ A token pair is `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }`.
 | `DBUSER` | сховище (#11, Infisical) | Postgres user |
 | `RABBITMQ_USER` | сховище (#11, Infisical) | RabbitMQ user |
 | `RABBITMQ_PASSWORD` | сховище (#11, Infisical) | RabbitMQ password |
-| `REDIS_CACHE_URL` | сховище (#11, Infisical) | cache Redis URL with its password |
-| `REDIS_QUEUE_URL` | сховище (#11, Infisical) | queue Redis URL with its password (denylist, rate limit, BullMQ) |
+| `REDIS_PASSWORD` | сховище (#11, Infisical) | password of both Redis instances (cache; denylist, rate limit, BullMQ) |
 | `GOOGLE_CLIENT_SECRET` | сховище (#11, Infisical) | OAuth client secret from Google Cloud Console; exchanges Google's codes as our app |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_ISSUER`, `OIDC_REDIRECT_BASE_URL` | оточення | the Google client id (public: it is in every authorize URL), Google's issuer for discovery, the base our callbacks `/auth/<provider>/callback` are built on |
 | `DBHOST`, `DBPORT`, `DBNAME`, `KAFKA_BROKERS`, `TEMPORAL_ADDRESS`, `RABBITMQ_HOST` | compose / оточення | where the dev services are; not secrets |
@@ -519,8 +518,7 @@ What the Pulumi program reads. Rows marked «сховище» come from Infisica
 | `RABBITMQ_PASSWORD` | сховище (Infisical, #11) | RabbitMQ password, K8s Secret → pod |
 | `JWT_PRIVATE_KEY` | сховище (Infisical, #11) | signs access tokens, K8s Secret → pod |
 | `JWT_PUBLIC_KEY` | сховище (Infisical, #11) | verification keys (PEM list), K8s Secret → pod |
-| `REDIS_CACHE_URL` | сховище (Infisical, #11) | redis-cache URL with its password; the program swaps the host for `redis-cache:6379`, K8s Secret → pod |
-| `REDIS_QUEUE_URL` | сховище (Infisical, #11) | redis-queue URL with its password; host swapped for `redis-queue:6379`, K8s Secret → pod |
+| `REDIS_PASSWORD` | сховище (Infisical, #11) | password of both Redis instances, K8s Secret → pod |
 | `REFRESH_TOKEN_PEPPER` | сховище (Infisical, #11) | HMAC pepper of refresh tokens, K8s Secret → pod |
 | `GOOGLE_CLIENT_SECRET` | сховище (Infisical, #11) | Sign in with Google, K8s Secret → pod |
 | `STORAGE_ACCESS_KEY` | сховище (Infisical, #11) | S3/MinIO access key, K8s Secret → pod |
@@ -540,7 +538,7 @@ The non-secret settings of the pod (`db-bouncer:5432`, `kafka:29092`, `DRAIN_MS`
 
 - **Vault first.** Before declaring anything, the program checks the twelve app secrets (`infra/vault.ts`, kept equal to `SECRET_NAMES` by `test/infra/vault.spec.ts`) and `PULUMI_CONFIG_PASSPHRASE`, and stops with `error: Missing from the vault: <names>` (`pulumi.RunError`, no stack trace). Each of the thirteen removed one at a time fails `preview` with its own name.
 - **Secret.** The values go into `marketplace-api-secrets` as `data` (base64), wrapped in `pulumi.secret`, so the state stores them encrypted with the passphrase and `preview` prints `data: [secret]`. Base64 is an encoding, not encryption: whoever can `get secret` in the namespace reads them. The pod reads each through `secretKeyRef`; a pod-template annotation carries the sha256 of all values, so a rotated secret rolls the pods on the next `up` (an env var from a Secret never changes in a running pod).
-- **Redis URLs.** The vault holds them with the host the app uses outside Docker (`localhost:6380`, `localhost:6381`); the program keeps the user and password from the vault and only swaps the address for the compose name (`redis-cache:6379`, `redis-queue:6379`, configurable as `redisCacheAddress`/`redisQueueAddress`). The other settings the pod needs (`db-bouncer:5432`, `kafka:29092`, …) are written in the program, because `.env` describes a process on the host and is not read at all with `SKIP_VAULT=1`. The pod itself runs with `SKIP_VAULT=1`: inside the cluster the Secret is the source, so the `INFISICAL_*` variables are placeholders the schema requires. `GOOGLE_CLIENT_ID` is not a secret (it travels in the browser URL) but is per environment, so the program takes it from the environment (`.env` through the wrapper) and stops with `error: Missing setting: GOOGLE_CLIENT_ID` without it; `OIDC_REDIRECT_BASE_URL` is `http://localhost:30080`.
+- **Settings.** The settings the pod needs (`db-bouncer:5432`, `kafka:29092`, `redis-cache:6379`, `redis-queue:6379`, …) are written in the program, because `.env` describes a process on the host and is not read at all with `SKIP_VAULT=1`. The pod itself runs with `SKIP_VAULT=1`: inside the cluster the Secret is the source, so the `INFISICAL_*` variables are placeholders the schema requires. `GOOGLE_CLIENT_ID` is not a secret (it travels in the browser URL) but is per environment, so the program takes it from the environment (`.env` through the wrapper) and stops with `error: Missing setting: GOOGLE_CLIENT_ID` without it; `OIDC_REDIRECT_BASE_URL` is `http://localhost:30080`.
 - **Rollout.** `maxUnavailable: 0`, `maxSurge: 1`: a new pod must be ready before an old one gets `SIGTERM`. `terminationGracePeriodSeconds` defaults to `ceil(drainMs / 1000) + 10` = 15 s, and the program refuses a grace period that isn't longer than `drainMs`. The probes are split: `startupProbe` and `livenessProbe` on `/healthz` (restart only a hung process), `readinessProbe` on `/readyz` every 2 s with `failureThreshold: 1` (out of the Service as soon as the drain starts or Postgres stops answering). The `startupProbe` (`/healthz` every 1 s, 60 failures) holds the other two off until the process first answers, so a slow start has 60 s before a restart while a hung running process is restarted after 30 s (liveness every 10 s, 3 failures); without it the same liveness would also kill a start slower than 30 s, and raising `initialDelaySeconds` instead would delay noticing a hang for the pod's whole life.
 - **Replicas.** No `spec.replicas` in the program; see *Replicas and the HPA* below.
 - **Pod.** `runAsUser: 65532` (the distroless `nonroot` user), `runAsNonRoot`, `readOnlyRootFilesystem` with an `emptyDir` on `/tmp` for the ffmpeg work files, all capabilities dropped, `RuntimeDefault` seccomp, no service account token. Requests `250m`/`384Mi` (CPU requests are what the HPA percentage is measured against), memory limit `768Mi`, no CPU limit.
@@ -563,7 +561,7 @@ In production the values would not go through the deploy tool at all. External S
 
 ## Secrets
 
-Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` (see `SecretsInterface`). The Redis URLs carry the password (`redis://default:<password>@host:port`), so they are secrets rather than settings; `npm run bootstrap:secrets` writes that password to `secrets/redis_password.txt` for compose, taking it from the URLs so it lives in one place. Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.
+Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_PASSWORD`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` (see `SecretsInterface`). Like Postgres, a Redis instance is a setting for where it runs (`REDIS_CACHE_HOST`/`REDIS_CACHE_PORT`, `REDIS_QUEUE_HOST`/`REDIS_QUEUE_PORT`) and a secret for who may use it (`REDIS_PASSWORD`, one for both instances): the host differs between the host machine (`localhost:6380`) and a pod (`redis-cache:6379`), the password doesn't, so a pod reading the vault itself gets a value that works there. `npm run bootstrap:secrets` writes `REDIS_PASSWORD` to `secrets/redis_password.txt` for compose, so it lives in one place. Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.
 
 `npm run rotate:db-password` rotates the database password: it changes it in Postgres, writes `secrets/db_password.txt`, syncs Infisical and terminates the old sessions. With `SKIP_VAULT=1`, re-export `DBPASSWORD` afterwards.
 
@@ -601,6 +599,8 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `RABBITMQ_HOST` | no | `rabbitmq` | broker host (`localhost` when the app runs outside Docker) |
 | `RABBITMQ_PORT` | no | `5672` | AMQP port (`15672` is the management UI) |
 | `KAFKA_BROKERS` | no | `kafka:29092` | comma-separated Kafka bootstrap servers (`localhost:9092` when the app runs outside Docker) |
+| `REDIS_CACHE_HOST`, `REDIS_CACHE_PORT` | no | `redis-cache`, `6379` | cache Redis (`localhost`, `6380` when the app runs outside Docker) |
+| `REDIS_QUEUE_HOST`, `REDIS_QUEUE_PORT` | no | `redis-queue`, `6379` | queue Redis: denylist, rate limits, BullMQ (`localhost`, `6381` outside Docker) |
 | `KAFKA_CONSUMERS_ENABLED` | no | `true` | `false` starts the app without Kafka consumers |
 | `ACCESS_DENYLIST_FAIL_OPEN` | no | `true` | when the access-token denylist (Redis) is unavailable: `true` accepts tokens on their signature, `false` answers `503` |
 | `OUTBOX_RELAY_INTERVAL_MS` | no | `1000` | how often each outbox relay (identity, user, order events, order workflow starts, product, media) polls for unpublished rows; the tests use `100` |
@@ -616,4 +616,4 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `DRAIN_MS` | no | `5000` | after `SIGTERM`, how long the instance stays up with readiness red before it closes; must be below `terminationGracePeriodSeconds` |
 | `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
 
-Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`) come from Infisical, or from the environment with `SKIP_VAULT=1`.
+Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_PASSWORD`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`) come from Infisical, or from the environment with `SKIP_VAULT=1`.

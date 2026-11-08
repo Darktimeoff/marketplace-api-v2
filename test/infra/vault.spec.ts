@@ -5,7 +5,6 @@ import {
   VAULT_VARIABLE_NAMES,
   missingVaultVariables,
   pickVaultSecrets,
-  withAddress,
 } from '../../infra/vault.js';
 
 describe('infra vault variables', () => {
@@ -31,11 +30,5 @@ describe('infra vault variables', () => {
 
     expect(Object.keys(secrets).sort()).toEqual([...VAULT_SECRET_NAMES].sort());
     expect(secrets).not.toHaveProperty('PULUMI_CONFIG_PASSPHRASE');
-  });
-
-  it('moves a Redis URL to the in-cluster address and keeps its credentials and database', () => {
-    expect(withAddress('redis://default:p%40ss@localhost:6380/0', 'redis-cache:6379')).toBe(
-      'redis://default:p%40ss@redis-cache:6379/0',
-    );
   });
 });

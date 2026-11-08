@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import * as pulumi from '@pulumi/pulumi';
 import * as k8s from '@pulumi/kubernetes';
-import { VAULT_SECRET_NAMES, missingVaultVariables, pickVaultSecrets, withAddress } from './vault.ts';
+import { VAULT_SECRET_NAMES, missingVaultVariables, pickVaultSecrets } from './vault.ts';
 
 const missing = missingVaultVariables(process.env);
 
@@ -45,12 +45,6 @@ const name = 'marketplace-api';
 const labels = { app: name };
 const port = 3000;
 
-const podSecrets = {
-  ...secrets,
-  REDIS_CACHE_URL: withAddress(secrets.REDIS_CACHE_URL, config.get('redisCacheAddress') ?? 'redis-cache:6379'),
-  REDIS_QUEUE_URL: withAddress(secrets.REDIS_QUEUE_URL, config.get('redisQueueAddress') ?? 'redis-queue:6379'),
-};
-
 const settings: Record<string, string> = {
   NODE_ENV: 'production',
   SKIP_VAULT: '1',
@@ -61,6 +55,10 @@ const settings: Record<string, string> = {
   RABBITMQ_HOST: 'rabbitmq',
   RABBITMQ_PORT: '5672',
   KAFKA_BROKERS: 'kafka:29092',
+  REDIS_CACHE_HOST: 'redis-cache',
+  REDIS_CACHE_PORT: '6379',
+  REDIS_QUEUE_HOST: 'redis-queue',
+  REDIS_QUEUE_PORT: '6379',
   TEMPORAL_ADDRESS: 'temporal:7233',
   TEMPORAL_NAMESPACE: 'default',
   STORAGE_ENDPOINT: 'http://minio:9000',
@@ -78,7 +76,7 @@ const settings: Record<string, string> = {
 };
 
 const secretsChecksum = createHash('sha256')
-  .update(VAULT_SECRET_NAMES.map((key) => `${key}=${podSecrets[key]}`).join('\n'))
+  .update(VAULT_SECRET_NAMES.map((key) => `${key}=${secrets[key]}`).join('\n'))
   .digest('hex');
 
 const provider = new k8s.Provider('kind', { context: kubeContext });
@@ -95,7 +93,7 @@ const secret = new k8s.core.v1.Secret(
     metadata: { name: `${name}-secrets`, namespace: namespace.metadata.name, labels },
     type: 'Opaque',
     data: pulumi.secret(
-      Object.fromEntries(VAULT_SECRET_NAMES.map((key) => [key, Buffer.from(podSecrets[key]).toString('base64')])),
+      Object.fromEntries(VAULT_SECRET_NAMES.map((key) => [key, Buffer.from(secrets[key]).toString('base64')])),
     ),
   },
   { provider },

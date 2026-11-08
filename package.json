@@ -57,10 +57,10 @@
     "@nestjs/terminus": "^12.1.0",
     "@nestjs/throttler": "~6.7.1",
     "@nestjs/typeorm": "^12.0.1",
-    "@temporalio/activity": "~1.24.0",
-    "@temporalio/client": "~1.24.0",
-    "@temporalio/worker": "~1.24.0",
-    "@temporalio/workflow": "~1.24.0",
+    "@temporalio/activity": "~1.25.0",
+    "@temporalio/client": "~1.25.0",
+    "@temporalio/worker": "~1.25.0",
+    "@temporalio/workflow": "~1.25.0",
     "argon2": "^0.45.1",
     "bullmq": "~6.3.11",
     "class-transformer": "^0.5.1",
@@ -86,7 +86,7 @@
     "@nestjs/testing": "^12.2.0",
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.16.1",
-    "@temporalio/testing": "~1.24.0",
+    "@temporalio/testing": "~1.25.0",
     "@testcontainers/postgresql": "^12.1.0",
     "@types/amqplib": "^0.10.8",
     "@types/express": "^5.0.0",
@@ -105,5 +105,8 @@
   },
   "engines": {
     "node": ">=24"
+  },
+  "overrides": {
+    "multer": "2.5.0"
   }
 }

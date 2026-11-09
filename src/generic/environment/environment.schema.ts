@@ -4,7 +4,6 @@ const environmentSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   DBPORT: z.coerce.number().int().min(1).max(65535).default(3000),
   DBHOST: z.string().min(1),
-  DBUSER: z.string().min(1),
   DBNAME: z.string().min(1),
   INFISICAL_SITE_URL: z.string().min(1),
   INFISICAL_AUTH_METHOD: z.enum(['universal', 'jwt']).default('universal'),

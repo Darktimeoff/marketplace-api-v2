@@ -21,15 +21,6 @@ function required(name: string): string {
   return value;
 }
 
-/**
- * Никаких зашитых хостов и паролей: всё приходит из process.env, который наполняет
- * обёртка scripts/with-secrets.sh из хранилища ДЗ #11.
- *
- * Имена переменных — те же, что уже используются в проекте с ДЗ #11: DBHOST/DBPORT/
- * DBUSER/DBNAME описаны в .env.example и zod-схеме, DBPASSWORD лежит в Infisical
- * (см. SecretsInterface). Отдельный набор DB_* здесь означал бы, что значения из
- * хранилища не подхватываются вообще.
- */
 function connectionOptions(): DataSourceOptions {
   const base = {
     type: 'postgres',

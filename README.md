@@ -604,7 +604,6 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `PORT` | no | `3000` | HTTP port |
 | `DBHOST` | yes | — | Postgres (pgbouncer) host |
 | `DBPORT` | no | `3000` | Postgres (pgbouncer) port |
-| `DBUSER` | yes | — | Postgres user |
 | `DBNAME` | yes | — | Postgres database |
 | `RABBITMQ_HOST` | no | `rabbitmq` | broker host (`localhost` when the app runs outside Docker) |
 | `RABBITMQ_PORT` | no | `5672` | AMQP port (`15672` is the management UI) |

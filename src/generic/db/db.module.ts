@@ -19,7 +19,7 @@ import { SecretManagerService } from "../secret-manager/secret-manager.service.j
         synchronize: false,
         host: environment.get("DBHOST"),
         port: environment.get("DBPORT"),
-        username: environment.get("DBUSER"),
+        username: await secrets.get("DBUSER"),
         database: environment.get("DBNAME"),
         password: async () => await secrets.get("DBPASSWORD"),
       }),

@@ -1,0 +1,15 @@
+name: vault-trust
+description: trust between the kind cluster and Infisical, for the pods' ServiceAccount tokens
+runtime:
+  name: nodejs
+  options:
+    typescript: false
+    packagemanager: npm
+main: index.ts
+packages:
+  infisical:
+    source: terraform-provider
+    version: 1.5.1
+    parameters:
+      - infisical/infisical
+      - 0.20.12

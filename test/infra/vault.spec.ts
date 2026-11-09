@@ -34,7 +34,7 @@ describe('infra vault variables', () => {
     expect(secrets).not.toHaveProperty('PULUMI_CONFIG_PASSPHRASE');
   });
 
-  it('asks only for the identity, the project and the passphrase when the pods read the vault themselves', () => {
+  it('asks only for the project and the passphrase when the pods read the vault themselves', () => {
     const environment = Object.fromEntries(POD_VAULT_VARIABLE_NAMES.map((name) => [name, `value-of-${name}`]));
 
     for (const name of POD_VAULT_VARIABLE_NAMES) {

@@ -10,7 +10,7 @@ if (podReadsVault) {
 
   if (missingForPods.length > 0) {
     throw new pulumi.RunError(
-      `Missing for the pods to read the vault: ${missingForPods.join(', ')}. Run through npm run up (scripts/infra.sh sets INFISICAL_IDENTITY_ID), or deploy with SKIP_VAULT=1 and the secrets exported.`,
+      `Missing for the pods to read the vault: ${missingForPods.join(', ')}. Run through npm run up, or deploy with SKIP_VAULT=1 and the secrets exported.`,
     );
   }
 } else {
@@ -84,11 +84,13 @@ const settings: Record<string, string> = {
 
 const tokenDir = '/var/run/secrets/infisical';
 
-const vaultSettings: Record<string, string> = podReadsVault
+const vaultTrustStack = config.get('vaultTrustStack') ?? `organization/vault-trust/${pulumi.getStack()}`;
+
+const vaultSettings: Record<string, pulumi.Input<string>> = podReadsVault
   ? {
       INFISICAL_AUTH_METHOD: 'jwt',
       INFISICAL_SITE_URL: 'http://infisical-backend:8080',
-      INFISICAL_IDENTITY_ID: process.env.INFISICAL_IDENTITY_ID!.trim(),
+      INFISICAL_IDENTITY_ID: new pulumi.StackReference(vaultTrustStack).requireOutput('identityId') as pulumi.Output<string>,
       INFISICAL_JWT_PATH: `${tokenDir}/token`,
       INFISICAL_PROJECT_ID: process.env.INFISICAL_PROJECT_ID!.trim(),
       INFISICAL_ENVIRONMENT: process.env.INFISICAL_ENVIRONMENT!.trim(),

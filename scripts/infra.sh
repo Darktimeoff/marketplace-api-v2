@@ -26,11 +26,6 @@ if [ "$COMMAND" != "destroy" ]; then
   IMAGE_REF="$(image_ref "$IMAGE")"
   export IMAGE_REF
   docker exec "$NODE" crictl inspecti "docker.io/library/$IMAGE_REF" >/dev/null 2>&1 || { echo "image $IMAGE_REF is not in the cluster: run npm run cluster:up" >&2; exit 1; }
-
-  if [ "${SKIP_VAULT:-0}" != "1" ]; then
-    INFISICAL_IDENTITY_ID="$(node "$ROOT/scripts/infisical-k8s-identity.mjs")"
-    export INFISICAL_IDENTITY_ID
-  fi
 fi
 
 [ -n "${PULUMI_CONFIG_PASSPHRASE:-}" ] || { echo "Missing from the vault: PULUMI_CONFIG_PASSPHRASE" >&2; exit 1; }

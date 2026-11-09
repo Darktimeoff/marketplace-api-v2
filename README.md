@@ -624,6 +624,10 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `STORAGE_BUCKET` | no | `marketplace-media` | the one private bucket (`media/`) |
 | `MEDIA_PUBLIC_BASE_URL` | no | `http://localhost:8088` | CDN base that public media URLs are built on (the nginx edge locally, a CloudFront domain in production) |
 | `DRAIN_MS` | no | `5000` | after `SIGTERM`, how long the instance stays up with readiness red before it closes; must be below `terminationGracePeriodSeconds` |
-| `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
+| `INFISICAL_SITE_URL`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
+| `INFISICAL_AUTH_METHOD` | no | `universal` | how the app logs in to the vault: `universal` (client id + `secrets/infisical_client_secret.txt`, on the host) or `jwt` (the pod's ServiceAccount token, see *Vault access from the cluster*) |
+| `INFISICAL_CLIENT_ID` | with `universal` | empty | universal-auth client id |
+| `INFISICAL_IDENTITY_ID` | with `jwt` | empty | machine identity the token logs in as (printed by `scripts/infisical-k8s-identity.mjs`) |
+| `INFISICAL_JWT_PATH` | no | `/var/run/secrets/infisical/token` | file the projected ServiceAccount token is read from, again on every login because kubelet rotates it |
 
 Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_PASSWORD`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`) come from Infisical, or from the environment with `SKIP_VAULT=1`.

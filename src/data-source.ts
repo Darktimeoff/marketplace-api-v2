@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DataSource, DataSourceOptions } from 'typeorm';
+import { getTlsOptions } from './generic/tls/util/get-tls-options.util.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -42,6 +43,7 @@ function connectionOptions(): DataSourceOptions {
     username: required('DBUSER'),
     password: required('DBPASSWORD'),
     database: required('DBNAME'),
+    ssl: getTlsOptions(process.env.TLS_MODE, process.env.TLS_CA_PATH, required('DBHOST')),
   } as DataSourceOptions;
 }
 

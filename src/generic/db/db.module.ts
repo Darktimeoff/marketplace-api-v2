@@ -4,6 +4,7 @@ import { ClsModule } from "nestjs-cls";
 import { ClsPluginTransactional } from "@nestjs-cls/transactional";
 import { DataSource } from "typeorm";
 import { TransactionalAdapterTypeOrmWithRetry } from "./typeorm-retry.adapter.js";
+import { getTlsOptions } from "../tls/util/get-tls-options.util.js";
 import { EnvironmentModule, EnvironmentService } from "../environment/environment.module.js";
 import { SecretManagerModule } from "../secret-manager/secret-manager.module.js";
 import { SecretManagerService } from "../secret-manager/secret-manager.service.js";
@@ -22,6 +23,7 @@ import { SecretManagerService } from "../secret-manager/secret-manager.service.j
         username: await secrets.get("DBUSER"),
         database: environment.get("DBNAME"),
         password: async () => await secrets.get("DBPASSWORD"),
+        ssl: getTlsOptions(environment.get("TLS_MODE"), environment.get("TLS_CA_PATH"), environment.get("DBHOST")),
       }),
     }),
     ClsModule.forRoot({

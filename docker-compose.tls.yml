@@ -1,0 +1,14 @@
+services:
+  db-bouncer:
+    environment:
+      CLIENT_TLS_SSLMODE: require
+      CLIENT_TLS_KEY_FILE: /etc/pgbouncer/tls/server.key
+      CLIENT_TLS_CERT_FILE: /etc/pgbouncer/tls/server.crt
+    volumes:
+      - ./secrets/tls:/run/tls:ro
+    entrypoint: >
+      sh -c '
+      install -d -o postgres -m 700 /etc/pgbouncer/tls &&
+      install -o postgres -m 600 /run/tls/server.key /run/tls/server.crt /etc/pgbouncer/tls/ &&
+      export DATABASE_URL="postgres://$${DB_USER}:$$(cat /run/secrets/db_password)@$${DB_HOST}:5432/$${DB_NAME}";
+      exec su -p -s /bin/sh postgres -c "exec /entrypoint.sh /usr/bin/pgbouncer /etc/pgbouncer/pgbouncer.ini"'

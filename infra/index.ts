@@ -1,14 +1,26 @@
 import { createHash } from 'node:crypto';
 import * as pulumi from '@pulumi/pulumi';
 import * as k8s from '@pulumi/kubernetes';
-import { VAULT_SECRET_NAMES, missingVaultVariables, pickVaultSecrets } from './vault.ts';
+import { VAULT_SECRET_NAMES, missingPodVaultVariables, missingVaultVariables, pickVaultSecrets } from './vault.ts';
 
-const missing = missingVaultVariables(process.env);
+const podReadsVault = process.env.SKIP_VAULT !== '1';
 
-if (missing.length > 0) {
-  throw new pulumi.RunError(
-    `Missing from the vault: ${missing.join(', ')}. Run through scripts/with-secrets.sh, or export them with SKIP_VAULT=1.`,
-  );
+if (podReadsVault) {
+  const missingForPods = missingPodVaultVariables(process.env);
+
+  if (missingForPods.length > 0) {
+    throw new pulumi.RunError(
+      `Missing for the pods to read the vault: ${missingForPods.join(', ')}. Run through npm run up (scripts/infra.sh sets INFISICAL_IDENTITY_ID), or deploy with SKIP_VAULT=1 and the secrets exported.`,
+    );
+  }
+} else {
+  const missing = missingVaultVariables(process.env);
+
+  if (missing.length > 0) {
+    throw new pulumi.RunError(
+      `Missing from the vault: ${missing.join(', ')}. Run through scripts/with-secrets.sh, or export them with SKIP_VAULT=1.`,
+    );
+  }
 }
 
 const secrets = pickVaultSecrets(process.env);
@@ -47,7 +59,6 @@ const port = 3000;
 
 const settings: Record<string, string> = {
   NODE_ENV: 'production',
-  SKIP_VAULT: '1',
   PORT: String(port),
   DBHOST: 'db-bouncer',
   DBPORT: '5432',
@@ -67,13 +78,28 @@ const settings: Record<string, string> = {
   MEDIA_PUBLIC_BASE_URL: 'http://localhost:8088',
   OIDC_REDIRECT_BASE_URL: `http://localhost:${nodePort}`,
   GOOGLE_CLIENT_ID: googleClientId,
-  INFISICAL_SITE_URL: 'http://infisical:8080',
-  INFISICAL_CLIENT_ID: 'unused-with-skip-vault',
-  INFISICAL_PROJECT_ID: 'unused-with-skip-vault',
-  INFISICAL_ENVIRONMENT: 'dev',
   DRAIN_MS: String(drainMs),
   REV: rev,
 };
+
+const tokenDir = '/var/run/secrets/infisical';
+
+const vaultSettings: Record<string, string> = podReadsVault
+  ? {
+      INFISICAL_AUTH_METHOD: 'jwt',
+      INFISICAL_SITE_URL: 'http://infisical-backend:8080',
+      INFISICAL_IDENTITY_ID: process.env.INFISICAL_IDENTITY_ID!.trim(),
+      INFISICAL_JWT_PATH: `${tokenDir}/token`,
+      INFISICAL_PROJECT_ID: process.env.INFISICAL_PROJECT_ID!.trim(),
+      INFISICAL_ENVIRONMENT: process.env.INFISICAL_ENVIRONMENT!.trim(),
+    }
+  : {
+      SKIP_VAULT: '1',
+      INFISICAL_SITE_URL: 'http://infisical:8080',
+      INFISICAL_CLIENT_ID: 'unused-with-skip-vault',
+      INFISICAL_PROJECT_ID: 'unused-with-skip-vault',
+      INFISICAL_ENVIRONMENT: 'dev',
+    };
 
 const secretsChecksum = createHash('sha256')
   .update(VAULT_SECRET_NAMES.map((key) => `${key}=${secrets[key]}`).join('\n'))
@@ -87,17 +113,30 @@ const namespace = new k8s.core.v1.Namespace(
   { provider },
 );
 
-const secret = new k8s.core.v1.Secret(
-  `${name}-secrets`,
-  {
-    metadata: { name: `${name}-secrets`, namespace: namespace.metadata.name, labels },
-    type: 'Opaque',
-    data: pulumi.secret(
-      Object.fromEntries(VAULT_SECRET_NAMES.map((key) => [key, Buffer.from(secrets[key]).toString('base64')])),
-    ),
-  },
-  { provider },
-);
+const secret = podReadsVault
+  ? undefined
+  : new k8s.core.v1.Secret(
+      `${name}-secrets`,
+      {
+        metadata: { name: `${name}-secrets`, namespace: namespace.metadata.name, labels },
+        type: 'Opaque',
+        data: pulumi.secret(
+          Object.fromEntries(VAULT_SECRET_NAMES.map((key) => [key, Buffer.from(secrets[key]).toString('base64')])),
+        ),
+      },
+      { provider },
+    );
+
+const serviceAccount = podReadsVault
+  ? new k8s.core.v1.ServiceAccount(
+      name,
+      {
+        metadata: { name, namespace: namespace.metadata.name, labels },
+        automountServiceAccountToken: false,
+      },
+      { provider },
+    )
+  : undefined;
 
 const deployment = new k8s.apps.v1.Deployment(
   name,
@@ -114,10 +153,11 @@ const deployment = new k8s.apps.v1.Deployment(
       template: {
         metadata: {
           labels,
-          annotations: { 'marketplace/secrets-checksum': secretsChecksum },
+          annotations: secret ? { 'marketplace/secrets-checksum': secretsChecksum } : {},
         },
         spec: {
           terminationGracePeriodSeconds: terminationGraceSeconds,
+          serviceAccountName: serviceAccount?.metadata.name,
           automountServiceAccountToken: false,
           securityContext: {
             runAsNonRoot: true,
@@ -132,11 +172,13 @@ const deployment = new k8s.apps.v1.Deployment(
               imagePullPolicy: 'IfNotPresent',
               ports: [{ name: 'http', containerPort: port }],
               env: [
-                ...Object.entries(settings).map(([key, value]) => ({ name: key, value })),
-                ...VAULT_SECRET_NAMES.map((key) => ({
-                  name: key,
-                  valueFrom: { secretKeyRef: { name: secret.metadata.name, key } },
-                })),
+                ...Object.entries({ ...settings, ...vaultSettings }).map(([key, value]) => ({ name: key, value })),
+                ...(secret
+                  ? VAULT_SECRET_NAMES.map((key) => ({
+                      name: key,
+                      valueFrom: { secretKeyRef: { name: secret.metadata.name, key } },
+                    }))
+                  : []),
               ],
               resources: {
                 requests: { cpu: '250m', memory: '384Mi' },
@@ -165,10 +207,25 @@ const deployment = new k8s.apps.v1.Deployment(
                 readOnlyRootFilesystem: true,
                 capabilities: { drop: ['ALL'] },
               },
-              volumeMounts: [{ name: 'tmp', mountPath: '/tmp' }],
+              volumeMounts: [
+                { name: 'tmp', mountPath: '/tmp' },
+                ...(podReadsVault ? [{ name: 'infisical-token', mountPath: tokenDir, readOnly: true }] : []),
+              ],
             },
           ],
-          volumes: [{ name: 'tmp', emptyDir: { sizeLimit: '512Mi' } }],
+          volumes: [
+            { name: 'tmp', emptyDir: { sizeLimit: '512Mi' } },
+            ...(podReadsVault
+              ? [
+                  {
+                    name: 'infisical-token',
+                    projected: {
+                      sources: [{ serviceAccountToken: { audience: 'infisical', expirationSeconds: 3600, path: 'token' } }],
+                    },
+                  },
+                ]
+              : []),
+          ],
         },
       },
     },

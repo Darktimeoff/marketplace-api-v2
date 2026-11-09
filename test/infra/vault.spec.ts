@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { SECRET_NAMES } from '../../src/generic/secret-manager/secret-names.constant.js';
 import {
+  POD_VAULT_VARIABLE_NAMES,
   VAULT_SECRET_NAMES,
   VAULT_VARIABLE_NAMES,
+  missingPodVaultVariables,
   missingVaultVariables,
   pickVaultSecrets,
 } from '../../infra/vault.js';
@@ -30,5 +32,17 @@ describe('infra vault variables', () => {
 
     expect(Object.keys(secrets).sort()).toEqual([...VAULT_SECRET_NAMES].sort());
     expect(secrets).not.toHaveProperty('PULUMI_CONFIG_PASSPHRASE');
+  });
+
+  it('asks only for the identity, the project and the passphrase when the pods read the vault themselves', () => {
+    const environment = Object.fromEntries(POD_VAULT_VARIABLE_NAMES.map((name) => [name, `value-of-${name}`]));
+
+    for (const name of POD_VAULT_VARIABLE_NAMES) {
+      expect(missingPodVaultVariables({ ...environment, [name]: undefined })).toEqual([name]);
+      expect(missingPodVaultVariables({ ...environment, [name]: '  ' })).toEqual([name]);
+    }
+
+    expect(missingPodVaultVariables(environment)).toEqual([]);
+    expect(POD_VAULT_VARIABLE_NAMES).not.toContain('DBPASSWORD');
   });
 });

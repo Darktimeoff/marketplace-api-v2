@@ -14,6 +14,13 @@ export const VAULT_SECRET_NAMES = [
 
 export const VAULT_VARIABLE_NAMES = [...VAULT_SECRET_NAMES, 'PULUMI_CONFIG_PASSPHRASE'] as const;
 
+export const POD_VAULT_VARIABLE_NAMES = [
+  'INFISICAL_IDENTITY_ID',
+  'INFISICAL_PROJECT_ID',
+  'INFISICAL_ENVIRONMENT',
+  'PULUMI_CONFIG_PASSPHRASE',
+] as const;
+
 export type VaultSecretNameType = (typeof VAULT_SECRET_NAMES)[number];
 
 export type VaultSecretsType = Record<VaultSecretNameType, string>;
@@ -24,4 +31,8 @@ export function missingVaultVariables(environment: NodeJS.ProcessEnv): string[] 
 
 export function pickVaultSecrets(environment: NodeJS.ProcessEnv): VaultSecretsType {
   return Object.fromEntries(VAULT_SECRET_NAMES.map((name) => [name, environment[name] ?? ''])) as VaultSecretsType;
+}
+
+export function missingPodVaultVariables(environment: NodeJS.ProcessEnv): string[] {
+  return POD_VAULT_VARIABLE_NAMES.filter((name) => !environment[name]?.trim());
 }

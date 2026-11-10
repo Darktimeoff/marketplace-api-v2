@@ -7,7 +7,7 @@ import * as infisical from '@pulumi/infisical';
 
 const settings = {
   INFISICAL_SITE_URL: process.env.INFISICAL_SITE_URL?.trim(),
-  INFISICAL_CLIENT_ID: process.env.INFISICAL_CLIENT_ID?.trim(),
+  INFISICAL_ADMIN_CLIENT_ID: process.env.INFISICAL_ADMIN_CLIENT_ID?.trim(),
   INFISICAL_PROJECT_ID: process.env.INFISICAL_PROJECT_ID?.trim(),
 };
 const missing = Object.entries(settings).filter(([, value]) => !value).map(([key]) => key);
@@ -21,7 +21,8 @@ const kubeContext = config.get('kubeContext') ?? 'kind-marketplace';
 const namespace = config.get('namespace') ?? 'marketplace';
 const serviceAccount = config.get('serviceAccount') ?? 'marketplace-api';
 const identityName = config.get('identityName') ?? 'marketplace-api-kind';
-const clientSecretPath = path.resolve(import.meta.dirname, '../../secrets/infisical_client_secret.txt');
+const localIdentityName = config.get('localIdentityName') ?? 'marketplace-api-local';
+const clientSecretPath = path.resolve(import.meta.dirname, '../../secrets/infisical_admin_client_secret.txt');
 const accessTokenTtlSeconds = 3600;
 
 function kubeRaw(route: string) {
@@ -37,7 +38,7 @@ const provider = new infisical.Provider('infisical', {
   host: settings.INFISICAL_SITE_URL,
   auth: {
     universal: {
-      clientId: settings.INFISICAL_CLIENT_ID,
+      clientId: settings.INFISICAL_ADMIN_CLIENT_ID,
       clientSecret: pulumi.secret(readFileSync(clientSecretPath, 'utf8').trim()),
     },
   },
@@ -73,7 +74,33 @@ new infisical.IdentityJwtAuth(
   { provider },
 );
 
+const localIdentity = new infisical.Identity(
+  localIdentityName,
+  { name: localIdentityName, orgId: project.orgId, role: 'no-access' },
+  { provider },
+);
+
+new infisical.ProjectIdentity(
+  localIdentityName,
+  { projectId: project.id, identityId: localIdentity.id, roles: [{ roleSlug: 'viewer' }] },
+  { provider },
+);
+
+const localUniversalAuth = new infisical.IdentityUniversalAuth(
+  localIdentityName,
+  { identityId: localIdentity.id, accessTokenTtl: accessTokenTtlSeconds, accessTokenMaxTtl: accessTokenTtlSeconds },
+  { provider },
+);
+
+const localClientSecret = new infisical.IdentityUniversalAuthClientSecret(
+  localIdentityName,
+  { identityId: localIdentity.id, description: 'local app, with-secrets.sh, bootstrap:secrets' },
+  { provider, dependsOn: [localUniversalAuth] },
+);
+
 export const identityId = identity.id;
+export const localClientId = localClientSecret.clientId;
+export const localClientSecretValue = pulumi.secret(localClientSecret.clientSecret);
 export const boundIssuer = issuer;
 export const boundSubject = subject;
 export const clusterKeys = publicKeys.length;

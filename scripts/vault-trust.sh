@@ -24,7 +24,16 @@ pulumi stack select --create "$STACK" --non-interactive >/dev/null
 
 case "$COMMAND" in
   preview) exec pulumi preview --non-interactive --refresh --diff "$@" ;;
-  up) exec pulumi up --non-interactive --yes --skip-preview --refresh "$@" ;;
+  up) pulumi up --non-interactive --yes --skip-preview --refresh "$@" ;;
   destroy) exec pulumi destroy --non-interactive --yes --refresh "$@" ;;
   *) echo "unknown command: $COMMAND" >&2; exit 2 ;;
 esac
+
+CLIENT_ID="$(pulumi stack output localClientId)"
+( umask 077 && pulumi stack output --show-secrets localClientSecretValue > "$ROOT/secrets/infisical_client_secret.txt" )
+if grep -q '^INFISICAL_CLIENT_ID=' "$ROOT/.env"; then
+  sed -i "s/^INFISICAL_CLIENT_ID=.*/INFISICAL_CLIENT_ID=$CLIENT_ID/" "$ROOT/.env"
+else
+  echo "INFISICAL_CLIENT_ID=$CLIENT_ID" >> "$ROOT/.env"
+fi
+echo "local app identity: INFISICAL_CLIENT_ID=$CLIENT_ID in .env, secret in secrets/infisical_client_secret.txt" >&2

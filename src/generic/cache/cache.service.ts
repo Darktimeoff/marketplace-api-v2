@@ -9,6 +9,7 @@ export class CacheService {
   private readonly lockTtlMs = 5000;
   private readonly waitTimeoutMs = 5000;
   private readonly pollIntervalMs = 50;
+  private readonly releaseLockScript = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0";
 
   constructor(private readonly redis: RedisClientService) {}
 
@@ -63,7 +64,7 @@ export class CacheService {
   }
 
   private async releaseLock(key: string, token: string): Promise<void> {
-    await this.redis.cache.call('DELEX', this.toLockKey(key), 'IFEQ', token);
+    await this.redis.cache.eval(this.releaseLockScript, 1, this.toLockKey(key), token);
   }
 
   private toLockKey(key: string): string {

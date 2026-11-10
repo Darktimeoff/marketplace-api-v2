@@ -8,10 +8,9 @@ export function createStorageClient(options: StorageClientOptionsInterface): S3C
     region: options.region,
     endpoint,
     forcePathStyle: Boolean(endpoint),
-    credentials: {
-      accessKeyId: options.accessKeyId,
-      secretAccessKey: options.secretAccessKey,
-    },
+    credentials: options.accessKeyId && options.secretAccessKey
+      ? { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey }
+      : undefined,
     requestChecksumCalculation: 'WHEN_REQUIRED',
     responseChecksumValidation: 'WHEN_REQUIRED',
   });

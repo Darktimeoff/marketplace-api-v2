@@ -3,7 +3,7 @@ import { EnvironmentService } from "../environment/environment.module.js";
 import { InfisicalSDK } from "@infisical/sdk";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { SecretsInterface } from "./secrets.interface.js";
+import { CloudSecretsInterface, SecretsInterface } from "./secrets.interface.js";
 
 const SKIP_VAULT = process.env.SKIP_VAULT === '1';
 
@@ -27,7 +27,7 @@ export class SecretManagerService implements OnModuleInit {
     await this.ready()
   }
 
-  async get(name: keyof SecretsInterface) {
+  async get(name: keyof SecretsInterface | keyof CloudSecretsInterface) {
     if (SKIP_VAULT) {
       return this.fromEnvironmentOrFail(name)
     }
@@ -46,7 +46,7 @@ export class SecretManagerService implements OnModuleInit {
     }
   }
 
-  private fromEnvironmentOrFail(name: keyof SecretsInterface): string {
+  private fromEnvironmentOrFail(name: keyof SecretsInterface | keyof CloudSecretsInterface): string {
     const value = process.env[name]
 
     if (!value) {
@@ -64,7 +64,7 @@ export class SecretManagerService implements OnModuleInit {
     return this.session
   }
 
-  private async readSecret(name: keyof SecretsInterface) {
+  private async readSecret(name: keyof SecretsInterface | keyof CloudSecretsInterface) {
     return (await this.client.secrets().getSecret({
       projectId: this.environment.get('INFISICAL_PROJECT_ID'),
       environment: this.environment.get('INFISICAL_ENVIRONMENT'),

@@ -12,3 +12,80 @@ services:
       install -o postgres -m 600 /run/tls/server.key /run/tls/server.crt /etc/pgbouncer/tls/ &&
       export DATABASE_URL="postgres://$${DB_USER}:$$(cat /run/secrets/db_password)@$${DB_HOST}:5432/$${DB_NAME}";
       exec su -p -s /bin/sh postgres -c "exec /entrypoint.sh /usr/bin/pgbouncer /etc/pgbouncer/pgbouncer.ini"'
+
+  redis-cache:
+    volumes:
+      - ./secrets/tls:/run/tls:ro
+    entrypoint: >
+      sh -c '
+      rm -f /tmp/redis.conf &&
+      umask 077 &&
+      install -d -o redis -m 700 /tmp/tls &&
+      install -o redis -m 600 /run/tls/server.key /run/tls/server.crt /run/tls/ca.crt /tmp/tls/ &&
+      printf "requirepass %s\nport 0\ntls-port 6379\ntls-cert-file /tmp/tls/server.crt\ntls-key-file /tmp/tls/server.key\ntls-ca-cert-file /tmp/tls/ca.crt\ntls-auth-clients no\n" "$$(cat /run/secrets/redis_password)" > /tmp/redis.conf &&
+      chown redis:redis /tmp/redis.conf &&
+      exec docker-entrypoint.sh redis-server /tmp/redis.conf --maxmemory 64mb --maxmemory-policy allkeys-lru --save "" --appendonly no'
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" redis-cli --tls --cacert /tmp/tls/ca.crt --sni localhost ping | grep -q PONG"]
+
+  redis-queue:
+    volumes:
+      - redis_queue_data:/data
+      - ./secrets/tls:/run/tls:ro
+    entrypoint: >
+      sh -c '
+      rm -f /tmp/redis.conf &&
+      umask 077 &&
+      install -d -o redis -m 700 /tmp/tls &&
+      install -o redis -m 600 /run/tls/server.key /run/tls/server.crt /run/tls/ca.crt /tmp/tls/ &&
+      printf "requirepass %s\nport 0\ntls-port 6379\ntls-cert-file /tmp/tls/server.crt\ntls-key-file /tmp/tls/server.key\ntls-ca-cert-file /tmp/tls/ca.crt\ntls-auth-clients no\n" "$$(cat /run/secrets/redis_password)" > /tmp/redis.conf &&
+      chown redis:redis /tmp/redis.conf &&
+      exec docker-entrypoint.sh redis-server /tmp/redis.conf --maxmemory 256mb --maxmemory-policy noeviction --appendonly yes --appendfsync everysec'
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" redis-cli --tls --cacert /tmp/tls/ca.crt --sni localhost ping | grep -q PONG"]
+
+  kafka:
+    user: "0"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+      - ./secrets/tls:/run/tls:ro
+    entrypoint: >
+      sh -c '
+      install -d -o appuser -m 700 /tmp/tls &&
+      install -o appuser -m 600 /run/tls/server-keystore.pem /run/tls/ca.crt /tmp/tls/ &&
+      exec su -p -s /bin/sh appuser -c "exec /__cacert_entrypoint.sh /etc/kafka/docker/run"'
+    environment:
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:SASL_SSL,CONTROLLER:PLAINTEXT
+      KAFKA_LISTENER_NAME_EXTERNAL_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG: org.apache.kafka.common.security.plain.PlainLoginModule required user_${KAFKA_SASL_LOCAL_USER:-marketplace}="${KAFKA_SASL_LOCAL_PASSWORD:-local-only-password}";
+      KAFKA_LISTENER_NAME_EXTERNAL_SSL_KEYSTORE_TYPE: PEM
+      KAFKA_LISTENER_NAME_EXTERNAL_SSL_KEYSTORE_LOCATION: /tmp/tls/server-keystore.pem
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:29092 > /dev/null"]
+
+  rabbitmq:
+    ports:
+      - "${RABBITMQ_TLS_PORT:-5671}:5671"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq.tls.conf:/etc/rabbitmq/conf.d/20-tls.conf:ro
+      - ./secrets/tls:/run/tls:ro
+    entrypoint: >
+      sh -c '
+      install -d -o rabbitmq -m 700 /tmp/tls &&
+      install -o rabbitmq -m 600 /run/tls/server.key /run/tls/server.crt /run/tls/ca.crt /tmp/tls/ &&
+      export RABBITMQ_PASSWORD="$$(cat /run/secrets/rabbitmq_password)";
+      exec docker-entrypoint.sh rabbitmq-server'
+
+  temporal-tls:
+    image: haproxy:3.2.4-alpine
+    container_name: temporal-tls
+    user: "0"
+    depends_on:
+      - temporal
+    ports:
+      - "${TEMPORAL_TLS_PORT:-7234}:7234"
+    volumes:
+      - ./haproxy.tls.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./secrets/tls:/run/tls:ro

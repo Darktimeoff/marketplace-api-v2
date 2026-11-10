@@ -7,6 +7,7 @@ import { getRabbitMqConnectionUri } from "./util/get-rabbitmq-connection-uri.uti
 import { RabbitMqReturnListenerService } from "./rabbitmq-return-listener.service.js";
 import { RabbitMqRpcService } from "./rabbitmq-rpc.service.js";
 import { RabbitMqChannelEnum } from "./enum/rabbitmq-channel.enum.js";
+import { getTlsOptions } from "../tls/util/get-tls-options.util.js";
 
 @Module({
   imports: [
@@ -16,6 +17,9 @@ import { RabbitMqChannelEnum } from "./enum/rabbitmq-channel.enum.js";
       useFactory: async (environment: EnvironmentService, secrets: SecretManagerService) => ({
         uri: await getRabbitMqConnectionUri(environment, secrets),
         connectionInitOptions: { wait: true, timeout: 5000 },
+        connectionManagerOptions: {
+          connectionOptions: getTlsOptions(environment.get('TLS_MODE'), environment.get('TLS_CA_PATH'), environment.get('RABBITMQ_HOST')) || undefined,
+        },
         enableControllerDiscovery: true,
         channels: {
           [RabbitMqChannelEnum.WORK]: { prefetchCount: 1 },

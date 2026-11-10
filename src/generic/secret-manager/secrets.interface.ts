@@ -11,3 +11,9 @@ export interface SecretsInterface {
   STORAGE_ACCESS_KEY: string
   STORAGE_SECRET_KEY: string
 }
+
+export interface CloudSecretsInterface {
+  KAFKA_SASL_USERNAME: string
+  KAFKA_SASL_PASSWORD: string
+  TEMPORAL_API_KEY: string
+}

@@ -1,6 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { EnvironmentService } from '../environment/environment.module.js';
+import { SecretManagerService } from '../secret-manager/secret-manager.service.js';
+import { getTlsOptions, type VerifiedTlsOptionsInterface } from '../tls/util/get-tls-options.util.js';
 
 export interface KafkaTopicInterface {
   topic: string;
@@ -9,18 +11,50 @@ export interface KafkaTopicInterface {
 }
 
 @Injectable()
-export class KafkaClientService {
-  readonly kafka: KafkaJS.Kafka;
+export class KafkaClientService implements OnModuleInit {
+  kafka: KafkaJS.Kafka;
   private readonly topicReadyTimeoutMs = 30000;
 
-  constructor(environment: EnvironmentService) {
-    this.kafka = new KafkaJS.Kafka({
+  constructor(
+    private readonly environment: EnvironmentService,
+    private readonly secrets: SecretManagerService,
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    this.kafka = new KafkaJS.Kafka(
+      this.toConfig(
+        this.environment.get('KAFKA_BROKERS').split(','),
+        getTlsOptions(this.environment.get('TLS_MODE'), this.environment.get('TLS_CA_PATH'), ''),
+        await this.sasl(),
+      ),
+    );
+  }
+
+  private async sasl(): Promise<KafkaJS.SASLOptions | undefined> {
+    const mechanism = this.environment.get('KAFKA_SASL_MECHANISM');
+
+    if (mechanism === 'none') {
+      return undefined;
+    }
+
+    return {
+      mechanism,
+      username: await this.secrets.get('KAFKA_SASL_USERNAME'),
+      password: await this.secrets.get('KAFKA_SASL_PASSWORD'),
+    };
+  }
+
+  private toConfig(brokers: string[], tls: false | VerifiedTlsOptionsInterface, sasl: KafkaJS.SASLOptions | undefined): KafkaJS.CommonConstructorConfig {
+    return {
       kafkaJS: {
         clientId: 'marketplace-api',
-        brokers: environment.get('KAFKA_BROKERS').split(','),
+        brokers,
         logLevel: KafkaJS.logLevel.WARN,
+        ssl: Boolean(tls),
+        ...(sasl ? { sasl } : {}),
       },
-    });
+      ...(tls ? { 'ssl.ca.pem': tls.ca.join('\n'), 'ssl.endpoint.identification.algorithm': 'https' as const } : {}),
+    };
   }
 
   async createTopics(topics: KafkaTopicInterface[]): Promise<void> {

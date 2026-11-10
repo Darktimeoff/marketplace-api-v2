@@ -16,13 +16,12 @@ const OWNED_TOPICS: KafkaTopicInterface[] = [
 @Injectable()
 export class KafkaProducerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(KafkaProducerService.name);
-  private readonly producer: KafkaJS.Producer;
+  private producer: KafkaJS.Producer;
 
-  constructor(private readonly client: KafkaClientService) {
-    this.producer = this.client.kafka.producer({ kafkaJS: { idempotent: true, acks: -1 }, 'message.timeout.ms': 10000 });
-  }
+  constructor(private readonly client: KafkaClientService) {}
 
   async onModuleInit(): Promise<void> {
+    this.producer = this.client.kafka.producer({ kafkaJS: { idempotent: true, acks: -1 }, 'message.timeout.ms': 10000 });
     await this.client.createTopics(OWNED_TOPICS);
     this.logger.log(`topics ready: ${OWNED_TOPICS.map(({ topic }) => topic).join(', ')}`);
     await this.producer.connect();

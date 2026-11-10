@@ -4,27 +4,15 @@ import { ClsModule } from "nestjs-cls";
 import { ClsPluginTransactional } from "@nestjs-cls/transactional";
 import { DataSource } from "typeorm";
 import { TransactionalAdapterTypeOrmWithRetry } from "./typeorm-retry.adapter.js";
-import { getTlsOptions } from "../tls/util/get-tls-options.util.js";
-import { EnvironmentModule, EnvironmentService } from "../environment/environment.module.js";
+import { PostgresOptionsService } from "./postgres-options.service.js";
+import { EnvironmentModule } from "../environment/environment.module.js";
 import { SecretManagerModule } from "../secret-manager/secret-manager.module.js";
-import { SecretManagerService } from "../secret-manager/secret-manager.service.js";
 
 @Module({
   imports: [
     TypeOrmModule.forRootAsync({
       imports: [EnvironmentModule, SecretManagerModule],
-      inject: [EnvironmentService, SecretManagerService],
-      useFactory: async (environment: EnvironmentService, secrets: SecretManagerService) => ({
-        type: "postgres",
-        autoLoadEntities: true,
-        synchronize: false,
-        host: environment.get("DBHOST"),
-        port: environment.get("DBPORT"),
-        username: await secrets.get("DBUSER"),
-        database: environment.get("DBNAME"),
-        password: async () => await secrets.get("DBPASSWORD"),
-        ssl: getTlsOptions(environment.get("TLS_MODE"), environment.get("TLS_CA_PATH"), environment.get("DBHOST")),
-      }),
+      useClass: PostgresOptionsService,
     }),
     ClsModule.forRoot({
       global: true,

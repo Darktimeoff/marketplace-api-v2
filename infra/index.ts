@@ -140,6 +140,87 @@ const serviceAccount = podReadsVault
     )
   : undefined;
 
+const podSecurityContext = {
+  runAsNonRoot: true,
+  runAsUser: 65532,
+  runAsGroup: 65532,
+  seccompProfile: { type: 'RuntimeDefault' },
+};
+
+const containerSecurityContext = {
+  allowPrivilegeEscalation: false,
+  readOnlyRootFilesystem: true,
+  capabilities: { drop: ['ALL'] },
+};
+
+const podEnv = [
+  ...Object.entries({ ...settings, ...vaultSettings }).map(([key, value]) => ({ name: key, value })),
+  ...(secret
+    ? VAULT_SECRET_NAMES.map((key) => ({
+        name: key,
+        valueFrom: { secretKeyRef: { name: secret.metadata.name, key } },
+      }))
+    : []),
+];
+
+const podVolumeMounts = [
+  { name: 'tmp', mountPath: '/tmp' },
+  ...(podReadsVault ? [{ name: 'infisical-token', mountPath: tokenDir, readOnly: true }] : []),
+];
+
+const podVolumes = [
+  { name: 'tmp', emptyDir: { sizeLimit: '512Mi' } },
+  ...(podReadsVault
+    ? [
+        {
+          name: 'infisical-token',
+          projected: {
+            sources: [{ serviceAccountToken: { audience: 'infisical', expirationSeconds: 3600, path: 'token' } }],
+          },
+        },
+      ]
+    : []),
+];
+
+const migrateLabels = { app: `${name}-migrate` };
+
+const migrateJob = new k8s.batch.v1.Job(
+  `${name}-migrate`,
+  {
+    metadata: { name: `${name}-migrate-${image.split(':').pop()}`, namespace: namespace.metadata.name, labels: migrateLabels },
+    spec: {
+      backoffLimit: 2,
+      activeDeadlineSeconds: 300,
+      template: {
+        metadata: { labels: migrateLabels },
+        spec: {
+          restartPolicy: 'Never',
+          serviceAccountName: serviceAccount?.metadata.name,
+          automountServiceAccountToken: false,
+          securityContext: podSecurityContext,
+          containers: [
+            {
+              name: 'migrate',
+              image,
+              imagePullPolicy: 'IfNotPresent',
+              args: ['dist/migrate.js'],
+              env: podEnv,
+              resources: {
+                requests: { cpu: '100m', memory: '256Mi' },
+                limits: { memory: '512Mi' },
+              },
+              securityContext: containerSecurityContext,
+              volumeMounts: podVolumeMounts,
+            },
+          ],
+          volumes: podVolumes,
+        },
+      },
+    },
+  },
+  { provider, deleteBeforeReplace: true },
+);
+
 const deployment = new k8s.apps.v1.Deployment(
   name,
   {
@@ -161,27 +242,14 @@ const deployment = new k8s.apps.v1.Deployment(
           terminationGracePeriodSeconds: terminationGraceSeconds,
           serviceAccountName: serviceAccount?.metadata.name,
           automountServiceAccountToken: false,
-          securityContext: {
-            runAsNonRoot: true,
-            runAsUser: 65532,
-            runAsGroup: 65532,
-            seccompProfile: { type: 'RuntimeDefault' },
-          },
+          securityContext: podSecurityContext,
           containers: [
             {
               name: 'api',
               image,
               imagePullPolicy: 'IfNotPresent',
               ports: [{ name: 'http', containerPort: port }],
-              env: [
-                ...Object.entries({ ...settings, ...vaultSettings }).map(([key, value]) => ({ name: key, value })),
-                ...(secret
-                  ? VAULT_SECRET_NAMES.map((key) => ({
-                      name: key,
-                      valueFrom: { secretKeyRef: { name: secret.metadata.name, key } },
-                    }))
-                  : []),
-              ],
+              env: podEnv,
               resources: {
                 requests: { cpu: '250m', memory: '384Mi' },
                 limits: { memory: '768Mi' },
@@ -204,35 +272,16 @@ const deployment = new k8s.apps.v1.Deployment(
                 timeoutSeconds: 2,
                 failureThreshold: 3,
               },
-              securityContext: {
-                allowPrivilegeEscalation: false,
-                readOnlyRootFilesystem: true,
-                capabilities: { drop: ['ALL'] },
-              },
-              volumeMounts: [
-                { name: 'tmp', mountPath: '/tmp' },
-                ...(podReadsVault ? [{ name: 'infisical-token', mountPath: tokenDir, readOnly: true }] : []),
-              ],
+              securityContext: containerSecurityContext,
+              volumeMounts: podVolumeMounts,
             },
           ],
-          volumes: [
-            { name: 'tmp', emptyDir: { sizeLimit: '512Mi' } },
-            ...(podReadsVault
-              ? [
-                  {
-                    name: 'infisical-token',
-                    projected: {
-                      sources: [{ serviceAccountToken: { audience: 'infisical', expirationSeconds: 3600, path: 'token' } }],
-                    },
-                  },
-                ]
-              : []),
-          ],
+          volumes: podVolumes,
         },
       },
     },
   },
-  { provider },
+  { provider, dependsOn: [migrateJob] },
 );
 
 const service = new k8s.core.v1.Service(
@@ -279,5 +328,6 @@ new k8s.autoscaling.v2.HorizontalPodAutoscaler(
   { provider },
 );
 
+export const migrateJobName = migrateJob.metadata.name;
 export const url = pulumi.interpolate`http://localhost:${service.spec.ports[0].nodePort}`;
 export const deployedRev = rev;

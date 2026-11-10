@@ -15,11 +15,12 @@ if [ ! -f ca.key ]; then
     -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" -out ca.crt
 fi
 
-openssl ecparam -name prime256v1 -genkey -noout -out server.key
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out server.key
 openssl req -new -key server.key -subj "/CN=marketplace local services" -out server.csr
 openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -sha256 -days "$DAYS" -out server.crt \
   -extfile <(printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\nkeyUsage=critical,digitalSignature,keyEncipherment\n' "$NAMES")
 rm -f server.csr ca.srl
-chmod 600 ca.key server.key
+cat server.key server.crt > server-keystore.pem
+chmod 600 ca.key server.key server-keystore.pem
 
 echo "secrets/tls: ca.crt, server.crt ($NAMES), valid $DAYS days" >&2

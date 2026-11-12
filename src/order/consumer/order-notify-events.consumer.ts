@@ -1,9 +1,9 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { OrderStatusEnum } from '@marketplace/contracts-core';
 import { OrderCreatedEvent, OrderFailedEvent, OrderPaidEvent, TopicEnum } from '@marketplace/messaging-contracts';
-import { KafkaConsumerService } from '../../generic/kafka/kafka-consumer.service.js';
-import { KafkaRejectedMessageException } from '../../generic/kafka/exception/kafka-rejected-message.exception.js';
-import type { KafkaMessagePositionInterface } from '../../generic/kafka/interface/kafka-subscription.interface.js';
+import { EVENT_SUBSCRIBER } from '../../generic/messaging/constant/messaging.constant.js';
+import { EventRejectedException } from '../../generic/messaging/exception/event-rejected.exception.js';
+import type { EventPositionInterface, EventSubscriberInterface } from '../../generic/messaging/interface/event-subscriber.interface.js';
 import { OrderNotifyService } from '../service/order-notify.service.js';
 import { OrderConsumerGroupEnum } from '../enum/order-consumer-group.enum.js';
 import { orderStatusEventSchema } from '../schema/order-status-event.schema.js';
@@ -13,7 +13,7 @@ export class OrderNotifyEventsConsumer implements OnModuleInit {
   private readonly handledTypes: string[] = [OrderCreatedEvent.TYPE, OrderPaidEvent.TYPE, OrderFailedEvent.TYPE];
 
   constructor(
-    private readonly consumer: KafkaConsumerService,
+    @Inject(EVENT_SUBSCRIBER) private readonly consumer: EventSubscriberInterface,
     private readonly orderNotify: OrderNotifyService,
   ) {}
 
@@ -26,7 +26,7 @@ export class OrderNotifyEventsConsumer implements OnModuleInit {
     });
   }
 
-  private async handle(event: unknown, position: KafkaMessagePositionInterface): Promise<void> {
+  private async handle(event: unknown, position: EventPositionInterface): Promise<void> {
     if (!this.handledTypes.includes((event as { type?: string } | null)?.type ?? '')) {
       return;
     }
@@ -34,7 +34,7 @@ export class OrderNotifyEventsConsumer implements OnModuleInit {
     const parsed = orderStatusEventSchema.safeParse(event);
 
     if (!parsed.success) {
-      throw new KafkaRejectedMessageException(parsed.error.message);
+      throw new EventRejectedException(parsed.error.message);
     }
 
     this.orderNotify.record({ id: Number(position.offset) + 1, orderPublicId: parsed.data.data.orderPublicId, status: this.toStatus(parsed.data) });

@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import type { CloudEventInterface, TopicEnum } from '@marketplace/messaging-contracts';
-import { KafkaProducerService } from '../kafka/kafka-producer.service.js';
+import { EVENT_PUBLISHER } from './constant/messaging.constant.js';
+import type { EventPublisherInterface } from './interface/event-publisher.interface.js';
 import { MessageBrokerEnum } from './enum/message-broker.enum.js';
 
 @Injectable()
@@ -9,7 +10,7 @@ export class MessagePublisherService {
   private readonly defaultExchange = '';
 
   constructor(
-    private readonly kafka: KafkaProducerService,
+    @Inject(EVENT_PUBLISHER) private readonly events: EventPublisherInterface,
     private readonly amqpConnection: AmqpConnection,
   ) {}
 
@@ -19,6 +20,6 @@ export class MessagePublisherService {
       return;
     }
 
-    await this.kafka.publish(topic as TopicEnum, message);
+    await this.events.publish(topic as TopicEnum, message);
   }
 }

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { MessagePublisherService } from '../../../src/generic/messaging/message-publisher.service.js';
 import { MessageBrokerEnum } from '../../../src/generic/messaging/enum/message-broker.enum.js';
-import type { KafkaProducerService } from '../../../src/generic/kafka/kafka-producer.service.js';
+import type { EventPublisherInterface } from '../../../src/generic/messaging/interface/event-publisher.interface.js';
 
 const message = {
   specversion: '1.0',
@@ -20,7 +20,7 @@ describe('MessagePublisherService', () => {
   function aPublisher() {
     const kafka = { publish: vi.fn().mockResolvedValue(undefined) };
     const amqp = { publish: vi.fn().mockResolvedValue(true) };
-    return { kafka, amqp, publisher: new MessagePublisherService(kafka as unknown as KafkaProducerService, amqp as unknown as AmqpConnection) };
+    return { kafka, amqp, publisher: new MessagePublisherService(kafka as unknown as EventPublisherInterface, amqp as unknown as AmqpConnection) };
   }
 
   it('sends a kafka row to its topic', async () => {

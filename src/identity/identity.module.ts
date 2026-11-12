@@ -12,7 +12,6 @@ import { IdentityMessage } from './message/identity.message.js';
 import { SecretManagerModule } from '../generic/secret-manager/secret-manager.module.js';
 import { AuthModule } from '../generic/auth/auth.module.js';
 import { RateLimitModule } from '../generic/rate-limit/rate-limit.module.js';
-import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { RedisModule } from '../generic/redis/redis.module.js';
 import { AuthController } from './controller/auth.controller.js';
 import { JwksController } from './controller/jwks.controller.js';
@@ -34,7 +33,7 @@ import { IdentityOidcLinkCommandHandler } from './command-handler/identity-oidc-
 import { MessagingModule } from '../generic/messaging/messaging.module.js';
 
 @Module({
-  imports: [QueueModule, TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox, IdentityExternalAccount]), SecretManagerModule, KafkaModule, MessagingModule, AuthModule, RateLimitModule, RedisModule],
+  imports: [QueueModule, TypeOrmModule.forFeature([Identity, IdentitySession, IdentityOutbox, IdentityExternalAccount]), SecretManagerModule, MessagingModule, AuthModule, RateLimitModule, RedisModule],
   controllers: [AuthController, OidcController, JwksController],
   providers: [
     IdentityRepository,

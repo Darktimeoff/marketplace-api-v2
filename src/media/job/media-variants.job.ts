@@ -1,38 +1,41 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { MessageHandlerErrorBehavior, Nack, RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
-import { RabbitMqChannelEnum } from '../../generic/rabbitmq/enum/rabbitmq-channel.enum.js';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { JOB_SUBSCRIBER } from '../../generic/messaging/constant/messaging.constant.js';
+import { JobRejectedException } from '../../generic/messaging/exception/job-rejected.exception.js';
+import type { JobSubscriberInterface } from '../../generic/messaging/interface/job-subscriber.interface.js';
 import { MediaQueueEnum } from '../enum/media-queue.enum.js';
 import { MediaVariantsGenerateCommandHandler } from '../command-handler/media-variants-generate.command-handler.js';
 import { MediaUnprocessableException } from '../exception/media-unprocessable.exception.js';
 import { mediaVariantsGenerateSchema } from '../schema/media-variants-generate.schema.js';
 
 @Injectable()
-export class MediaVariantsJob {
-  private readonly logger = new Logger(MediaVariantsJob.name);
+export class MediaVariantsJob implements OnModuleInit {
+  private readonly deliveryLimit = 5;
 
-  constructor(private readonly generate: MediaVariantsGenerateCommandHandler) {}
+  constructor(
+    @Inject(JOB_SUBSCRIBER) private readonly jobs: JobSubscriberInterface,
+    private readonly generate: MediaVariantsGenerateCommandHandler,
+  ) {}
 
-  @RabbitSubscribe({
-    queue: MediaQueueEnum.VARIANTS,
-    createQueueIfNotExists: false,
-    queueOptions: { channel: RabbitMqChannelEnum.WORK },
-    errorBehavior: MessageHandlerErrorBehavior.REQUEUE,
-  })
-  async handle(message: unknown): Promise<Nack | undefined> {
+  onModuleInit(): void {
+    this.jobs.register({
+      queue: MediaQueueEnum.VARIANTS,
+      deliveryLimit: this.deliveryLimit,
+      handle: (message) => this.handle(message),
+    });
+  }
+
+  private async handle(message: unknown): Promise<void> {
     const parsed = mediaVariantsGenerateSchema.safeParse(message);
 
     if (!parsed.success) {
-      this.logger.warn(`rejected variants message: ${parsed.error.message}`);
-      return new Nack(false);
+      throw new JobRejectedException(`rejected variants message: ${parsed.error.message}`);
     }
 
     try {
       await this.generate.execute(parsed.data.data.mediaPublicId);
-      return undefined;
     } catch (error) {
       if (error instanceof MediaUnprocessableException) {
-        this.logger.warn(`dead-lettered variants media=${parsed.data.data.mediaPublicId}: ${error.message}`);
-        return new Nack(false);
+        throw new JobRejectedException(`variants media=${parsed.data.data.mediaPublicId}: ${error.message}`);
       }
 
       throw error;

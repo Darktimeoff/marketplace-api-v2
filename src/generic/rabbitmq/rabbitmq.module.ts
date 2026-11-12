@@ -7,6 +7,9 @@ import { getRabbitMqConnectionUri } from "./util/get-rabbitmq-connection-uri.uti
 import { RabbitMqReturnListenerService } from "./rabbitmq-return-listener.service.js";
 import { RabbitMqRpcService } from "./rabbitmq-rpc.service.js";
 import { RabbitMqChannelEnum } from "./enum/rabbitmq-channel.enum.js";
+import { RabbitMqJobPublisher } from "./rabbitmq-job-publisher.js";
+import { RabbitMqJobSubscriber } from "./rabbitmq-job-subscriber.js";
+import { JOB_PUBLISHER, JOB_SUBSCRIBER } from "../messaging/constant/messaging.constant.js";
 import { getTlsOptions } from "../tls/util/get-tls-options.util.js";
 
 @Module({
@@ -31,7 +34,14 @@ import { getTlsOptions } from "../tls/util/get-tls-options.util.js";
       }),
     }),
   ],
-  providers: [RabbitMqReturnListenerService, RabbitMqRpcService],
-  exports: [RabbitMQModule, RabbitMqRpcService],
+  providers: [
+    RabbitMqReturnListenerService,
+    RabbitMqRpcService,
+    RabbitMqJobPublisher,
+    RabbitMqJobSubscriber,
+    { provide: JOB_PUBLISHER, useExisting: RabbitMqJobPublisher },
+    { provide: JOB_SUBSCRIBER, useExisting: RabbitMqJobSubscriber },
+  ],
+  exports: [RabbitMQModule, RabbitMqRpcService, JOB_PUBLISHER, JOB_SUBSCRIBER],
 })
 export class RabbitMqModule {}

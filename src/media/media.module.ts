@@ -2,15 +2,12 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { StorageModule } from '../generic/storage/storage.module.js';
 import { QueueModule } from '../generic/queue/queue.module.js';
-import { KafkaModule } from '../generic/kafka/kafka.module.js';
-import { RabbitMqModule } from '../generic/rabbitmq/rabbitmq.module.js';
 import { Media } from './entity/media.entity.js';
 import { MediaVariant } from './entity/media-variant.entity.js';
 import { MediaOutbox } from './entity/media-outbox.entity.js';
 import { MediaOutboxRepository } from './repository/media-outbox.repository.js';
 import { MediaOutboxRelay } from './relay/media-outbox.relay.js';
 import { MediaOutboxCleanupCron } from './cron/media-outbox-cleanup.cron.js';
-import { MediaTopologyService } from './service/media-topology.service.js';
 import { MediaThumbHashService } from './service/media-thumbhash.service.js';
 import { MediaVariantRepository } from './repository/media-variant.repository.js';
 import { MediaImageVariantService } from './service/media-image-variant.service.js';
@@ -37,14 +34,13 @@ import { MediaProductEventsConsumer } from './consumer/media-product-events.cons
 import { MessagingModule } from '../generic/messaging/messaging.module.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Media, MediaVariant, MediaOutbox]), StorageModule, QueueModule, KafkaModule, MessagingModule, RabbitMqModule],
+  imports: [TypeOrmModule.forFeature([Media, MediaVariant, MediaOutbox]), StorageModule, QueueModule, MessagingModule],
   controllers: [MediaController],
   providers: [
     MediaRepository,
     MediaOutboxRepository,
     MediaOutboxRelay,
     MediaOutboxCleanupCron,
-    MediaTopologyService,
     MediaThumbHashService,
     MediaVariantRepository,
     MediaImageVariantService,

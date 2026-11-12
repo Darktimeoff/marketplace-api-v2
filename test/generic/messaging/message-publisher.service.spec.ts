@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { MessagePublisherService } from '../../../src/generic/messaging/message-publisher.service.js';
 import { MessageBrokerEnum } from '../../../src/generic/messaging/enum/message-broker.enum.js';
 import type { EventPublisherInterface } from '../../../src/generic/messaging/interface/event-publisher.interface.js';
+import type { JobPublisherInterface } from '../../../src/generic/messaging/interface/job-publisher.interface.js';
 
 const message = {
   specversion: '1.0',
@@ -19,25 +19,25 @@ const message = {
 describe('MessagePublisherService', () => {
   function aPublisher() {
     const kafka = { publish: vi.fn().mockResolvedValue(undefined) };
-    const amqp = { publish: vi.fn().mockResolvedValue(true) };
-    return { kafka, amqp, publisher: new MessagePublisherService(kafka as unknown as EventPublisherInterface, amqp as unknown as AmqpConnection) };
+    const jobs = { publish: vi.fn().mockResolvedValue(undefined) };
+    return { kafka, jobs, publisher: new MessagePublisherService(kafka as unknown as EventPublisherInterface, jobs as unknown as JobPublisherInterface) };
   }
 
   it('sends a kafka row to its topic', async () => {
-    const { kafka, amqp, publisher } = aPublisher();
+    const { kafka, jobs, publisher } = aPublisher();
 
     await publisher.publish(MessageBrokerEnum.KAFKA, 'media.events', message);
 
     expect(kafka.publish).toHaveBeenCalledWith('media.events', message);
-    expect(amqp.publish).not.toHaveBeenCalled();
+    expect(jobs.publish).not.toHaveBeenCalled();
   });
 
-  it('sends a rabbitmq row to the queue named by its topic through the default exchange', async () => {
-    const { kafka, amqp, publisher } = aPublisher();
+  it('sends a rabbitmq row to the job queue named by its topic', async () => {
+    const { kafka, jobs, publisher } = aPublisher();
 
     await publisher.publish(MessageBrokerEnum.RABBITMQ, 'media.variants', message);
 
-    expect(amqp.publish).toHaveBeenCalledWith('', 'media.variants', message, { messageId: message.id, type: message.type });
+    expect(jobs.publish).toHaveBeenCalledWith('media.variants', message);
     expect(kafka.publish).not.toHaveBeenCalled();
   });
 });

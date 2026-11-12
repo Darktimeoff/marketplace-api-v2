@@ -6,6 +6,6 @@ import { MessagePublisherService } from './message-publisher.service.js';
 @Module({
   imports: [KafkaModule, RabbitMqModule],
   providers: [MessagePublisherService],
-  exports: [MessagePublisherService],
+  exports: [MessagePublisherService, KafkaModule, RabbitMqModule],
 })
 export class MessagingModule {}

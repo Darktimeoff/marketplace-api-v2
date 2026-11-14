@@ -5,7 +5,6 @@ import { Order, type OrderCreateEntityInterface } from '../entity/order.entity.j
 import { OrderStatusEnum } from '@marketplace/contracts-core';
 import { Log } from '../../generic/logging/decorator/log.decorator.js';
 import { Traced } from '../../generic/telemetry/decorator/traced.decorator.js';
-import { failIfDemoFault } from '../../demo/demo-fault.js';
 
 @Injectable()
 export class OrderRepository {
@@ -14,7 +13,6 @@ export class OrderRepository {
   @Traced()
   @Log(undefined, (order) => `inserted order=${order.publicId} status=${order.status}`)
   create(input: OrderCreateEntityInterface): Promise<Order> {
-    failIfDemoFault(); // TODO(hw-29): remove after homework
     const orders = this.txHost.tx.getRepository(Order);
     return orders.save(orders.create(input));
   }

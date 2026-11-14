@@ -613,16 +613,13 @@ A request that answered 500 at 03:15 should take a minute to explain, not an eve
 | Variable | Source | What |
 |---|---|---|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `.env` through `scripts/with-secrets.sh` | OTLP/HTTP base of the trace backend (`http://127.0.0.1:22918`, Tempo); the SDK appends `/v1/traces`. Unset: spans are still created (logs need the `trace_id`) but not exported |
-| `PROMETHEUS_URL` | `.env` through the wrapper | Prometheus HTTP API (`http://127.0.0.1:22901`) |
-| `TRACE_API_URL` | `.env` through the wrapper | Tempo HTTP API (`http://127.0.0.1:22904`), read by `demo:trace` |
 | `GRAFANA_ADMIN_PASSWORD` | vault (Infisical, #11) | Grafana admin; compose refuses to start without it. Anonymous users get Viewer only, so the dashboard opens without a login |
 | `METRICS_PORT` | `.env`, default `9464` | internal port that serves `/metrics`, never exposed through the API port or a Service; `0` in tests |
 | `LOG_LEVEL` | environment, default `info` | pino level; the tests set `silent` |
 | `OTEL_SDK_DISABLED` | environment | `true` turns tracing off. An empty `OTEL_EXPORTER_OTLP_ENDPOINT` does not: the wrapper fills empty values from `.env` |
-| `DEMO_FAULTS` | environment | `1` lets `x-demo-fail: 1` throw in `OrderRepository.create` (homework-only, `TODO(hw-29)`) |
 | `GRAFANA_PORT`, `PROMETHEUS_PORT`, `TEMPO_API_PORT`, `TEMPO_OTLP_PORT` | environment, defaults `22900`, `22901`, `22904`, `22918` | stand ports |
 
-Addresses are settings and only the password is a secret, the same split as `DBHOST` / `DBPASSWORD`; the wrapper loads `.env` first and the vault on top, so the demos get both. The stand: `npm run obs:up` / `npm run obs:down` (`observability/docker-compose.yml`: Prometheus `v3.15.1`, Tempo `2.10.10`, Grafana `13.3.0`).
+Addresses are settings and only the password is a secret, the same split as `DBHOST` / `DBPASSWORD`; the wrapper loads `.env` first and the vault on top. The stand: `npm run obs:up` / `npm run obs:down` (`observability/docker-compose.yml`: Prometheus `v3.15.1`, Tempo `2.10.10`, Grafana `13.3.0`).
 
 ### Logs
 
@@ -634,8 +631,8 @@ Addresses are settings and only the password is a secret, the same split as `DBH
 ### Traces
 
 - **OpenTelemetry starts before the app** (`src/telemetry.ts`, `node --import ./dist/telemetry.js dist/main.js`: `exec` in `nest-cli.json`, `CMD` in the Dockerfile). The project is ESM, so the file registers OpenTelemetry's loader hook; imported from `main.ts` it would come after `http`, `express` and `pg` were loaded and patch nothing. `TelemetryShutdownService` flushes the last batch on `SIGTERM` (measured: with a 60 s batch delay, 0 spans before `SIGTERM`, 6 after).
-- **Instrumentations:** `http` (server span, `traceparent`; `/healthz`, `/readyz`, `/metrics` untraced), `express` (route spans, middleware layers off), `pg` and `ioredis` (only inside a trace), `amqplib` (puts `traceparent` into RabbitMQ headers). `@opentelemetry/instrumentation-nestjs-core` declares `>=4.0.0 <12` and we run Nest 12.2.0; the two internals it patches (`NestFactoryStatic.create`, `RouterExecutionContext.create`) are unchanged in Nest 12, so `Nest12Instrumentation` widens the range to `<13`. That patches private Nest classes: an update may silently drop the controller spans, which `demo:trace` catches (`controller-span`).
-- **5xx is an ERROR span.** OpenTelemetry leaves a 4xx `Unset` (the client's fault), so the demo needs a real 500.
+- **Instrumentations:** `http` (server span, `traceparent`; `/healthz`, `/readyz`, `/metrics` untraced), `express` (route spans, middleware layers off), `pg` and `ioredis` (only inside a trace), `amqplib` (puts `traceparent` into RabbitMQ headers). `@opentelemetry/instrumentation-nestjs-core` declares `>=4.0.0 <12` and we run Nest 12.2.0; the two internals it patches (`NestFactoryStatic.create`, `RouterExecutionContext.create`) are unchanged in Nest 12, so `Nest12Instrumentation` widens the range to `<13`. That patches private Nest classes: an update may silently drop the controller spans, so `test/generic/telemetry/nest-instrumentation.spec.ts` fails when either method disappears or the package starts to support Nest 12 itself (then the subclass goes).
+- **5xx is an ERROR span.** OpenTelemetry leaves a 4xx `Unset` (the client's fault): an alert on span errors sees server faults, not bad requests.
 
 ### Metrics (RED)
 
@@ -647,7 +644,7 @@ Addresses are settings and only the password is a secret, the same split as `DBH
 | Errors — share of 5xx | which share of each route's answers is a server error | `sum by (route) (rate(http_requests_total{status=~"5.."}[1m])) / sum by (route) (rate(http_requests_total[1m]))` |
 | Duration — p95 | how long do 95 % of each route's requests take | `histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket[1m])))` |
 
-The dashboard is `observability/grafana/dashboards/red.json`, provisioned with both datasources (`observability/grafana/provisioning/`). `[1m]`, not `[5m]`, for a one-minute demo. `rate` needs two scrapes that differ: 40 requests inside one 5 s scrape interval showed Rate `0` and Errors `NaN`; the same load spread over 30 s showed Rate 1.09 req/s, Errors 0.25 (15 of 60, exactly the injected share) and p95 24 ms.
+The dashboard is `observability/grafana/dashboards/red.json`, provisioned with both datasources (`observability/grafana/provisioning/`). `[1m]`, not `[5m]`, so a change shows within a minute. `rate` needs two scrapes that differ: 40 requests inside one 5 s scrape interval showed Rate `0` and Errors `NaN`; the same load spread over 30 s showed Rate 1.09 req/s, Errors 0.25 (15 of 60, exactly the injected share) and p95 24 ms.
 
 **Buckets:** `0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.5, 1, 2.5, 5, 10, 30` s. Measured `POST /order` on this machine:
 
@@ -657,31 +654,9 @@ The dashboard is `observability/grafana/dashboards/red.json`, provisioned with b
 | 200, 16 concurrent | 71.8 ms | 86.8 ms | 154.0 ms | 163.7 ms |
 | 200, 32 concurrent | 177.2 ms | 227.0 ms | 247.7 ms | 248.1 ms |
 
-The default buckets put everything above 100 ms into one bucket (`0.1–0.25`) and left six empty above it, so p95 under load was only known to ±75 ms. The new ones are dense where the traffic is (5–300 ms) and keep 0.5–30 s for degradation: the order transaction retries up to 10 times, so seconds are real when Postgres locks. The top finite bucket, 30 s, is above any plausible worst case, so `histogram_quantile` does not flatten at the edge exactly when things are bad; nothing caps a request (no request timeout, no `statement_timeout`), so a request beyond 30 s would land in `+Inf`, which `above-top-bucket` counts.
+The default buckets put everything above 100 ms into one bucket (`0.1–0.25`) and left six empty above it, so p95 under load was only known to ±75 ms. The new ones are dense where the traffic is (5–300 ms) and keep 0.5–30 s for degradation: the order transaction retries up to 10 times, so seconds are real when Postgres locks. The top finite bucket, 30 s, is above any plausible worst case, so `histogram_quantile` does not flatten at the edge exactly when things are bad; nothing caps a request (no request timeout, no `statement_timeout`), so a request beyond 30 s would land in `+Inf`, visible as `_count − _bucket{le="30"}`.
 
-### Demos
-
-Each builds the app, starts it on a free API port with `/metrics` on `METRICS_PORT` and `DEMO_FAULTS=1`, prints `key=number`, checks its claim and exits with `1` when it is broken (`demo/`, `TODO(hw-29)`). Three runs in a row printed the same numbers:
-
-| `npm run demo:logs` | `npm run demo:metrics` | `npm run demo:trace` |
-|---|---|---|
-| `non-json-lines=0` | `sent-ok=40` | `response-status=500` |
-| `request-lines=6` | `sent-fail=15` | `spans=16` |
-| `layers=3` | `counter-delta=55` | `orphan-spans=0` |
-| `distinct-trace-ids=1` | `errors-delta=15` | `controller-span=1` |
-| `trace-id-matches-header=1` | `top-bucket-le=30` | `trace-matches-header=1` |
-| `burst=8` | `above-top-bucket=0` | `log-lines=4` |
-| `burst-trace-ids=8` | `distinct-ids=100` | `trace-matches-log=1` |
-| `burst-uneven=0` | `series-before=7` | `span-status-error=1` |
-| `secret-req-logged=1` | `series-after=7` | |
-| `secret-in-logs=0` | | |
-
-- **`demo:logs`** sends one order, eight concurrent orders with their own `traceparent`, a request with `Authorization: Bearer <marker>` and a login with a marker password, then reads the app's stdout: every line parses, the order's lines span 3 layers with one `trace_id` equal to the header's, the eight groups have equal size, the secret requests are logged and no marker is.
-- **`demo:metrics`** counts from two scrapes of `/metrics` around 55 orders (15 with `x-demo-fail: 1`), takes `_count − _bucket{le="30"}` for `/order`, and counts the counter's series around 100 `GET /order/<random id>` after one warm-up request.
-- **`demo:trace`** sends one failing order and polls Tempo for its trace (until the span count is stable, 30 s timeout, since spans leave in batches). It finds the request's log lines by its `Idempotency-Key`, not by `trace_id`, so `trace-matches-log` compares two independent paths (ALS → log, span → Tempo).
-- With `OTEL_SDK_DISABLED=true` `demo:logs` and `demo:trace` fail with exit 1 and name the broken keys.
-
-**Stand footprint:** `npm run obs:up` waits 28 s; Grafana 306 MiB, Prometheus 44 MiB, Tempo 22 MiB, about 372 MiB beside the kind node (910 MiB) on a 31 GiB machine. Tempo's image is distroless (no shell, no `wget`), so it has no healthcheck; it answers `/ready` about 16 s after start, which `demo:trace` covers by polling.
+**Stand footprint:** `npm run obs:up` waits 28 s; Grafana 306 MiB, Prometheus 44 MiB, Tempo 22 MiB, about 372 MiB beside the kind node (910 MiB) on a 31 GiB machine. Tempo's image is distroless (no shell, no `wget`), so it has no healthcheck; it answers `/ready` about 16 s after start, so a client reading traces right after `up` has to poll.
 
 ## Secrets
 
@@ -708,50 +683,6 @@ npm run test:all          # all three at once, output prefixed per suite, fails 
 Integration and e2e tests start their containers once per run (Postgres, RabbitMQ, Kafka, Temporal, MinIO and two Redis instances with the same eviction settings as compose, so nothing depends on a running dev stack) and reset state after every test (`test/support/isolation.ts`: `DELETE` from every table with foreign-key checks off for that one transaction (`SET LOCAL session_replication_role = replica`), about 7 ms where a `TRUNCATE` per table took about 175 ms; then `FLUSHALL` both Redis instances). Sequences are not restarted: a Kafka consumer can commit a row just after the cleanup with an id it drew before it, and a restarted sequence would hand the next test the same id, because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with. The tests poll the outboxes every 100 ms (`OUTBOX_RELAY_INTERVAL_MS`) instead of every second.
 
 `test:all` runs the suites side by side because integration and e2e start their own containers. Inside a suite the files run in `TEST_WORKERS` workers (default `4`; `TEST_WORKERS=1` runs them one by one on a machine with little memory). Every e2e file boots the whole app, and every test wipes the database and Redis, so workers can't share infrastructure: the global setup starts one container set per worker in parallel (e2e: Postgres, RabbitMQ, Kafka, Temporal, MinIO, two Redis; integration: Postgres and two Redis) and each worker connects to its own set by `VITEST_POOL_ID`. Four e2e sets take about 4 GB of memory.
-
-## Grading
-
-<!-- TODO(hw-29): remove after homework -->
-
-Tools: Docker with compose v2, Node 24, `openssl`. Ports `22900`, `22901`, `22904`, `22918` (the stand), `33310`, `5672`, `9092`, `7233`, `6380`, `6381`, `9010` (the dependencies) and `9464` (the app's metrics, scraped by Prometheus from the host) must be free. The grader has no vault, hence `SKIP_VAULT=1`: the wrapper then runs the command as is, and the values are the dev ones from `secrets/*.example`. Run everything from the repository root, in one shell; the exports come before `docker compose` because compose reads `DBUSER` and `GRAFANA_ADMIN_PASSWORD` from them.
-
-```bash
-cp .env.example .env
-for f in db_password rabbitmq_password redis_password minio_root_password storage_secret_key; do cp secrets/$f.txt.example secrets/$f.txt; done
-
-export SKIP_VAULT=1
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:22918
-export PROMETHEUS_URL=http://127.0.0.1:22901
-export TRACE_API_URL=http://127.0.0.1:22904
-export GRAFANA_ADMIN_PASSWORD=grader-grafana
-export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
-export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
-export KAFKA_BROKERS=127.0.0.1:9092 TEMPORAL_ADDRESS=127.0.0.1:7233
-export REDIS_CACHE_HOST=127.0.0.1 REDIS_CACHE_PORT=6380 REDIS_QUEUE_HOST=127.0.0.1 REDIS_QUEUE_PORT=6381 REDIS_PASSWORD=changeme
-export JWT_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
-export JWT_PUBLIC_KEY="$(printf '%s' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
-export REFRESH_TOKEN_PEPPER=grader-pepper
-export GOOGLE_CLIENT_ID=grader-unused GOOGLE_CLIENT_SECRET=grader-unused
-export STORAGE_ENDPOINT=http://127.0.0.1:9010 STORAGE_ACCESS_KEY=media-app STORAGE_SECRET_KEY=changeme-media
-
-docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue minio minio-init
-docker compose -f observability/docker-compose.yml up -d --wait
-
-npm ci
-npm run build
-npm run migrate
-npm run seed
-
-npm run demo:logs
-npm run demo:metrics
-npm run demo:trace
-
-docker compose -f observability/docker-compose.yml down
-```
-
-- Grafana: `http://127.0.0.1:22900`, folder *Marketplace*, dashboard *Marketplace API — RED*; anonymous users see it read-only, `admin` / `$GRAFANA_ADMIN_PASSWORD` logs in. Prometheus: `http://127.0.0.1:22901/targets` shows `marketplace-api` `up` while a demo runs: the demo's app takes a free API port but serves `/metrics` on `METRICS_PORT` (`9464`), the port Prometheus scrapes, so the dashboard shows the demo's traffic. Nothing else may hold `9464` while a demo runs.
-- Each demo builds and starts its own app with `DEMO_FAULTS=1`, so nothing else has to run. `demo:trace` waits up to 30 s for Tempo, which is ready about 16 s after `up`.
-- `npm run seed` gives `POST /order` an offer: the demos order the seeded offer with the most stock.
 
 ## Configuration
 

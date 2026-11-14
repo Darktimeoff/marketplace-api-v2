@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
 import { TopicEnum, UserCreatedEvent } from '@marketplace/messaging-contracts';
 import { EVENT_SUBSCRIBER } from '../../generic/messaging/constant/messaging.constant.js';
 import { EventRejectedException } from '../../generic/messaging/exception/event-rejected.exception.js';
@@ -42,7 +43,11 @@ export class OrderUserEventsConsumer implements OnModuleInit {
       return;
     }
 
-    const registered = await this.buyerRegister.execute({ publicId });
-    this.logger.log(`${registered ? 'registered' : 'skipped existing'} buyer for person=${publicId} id=${parsed.data.id}`);
+    await this.registerBuyer(publicId, parsed.data.id);
+  }
+
+  @Log(undefined, (registered, publicId, eventId) => `${registered ? 'registered' : 'skipped existing'} buyer for person=${publicId} id=${eventId}`)
+  private registerBuyer(publicId: string, _eventId: string): Promise<boolean> {
+    return this.buyerRegister.execute({ publicId });
   }
 }

@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
 import { IdentityRegisteredEvent, TopicEnum } from '@marketplace/messaging-contracts';
 import { EVENT_SUBSCRIBER } from '../../generic/messaging/constant/messaging.constant.js';
 import { EventRejectedException } from '../../generic/messaging/exception/event-rejected.exception.js';
@@ -9,7 +10,6 @@ import { identityRegisteredEventSchema } from '../schema/identity-registered-eve
 
 @Injectable()
 export class UserIdentityEventsConsumer implements OnModuleInit {
-  private readonly logger = new Logger(UserIdentityEventsConsumer.name);
 
   constructor(
     @Inject(EVENT_SUBSCRIBER) private readonly consumer: EventSubscriberInterface,
@@ -36,7 +36,11 @@ export class UserIdentityEventsConsumer implements OnModuleInit {
     }
 
     const { publicId, email, phoneNumber } = parsed.data.data;
-    await this.userCreate.execute({ publicId, email, phoneNumber });
-    this.logger.log(`created user for person=${publicId} id=${parsed.data.id}`);
+    await this.createUser({ publicId, email, phoneNumber }, parsed.data.id);
+  }
+
+  @Log(undefined, (_result, input, eventId) => `created user for person=${input.publicId} id=${eventId}`)
+  private createUser(input: Parameters<UserCreateCommandHandler['execute']>[0], _eventId: string): Promise<void> {
+    return this.userCreate.execute(input);
   }
 }

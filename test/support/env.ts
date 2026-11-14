@@ -13,6 +13,8 @@ const raw = await readFile(stateFilePath(suite, Number(process.env.VITEST_POOL_I
 const connection: TestDbConnection = JSON.parse(raw);
 
 process.env.SKIP_VAULT = '1';
+process.env.LOG_LEVEL ??= 'silent';
+process.env.METRICS_PORT ??= '0';
 process.env.DBHOST = connection.host;
 process.env.DBPORT = String(connection.port);
 process.env.DBUSER = connection.username;

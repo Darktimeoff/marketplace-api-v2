@@ -1,18 +1,17 @@
 import { StockReleaseRpc } from "@marketplace/messaging-contracts";
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
+import { Log } from "../../generic/logging/decorator/log.decorator.js";
 import { Transactional } from "@nestjs-cls/transactional";
 import { StockReservationRepository } from "../repository/stock-reservation.repository.js";
 
 @Injectable()
 export class SellerOfferStockReleaseCommandHandler {
-  private readonly logger = new Logger(SellerOfferStockReleaseCommandHandler.name)
 
   constructor(private readonly reservations: StockReservationRepository) {}
 
+  @Log(undefined, (response, request) => `released order=${request.orderPublicId} offers=${response.offers}`)
   @Transactional()
   async execute({ orderPublicId }: StockReleaseRpc.RequestInterface): Promise<StockReleaseRpc.ResponseType> {
-    const released = await this.reservations.release(orderPublicId);
-    this.logger.log(`released order=${orderPublicId} offers=${released}`);
-    return { status: 'released', offers: released };
+    return { status: 'released', offers: await this.reservations.release(orderPublicId) };
   }
 }

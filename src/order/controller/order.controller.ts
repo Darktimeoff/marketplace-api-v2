@@ -14,6 +14,7 @@ import { OrderCreateInput } from '../input/order-create.input.js';
 import { OrderDto } from '../dto/order.dto.js';
 import { ResponseDto } from '../../generic/validation/response-dto.decorator.js';
 import { IdempotencyKey } from '../../generic/decorator/idempotency-key.decorator.js';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
 import { CheckAbility } from '../../generic/auth/decorator/check-ability.decorator.js';
 import { CurrentAbility } from '../../generic/auth/decorator/current-ability.decorator.js';
 import { Identity } from '../../generic/auth/decorator/identity.decorator.js';
@@ -31,6 +32,7 @@ export class OrderController {
   @HttpCode(HttpStatus.ACCEPTED)
   @CheckAbility('create', 'Order')
   @Post()
+  @Log('placing order', (order) => `accepted order=${order.id} status=${order.status}`)
   create(
     @Body() input: OrderCreateInput,
     @Identity('identityPublicId') identityPublicId: string,

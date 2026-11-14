@@ -5,6 +5,7 @@ import { ClsPluginTransactional } from "@nestjs-cls/transactional";
 import { DataSource } from "typeorm";
 import { TransactionalAdapterTypeOrmWithRetry } from "./typeorm-retry.adapter.js";
 import { PostgresOptionsService } from "./postgres-options.service.js";
+import { setRequestContext } from "../logging/request-context.js";
 import { EnvironmentModule } from "../environment/environment.module.js";
 import { SecretManagerModule } from "../secret-manager/secret-manager.module.js";
 
@@ -16,6 +17,7 @@ import { SecretManagerModule } from "../secret-manager/secret-manager.module.js"
     }),
     ClsModule.forRoot({
       global: true,
+      middleware: { mount: true, setup: setRequestContext },
       plugins: [
         new ClsPluginTransactional({
           adapter: new TransactionalAdapterTypeOrmWithRetry({

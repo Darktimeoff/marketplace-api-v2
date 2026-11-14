@@ -3,6 +3,9 @@ import { APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { EnvironmentModule } from './generic/environment/environment.module.js';
 import { DBModule } from './generic/db/db.module.js';
+import { TelemetryShutdownService } from './generic/telemetry/telemetry-shutdown.service.js';
+import { LoggingModule } from './generic/logging/logging.module.js';
+import { MetricsModule } from './generic/metrics/metrics.module.js';
 import { HealthModule } from './health/health.module.js';
 import { OrderModule } from './order/order.module.js';
 import { ProductModule } from './product/product.module.js';
@@ -20,6 +23,8 @@ import { AbilityGuard } from './generic/auth/ability.guard.js';
 
 @Module({
   imports: [
+    LoggingModule,
+    MetricsModule,
     ScheduleModule.forRoot(),
     EnvironmentModule,
     DBModule,
@@ -44,6 +49,7 @@ import { AbilityGuard } from './generic/auth/ability.guard.js';
     { provide: APP_INTERCEPTOR, useClass: ValidationResponseInterceptor },
     { provide: APP_GUARD, useExisting: AccessTokenGuard },
     { provide: APP_GUARD, useExisting: AbilityGuard },
+    TelemetryShutdownService,
   ],
 })
 export class AppModule {}

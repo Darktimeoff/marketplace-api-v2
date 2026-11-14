@@ -3,6 +3,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { Controller, Get, InternalServerErrorException, UseGuards, type ExecutionContext } from '@nestjs/common';
 import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants.js';
 import { Test } from '@nestjs/testing';
+import { ClsModule } from 'nestjs-cls';
 import { importPKCS8, SignJWT } from 'jose';
 import request from 'supertest';
 import { AccessTokenGuard } from '../../../src/generic/auth/access-token.guard.js';
@@ -70,6 +71,7 @@ describe('@Identity() on a guarded route', () => {
     }
 
     const moduleRef = await Test.createTestingModule({
+      imports: [ClsModule.forRoot({ global: true, middleware: { mount: true } })],
       controllers: [MeController],
       providers: [
         AccessTokenGuard,

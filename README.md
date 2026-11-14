@@ -661,7 +661,7 @@ The default buckets put everything above 100 ms into one bucket (`0.1–0.25`) a
 
 ### Demos
 
-Each builds the app, starts it on free ports with `DEMO_FAULTS=1`, prints `key=number`, checks its claim and exits with `1` when it is broken (`demo/`, `TODO(hw-29)`). Three runs in a row printed the same numbers:
+Each builds the app, starts it on a free API port with `/metrics` on `METRICS_PORT` and `DEMO_FAULTS=1`, prints `key=number`, checks its claim and exits with `1` when it is broken (`demo/`, `TODO(hw-29)`). Three runs in a row printed the same numbers:
 
 | `npm run demo:logs` | `npm run demo:metrics` | `npm run demo:trace` |
 |---|---|---|
@@ -708,6 +708,50 @@ npm run test:all          # all three at once, output prefixed per suite, fails 
 Integration and e2e tests start their containers once per run (Postgres, RabbitMQ, Kafka, Temporal, MinIO and two Redis instances with the same eviction settings as compose, so nothing depends on a running dev stack) and reset state after every test (`test/support/isolation.ts`: `DELETE` from every table with foreign-key checks off for that one transaction (`SET LOCAL session_replication_role = replica`), about 7 ms where a `TRUNCATE` per table took about 175 ms; then `FLUSHALL` both Redis instances). Sequences are not restarted: a Kafka consumer can commit a row just after the cleanup with an id it drew before it, and a restarted sequence would hand the next test the same id, because the app's own `@Transactional()` opens real transactions that a wrapping test transaction would interfere with. The tests poll the outboxes every 100 ms (`OUTBOX_RELAY_INTERVAL_MS`) instead of every second.
 
 `test:all` runs the suites side by side because integration and e2e start their own containers. Inside a suite the files run in `TEST_WORKERS` workers (default `4`; `TEST_WORKERS=1` runs them one by one on a machine with little memory). Every e2e file boots the whole app, and every test wipes the database and Redis, so workers can't share infrastructure: the global setup starts one container set per worker in parallel (e2e: Postgres, RabbitMQ, Kafka, Temporal, MinIO, two Redis; integration: Postgres and two Redis) and each worker connects to its own set by `VITEST_POOL_ID`. Four e2e sets take about 4 GB of memory.
+
+## Grading
+
+<!-- TODO(hw-29): remove after homework -->
+
+Tools: Docker with compose v2, Node 24, `openssl`. Ports `22900`, `22901`, `22904`, `22918` (the stand), `33310`, `5672`, `9092`, `7233`, `6380`, `6381`, `9010` (the dependencies) and `9464` (the app's metrics, scraped by Prometheus from the host) must be free. The grader has no vault, hence `SKIP_VAULT=1`: the wrapper then runs the command as is, and the values are the dev ones from `secrets/*.example`. Run everything from the repository root, in one shell; the exports come before `docker compose` because compose reads `DBUSER` and `GRAFANA_ADMIN_PASSWORD` from them.
+
+```bash
+cp .env.example .env
+for f in db_password rabbitmq_password redis_password minio_root_password storage_secret_key; do cp secrets/$f.txt.example secrets/$f.txt; done
+
+export SKIP_VAULT=1
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:22918
+export PROMETHEUS_URL=http://127.0.0.1:22901
+export TRACE_API_URL=http://127.0.0.1:22904
+export GRAFANA_ADMIN_PASSWORD=grader-grafana
+export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
+export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
+export KAFKA_BROKERS=127.0.0.1:9092 TEMPORAL_ADDRESS=127.0.0.1:7233
+export REDIS_CACHE_HOST=127.0.0.1 REDIS_CACHE_PORT=6380 REDIS_QUEUE_HOST=127.0.0.1 REDIS_QUEUE_PORT=6381 REDIS_PASSWORD=changeme
+export JWT_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
+export JWT_PUBLIC_KEY="$(printf '%s' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
+export REFRESH_TOKEN_PEPPER=grader-pepper
+export GOOGLE_CLIENT_ID=grader-unused GOOGLE_CLIENT_SECRET=grader-unused
+export STORAGE_ENDPOINT=http://127.0.0.1:9010 STORAGE_ACCESS_KEY=media-app STORAGE_SECRET_KEY=changeme-media
+
+docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue minio minio-init
+docker compose -f observability/docker-compose.yml up -d --wait
+
+npm ci
+npm run build
+npm run migrate
+npm run seed
+
+npm run demo:logs
+npm run demo:metrics
+npm run demo:trace
+
+docker compose -f observability/docker-compose.yml down
+```
+
+- Grafana: `http://127.0.0.1:22900`, folder *Marketplace*, dashboard *Marketplace API — RED*; anonymous users see it read-only, `admin` / `$GRAFANA_ADMIN_PASSWORD` logs in. Prometheus: `http://127.0.0.1:22901/targets` shows `marketplace-api` `up` while a demo runs: the demo's app takes a free API port but serves `/metrics` on `METRICS_PORT` (`9464`), the port Prometheus scrapes, so the dashboard shows the demo's traffic. Nothing else may hold `9464` while a demo runs.
+- Each demo builds and starts its own app with `DEMO_FAULTS=1`, so nothing else has to run. `demo:trace` waits up to 30 s for Tempo, which is ready about 16 s after `up`.
+- `npm run seed` gives `POST /order` an offer: the demos order the seeded offer with the most stock.
 
 ## Configuration
 

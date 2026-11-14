@@ -23,7 +23,7 @@ function freePort() {
 
 export async function startApp(logFile, extraEnv = {}) {
   const port = await freePort();
-  const metricsPort = await freePort();
+  const metricsPort = Number(process.env.METRICS_PORT || 9464);
   const output = createWriteStream(logFile);
   const errors = createWriteStream(`${logFile}.stderr`);
   const child = spawn(process.execPath, ['--import', './dist/telemetry.js', 'dist/main.js'], {

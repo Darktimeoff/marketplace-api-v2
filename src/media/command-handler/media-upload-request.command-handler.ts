@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { Log } from '../../generic/decorator/log.decorator.js';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
 import { Transactional } from '@nestjs-cls/transactional';
 import { randomUUID } from 'node:crypto';
 import { MediaStatusEnum, type MediaUploadResponseInterface } from '@marketplace/contracts-core';

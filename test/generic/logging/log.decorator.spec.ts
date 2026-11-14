@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Logger } from '@nestjs/common';
-import { Log } from '../../../src/generic/decorator/log.decorator.js';
+import { Log } from '../../../src/generic/logging/decorator/log.decorator.js';
 
 class OrderCleanupCron {
   @Log('starting', (deleted: number) => `deleted ${deleted} rows`, (error) => `failed: ${String(error)}`)

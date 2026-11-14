@@ -1,6 +1,6 @@
 import { AccountCustomerChargeRpc } from "@marketplace/messaging-contracts";
 import { Injectable } from "@nestjs/common";
-import { Log } from "../../generic/decorator/log.decorator.js";
+import { Log } from "../../generic/logging/decorator/log.decorator.js";
 import { AccountRepository } from "../repository/account.repository.js";
 import { Transactional } from "@nestjs-cls/transactional";
 import { AccountCustomerChargeRejectedException } from "../exception/insufficient-stock.exception.js";

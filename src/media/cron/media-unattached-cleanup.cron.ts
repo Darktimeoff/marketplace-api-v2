@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { Log } from '../../generic/decorator/log.decorator.js';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
 import { CronExpression } from '@nestjs/schedule';
 import { subHours } from 'date-fns';
 import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-job-registry.service.js';

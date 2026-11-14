@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Log } from '../../generic/decorator/log.decorator.js';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
 import { Transactional } from '@nestjs-cls/transactional';
 import { MediaClaimStatusEnum } from '@marketplace/contracts-core';
 import type { MediaClaimRpc } from '@marketplace/messaging-contracts';

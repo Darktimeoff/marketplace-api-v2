@@ -1,6 +1,6 @@
 import { AccountCustomerRefundRpc } from "@marketplace/messaging-contracts";
 import { Injectable } from "@nestjs/common";
-import { Log } from "../../generic/decorator/log.decorator.js";
+import { Log } from "../../generic/logging/decorator/log.decorator.js";
 import { Transactional } from "@nestjs-cls/transactional";
 import { AccountRepository } from "../repository/account.repository.js";
 import { AccountInboxService } from "../service/account-inbox.service.js";

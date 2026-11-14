@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Log } from '../../generic/decorator/log.decorator.js';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
 import { MediaStatusEnum, type MediaUploadPartsResponseInterface } from '@marketplace/contracts-core';
 import { MediaRepository } from '../repository/media.repository.js';
 import { MediaStorageService } from '../service/media-storage.service.js';

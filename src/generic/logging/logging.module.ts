@@ -4,6 +4,27 @@ import { LoggerModule } from 'nestjs-pino';
 import { trace } from '@opentelemetry/api';
 import { requestContextFields } from './request-context.js';
 
+export const REDACTED_PATHS = [
+  'req.headers.authorization',
+  'req.headers.cookie',
+  'res.headers["set-cookie"]',
+  'headers.authorization',
+  'headers.cookie',
+  '*.headers.authorization',
+  '*.headers.cookie',
+  'password',
+  '*.password',
+  '*.*.password',
+  'accessToken',
+  '*.accessToken',
+  'refreshToken',
+  '*.refreshToken',
+  'code_verifier',
+  '*.code_verifier',
+  'id_token',
+  '*.id_token',
+];
+
 const unloggedPaths = ['/healthz', '/readyz', '/metrics'];
 
 function contextFields(): object {
@@ -24,6 +45,7 @@ function pathOf(request: IncomingMessage): string {
         level: process.env.LOG_LEVEL || 'info',
         autoLogging: { ignore: (request) => unloggedPaths.includes(pathOf(request)) },
         mixin: contextFields,
+        redact: REDACTED_PATHS,
         serializers: {
           req: (request: IncomingMessage) => ({ method: request.method, path: pathOf(request) }),
           res: (response: ServerResponse) => ({ statusCode: response.statusCode }),

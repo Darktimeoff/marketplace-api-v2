@@ -3,7 +3,7 @@ import type { IncomingMessage } from 'node:http';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
-import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express';
+import { ExpressInstrumentation, ExpressLayerType } from '@opentelemetry/instrumentation-express';
 import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
 import { IORedisInstrumentation } from '@opentelemetry/instrumentation-ioredis';
 import { AmqplibInstrumentation } from '@opentelemetry/instrumentation-amqplib';
@@ -24,7 +24,7 @@ export const telemetry = new NodeSDK({
   ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT ? { traceExporter: new OTLPTraceExporter() } : { spanProcessors: [] }),
   instrumentations: [
     new HttpInstrumentation({ ignoreIncomingRequestHook: isUntraced }),
-    new ExpressInstrumentation(),
+    new ExpressInstrumentation({ ignoreLayersType: [ExpressLayerType.MIDDLEWARE] }),
     new PgInstrumentation({ requireParentSpan: true }),
     new IORedisInstrumentation({ requireParentSpan: true }),
     new AmqplibInstrumentation(),

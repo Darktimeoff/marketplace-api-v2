@@ -72,7 +72,6 @@ export class ProductOutboxRelay implements OnApplicationBootstrap {
       time: row.createdAt.toISOString(),
       datacontenttype: 'application/json',
       subject: row.aggregateId,
-      correlationid: row.aggregateId,
       ...(row.traceparent ? { traceparent: row.traceparent } : {}),
       data: row.payload,
     };

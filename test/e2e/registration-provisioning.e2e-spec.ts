@@ -147,7 +147,6 @@ describe('Registration provisioning over Kafka (e2e)', () => {
       time: user.createdAt.toISOString(),
       datacontenttype: 'application/json',
       subject: user.publicId,
-      correlationid: user.publicId,
       data: {
         publicId: identity.publicId,
         email: identity.email,

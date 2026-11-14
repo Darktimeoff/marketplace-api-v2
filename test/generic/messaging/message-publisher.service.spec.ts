@@ -12,7 +12,6 @@ const message = {
   time: '2026-11-01T10:00:00.000Z',
   datacontenttype: 'application/json',
   subject: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d',
-  correlationid: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d',
   data: {},
 } as const;
 

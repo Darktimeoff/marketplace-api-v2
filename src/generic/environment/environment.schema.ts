@@ -25,6 +25,7 @@ const environmentSchema = z.object({
   STORAGE_REGION: z.string().min(1).default('us-east-1'),
   STORAGE_BUCKET: z.string().min(1).default('marketplace-media'),
   MEDIA_PUBLIC_BASE_URL: z.url().default('http://localhost:8088'),
+  DRAIN_MS: z.coerce.number().int().min(0).default(5000),
 })
 
 export type EnvironmentType = z.infer<typeof environmentSchema>

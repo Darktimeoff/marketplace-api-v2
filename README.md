@@ -319,7 +319,7 @@ Authorization Code flow with PKCE (OIDC). Google only tells us who the person is
 
 Errors: Google refused (`invalid_grant`, `access_denied`) or a check failed → `401 Sign-in with google failed` with the reason in the log; Google or Redis unavailable → `503`. The logs never carry the email or Google's tokens.
 
-To use real Google: in Google Cloud Console create an OAuth client of type *Web application* with the redirect URI `http://localhost:3000/auth/google/callback`, add your account as a test user while the app is in *Testing*, put the client id in `.env` and the secret in the vault, then open `http://localhost:3000/auth/google`. The e2e tests run against `test/support/fake-oidc-provider.ts`, a minimal provider (discovery, JWKS, authorize, token with the PKCE check) that can also deny consent or sign a wrong `nonce`, `aud` or an unverified email.
+To use real Google: in Google Cloud Console create an OAuth client of type *Web application* with the redirect URIs `http://localhost:3000/auth/google/callback` (the app on the host) and `http://localhost:30080/auth/google/callback` (the kind NodePort; Google answers `redirect_uri_mismatch` for any URI not listed, checked for both), add your account as a test user while the app is in *Testing*, put the client id in `.env` and the secret in the vault, then open `http://localhost:3000/auth/google`. The e2e tests run against `test/support/fake-oidc-provider.ts`, a minimal provider (discovery, JWKS, authorize, token with the PKCE check) that can also deny consent or sign a wrong `nonce`, `aud` or an unverified email.
 
 **Adding another OpenID Connect provider** (Microsoft, GitLab, Auth0, Keycloak, …) is configuration: discovery, PKCE, `state`/`nonce`, the `id_token` checks, the routes and the tests are shared (`OidcClientService`, `OidcController`, one discovery per provider):
 
@@ -350,18 +350,18 @@ owner  ─GET /media/:id──────────────────�
 
 | Variable | Source | Used by | Notes |
 |---|---|---|---|
-| `STORAGE_ACCESS_KEY` | Infisical | API, `edge`, `assets:publish`, demos | the `media-app` user, not the MinIO root |
+| `STORAGE_ACCESS_KEY` | Infisical | API, `edge` | the `media-app` user, not the MinIO root |
 | `STORAGE_SECRET_KEY` | Infisical (locally the same value as `secrets/storage_secret_key.txt`) | same | the right to read and write every file |
 | `STORAGE_ENDPOINT` | `.env` | same | empty = AWS S3 |
 | `STORAGE_REGION` | `.env` | same | |
 | `STORAGE_BUCKET` | `.env` | same, `minio-init` | |
-| `MEDIA_PUBLIC_BASE_URL` | `.env` | API (`ProductMedia` URLs), `demo:cdn` | |
-| `EDGE_ORIGIN_PORT` | environment, default `8787` | `edge`, `demo:cdn` | must match `proxy_pass` in `nginx/edge.conf` |
+| `MEDIA_PUBLIC_BASE_URL` | `.env` | API (`ProductMedia` URLs) | |
+| `EDGE_ORIGIN_PORT` | environment, default `8787` | `edge` | must match `proxy_pass` in `nginx/edge.conf` |
 | `MINIO_ROOT_USER` | compose, default `root` | `minio`, `minio-init` | admin only, never used by the app |
 | `minio_root_password` | `secrets/minio_root_password.txt` (docker secret) | `minio`, `minio-init` | |
 | `storage_secret_key` | `secrets/storage_secret_key.txt` (docker secret) | `minio-init` creates `media-app` with it | |
 
-`npm run edge`, `npm run assets:publish` and the three demos all run through `scripts/with-secrets.sh dev`, like `migrate` and `seed`. The storage key is worth more than a database URL: it reads and writes every file, and on AWS a CloudFront signing key would grant access to all private content of a distribution, so neither lives in an env file.
+`npm run edge` runs through `scripts/with-secrets.sh dev`, like `migrate` and `seed`. The storage key is worth more than a database URL: it reads and writes every file, and on AWS a CloudFront signing key would grant access to all private content of a distribution, so neither lives in an env file.
 
 ### Storage: one private bucket, one least-privilege user
 
@@ -400,9 +400,9 @@ Finished uploads nobody uses are billed too. A claim that is never confirmed (th
 
 ### CDN: chosen form and the AWS variant
 
-Locally (the graded form): `edge` is nginx with `proxy_cache` in compose; on a miss it asks the shim (`src/edge.ts`, ~60 lines of `node:http`, run with `npm run edge`), which fetches the object from the private bucket with the storage key and returns it with the object's `Cache-Control`. nginx has no `proxy_cache_valid`, so it caches exactly what the origin marks cacheable and adds `X-Cache: HIT|MISS`. That is the point of OAC: the cache layer reads the bucket, the public can't. The shim runs on the host because the credentials come from the vault through `with-secrets.sh`, which a container started by `docker compose up` doesn't have; nginx reaches it at `host.docker.internal` (`host-gateway`). It listens on `0.0.0.0:8787` so the bridge network can reach it; locally that exposes `media/` and `assets/` read-only to the LAN past the cache, which a production CloudFront doesn't have.
+Locally (the graded form): `edge` is nginx with `proxy_cache` in compose; on a miss it asks the shim (`src/edge.ts`, ~60 lines of `node:http`, run with `npm run edge`), which fetches the object from the private bucket with the storage key and returns it with the object's `Cache-Control`. nginx has no `proxy_cache_valid`, so it caches exactly what the origin marks cacheable and adds `X-Cache: HIT|MISS`. That is the point of OAC: the cache layer reads the bucket, the public can't. The shim runs on the host because the credentials come from the vault through `with-secrets.sh`, which a container started by `docker compose up` doesn't have; nginx reaches it at `host.docker.internal` (`host-gateway`). It listens on `0.0.0.0:8787` so the bridge network can reach it; locally that exposes `media/` read-only to the LAN past the cache, which a production CloudFront doesn't have.
 
-The shim serves only `media/` and `assets/`. Under `media/` it serves inline only the allowlisted types and sends anything else as `application/octet-stream` with `Content-Disposition: attachment` and `Content-Security-Policy: sandbox`; every response has `X-Content-Type-Options: nosniff`.
+The shim serves only `media/`. It serves inline only the allowlisted types and sends anything else as `application/octet-stream` with `Content-Disposition: attachment` and `Content-Security-Policy: sandbox`; every response has `X-Content-Type-Options: nosniff`.
 
 On AWS: Block Public Access on, CloudFront with Origin Access Control, and a bucket policy that lets only that distribution read. The `AWS:SourceArn` condition is required: without it any CloudFront distribution in any account could read the bucket.
 
@@ -414,7 +414,7 @@ On AWS: Block Public Access on, CloudFront with Origin Access Control, and a buc
     "Effect": "Allow",
     "Principal": { "Service": "cloudfront.amazonaws.com" },
     "Action": "s3:GetObject",
-    "Resource": ["arn:aws:s3:::marketplace-media/media/*", "arn:aws:s3:::marketplace-media/assets/*"],
+    "Resource": "arn:aws:s3:::marketplace-media/media/*",
     "Condition": { "StringEquals": { "AWS:SourceArn": "arn:aws:cloudfront::<account-id>:distribution/<distribution-id>" } }
   }]
 }
@@ -424,7 +424,7 @@ Browsers PUT to the bucket's origin, so the bucket needs CORS for `PUT` from the
 
 ### Updates without invalidation
 
-`Cache-Control: public, max-age=31536000, immutable` is set on the object at upload (signed into the presigned PUT, set on `CreateMultipartUpload`, or by `assets:publish`), not on the edge: an object without it is fetched from the bucket on every request. A key never changes content: media keys carry a uuid, and static assets carry the content hash (`npm run assets:publish -- app.css` uploads `assets/app.117f8504.css` and skips files whose hash already exists). New content gets a new URL, the old cache entry harms nobody, and nothing is invalidated: CloudFront invalidations cost money past the free tier, propagate eventually, can't be undone and never reach browser or proxy caches. Only the entry point that names the hashed files (`index.html`, a manifest) is served with `no-cache`.
+`Cache-Control: public, max-age=31536000, immutable` is set on the object at upload (signed into the presigned PUT, or set on `CreateMultipartUpload`), not on the edge: an object without it is fetched from the bucket on every request. A key never changes content: media keys carry a uuid. New content gets a new URL, the old cache entry harms nobody, and nothing is invalidated: CloudFront invalidations cost money past the free tier, propagate eventually, can't be undone and never reach browser or proxy caches. Only the entry point that names the hashed files (`index.html`, a manifest) is served with `no-cache`.
 
 ### Attaching media to a product
 
@@ -458,34 +458,157 @@ Running the job in its own container without network access would be the next la
 
 **Reading them.** Product never reads media's tables. `ProductMediaEventsConsumer` (group `product.media-variants`) copies `media.variants.generated` into `ProductMediaVariant` rows and `ProductMedia.thumbHash` (idempotent by `(productMediaId, name)`). `GET /product/:publicId` (public) answers each media with `thumbHash` and `variants: [{ name, mimeType, url, width, height }]`, URLs on `MEDIA_PUBLIC_BASE_URL` like the original; a client builds `srcset` from the widths and shows the ThumbHash until the first variant arrives. `POST /product` answers `thumbHash: null, variants: []`, since generation starts after its commit.
 
-### Demo runs
-
-Three runs of each demo on this machine (MinIO, nginx edge, the whole stack in compose). The output is deterministic; extra lines start with `#`.
-
-| Key | `demo:upload` ×3 | | Key | `demo:multipart` ×3 | | Key | `demo:cdn` ×3 |
-|---|---|---|---|---|---|---|---|
-| `intent` | 200 200 200 | | `head-before-complete` | 404 404 404 | | `direct` | 403 403 403 |
-| `key-from-server` | 1 1 1 | | `resumed-parts` | 1 1 1 | | `edge-miss` | 200 200 200 |
-| `api-alive` | 0 0 0 | | `complete` | 200 200 200 | | `edge-hit` | 200 200 200 |
-| `put-offline` | 200 200 200 | | `size-match` | 1 1 1 | | `cache-hit` | 1 1 1 |
-| `commit` | 200 200 200 | | `etag-multipart` | 1 1 1 | | `new-name` | 1 1 1 |
-| `commit-without-bytes` | 409 409 409 | | | | | `new-url` | 200 200 200 |
-| `tampered` | 403 403 403 | | | | | `content-changed` | 1 1 1 |
-| `expired` | 403 403 403 | | | | | `invalidations` | 0 0 0 |
-
-What each demo does:
-
-- **`demo:upload`** starts the API on `:3101`, requests an upload with `fileName: '../../etc/passwd'`, stops the API (`api-alive` checks the port with a raw socket, not `fetch`), and PUTs the bytes from a separate process whose environment holds nothing but `PATH`. It then starts the API on `:3102` (a different port: `fetch` keeps a connection pool per host and port, and a restarted port can hand out a dead socket), commits, commits an upload that never got bytes (`409`), swaps the key inside a presigned URL (`403 SignatureDoesNotMatch`) and PUTs with a URL signed for one second, two seconds later (`403 Request has expired`).
-- **`demo:multipart`** aborts the demo user's unfinished uploads and deletes their objects first, then requests an 11 MiB video (3 parts of 5 MiB, 5 MiB, 1 MiB). Process A uploads two parts and exits with `137`; `HeadObject` answers `404` although 10 MiB are stored; process B, a fresh process, asks `/parts`, learns that 2 of 3 are there and uploads one; `complete` assembles the object, whose size matches and whose ETag ends in `-3` and differs from the file's MD5. Run twice in a row, the second run starts from a clean state.
-- **`demo:cdn`** deletes previous demo assets, starts the shim, publishes `demo-app.css` (a per-run build comment makes the hash new, so the first request is a real `MISS` although nginx keeps its cache between runs), checks the anonymous direct request, two requests through the edge, then publishes changed content and checks that it got a new name and is served under the new URL while the old URL still returns the old file.
-
-Each demo verifies its own invariants and exits `1` if one breaks: with the bucket made public (`mc anonymous set download`), `demo:cdn` prints `direct=200`, `# invariant broken: direct=200` and exits `1`.
-
 ## Realtime order status (SSE)
 
 `GET /orders/:id/events?buyerPublicId=<uuid>` (`:id` is the order's uuid) streams the order's status as SSE `order.status` events: `pending_payment`, then `paid`, or `canceled` / `failed_payment`. The buyer id is an ownership hint, not authentication.
 
 The stream is fed from Kafka, not from the code that changes the status. Order writes `order.created`, `order.paid` and `order.failed` through `OrderOutbox` in the same transaction as each status change; `OrderNotifyEventsConsumer` consumes `order.events` as a broadcast consumer on every instance and records each event in `OrderNotifyService`, which pushes it to that order's SSE listeners and keeps the last 100 per order. The SSE `id` is the Kafka offset + 1: all events of one order are on one partition (key = `publicId`), so ids only grow per order and are the same on every instance, and a reconnect with `Last-Event-ID` resumes correctly on any instance. Offset + 1 because the first message of a partition has offset 0, which `Last-Event-ID` would treat as "nothing seen yet". The history is in memory: it is rebuilt from new events after a restart, not from the past. A status reaches the stream about a second after the change (the outbox relay's poll interval). SSE fits one-way notifications: the browser's `EventSource` reconnects by itself and sends `Last-Event-ID`.
+
+## Container image
+
+`npm run image:build` builds `docker/Dockerfile` with BuildKit into `marketplace-api:hw28`:
+
+- `manifests` copies `package.json`, the lock file, `.npmrc` and the workspace manifests and drops their `scripts` (`npm pkg delete scripts`); `deps` and `prod-deps` copy that result and run `npm ci` on `node:24-trixie-slim` (Debian 13, glibc 2.41 and Node 24.22.2, the same as the runtime, so the prebuilt native modules of `sharp`, `argon2`, `@confluentinc/kafka-javascript` and `@temporalio/core-bridge` load as they are); `build` compiles; `ffmpeg` provides the static `ffmpeg`/`ffprobe` that media variants call; `runtime` is `gcr.io/distroless/nodejs24-debian13:nonroot`: no shell, no package manager, uid `65532`.
+- Layer reuse, measured: a change in `src/` rebuilds only `build` and the `dist` layer (3.9 s); a change of `scripts` alone rebuilds only `manifests` and `build` and reuses both `npm ci` and the 619 MB `node_modules` layer (5.0 s, it was 32.3 s before `manifests`: the cache key of `COPY package*.json` is the whole file, so any new npm script reinstalled everything twice). BuildKit compares the output of `COPY --from=manifests` by content, so stripped manifests that didn't change keep the cache. `npm ci` doesn't read `scripts`, `build` still gets the real `package.json` through `COPY . .`, and the runtime gets the stripped one (`type`, `exports` and `workspaces` are all Node needs). `/root/.npm` is a cache mount, so even a real reinstall takes tarballs from the cache, not the network.
+- The registry token reaches `npm ci` only as a BuildKit secret (`--secret id=npm_token,src=.npm_token`, mounted as `NPM_TOKEN` for that one `RUN`); `.npmrc` holds `${NPM_TOKEN}`, not the value. `ARG` would keep the value in the image history and `COPY` + `rm` in the bytes of an earlier layer. There is no private registry yet, so `.npm_token` is a decoy for the scope `@marketplace-private` on `npm.invalid`, which no dependency uses.
+- `.dockerignore` is an allowlist: only the manifests, the compiler configs, `src` and the workspace packages reach the build context, so a new file in the repository (state, keys, env files) never does by accident.
+- `packages/*/src` stays in the image next to `dist`: the Temporal worker bundles the workflows with webpack at startup in `development` mode, which picks the `development` export condition (`./src/index.ts`) of `@marketplace/contracts-core`. Without it the worker fails with `no valid target file was found`.
+- No `HEALTHCHECK`: distroless has no tool to run one, and Kubernetes uses its own probes.
+
+### Image scan
+
+`npm run scan` runs trivy on `marketplace-api:hw28` (`SCAN_IMAGE`), counts the findings of the report and compares them with `SCAN_MAX`: `found <= max-allowed` prints `gate=pass` and exits `0`, otherwise `gate=fail` and `1`. A missing report (the scanner failed, the image doesn't exist) or a non-numeric `SCAN_MAX` exits `2`, never `pass`. It prints `image=`, `severity=`, `ignore-unfixed=`, `found=`, `max-allowed=`, `gate=` and, after `#`, the split by severity and by target.
+
+- Counted: `CRITICAL,HIGH` (`SCAN_SEVERITY`) with `--ignore-unfixed` (`SCAN_IGNORE_UNFIXED=false` counts everything): only what an update can fix, so the number is something we can act on.
+- Working threshold `2` (the default in the `scan` npm script, used by CI): the count on 2026-11-08, so a new finding fails the gate and the threshold is lowered as findings are fixed. Both are HIGH in `zlib1g` of the distroless base, fixed in Debian (`+deb13u1`) and waiting for a rebuilt image. The first scan found 15 and the rest were closed the same day: `@temporalio/*` 1.24 → 1.25 brought the Rust crate `zip` 8.5.1 → 9.0.5 inside `core-bridge` (1 CRITICAL, 3 HIGH); `npm update` brought `fast-uri` 3.1.9 and `source-map-js` 1.2.2; `overrides.multer: 2.5.0` replaces the `2.4.0` that `@nestjs/platform-express` 12.2 pins exactly (drop the override once Nest is ≥ 12.3, which pins `2.5.0` itself); moving from `nodejs24-debian12` to `nodejs24-debian13` (and the build stages from bookworm to trixie, so the native modules are built against the runtime's glibc) removed the 7 in `libssl3` (1 CRITICAL, 6 HIGH). The trivy database changes daily, so the same image can fail tomorrow without a code change; that is the point of the gate, not a flake.
+- trivy `0.76.1` is a binary on `PATH` when there is one, otherwise `docker run aquasec/trivy:0.76.1` with the Docker socket and a `trivy-cache` volume; both gave the same `found`.
+- CI (`.github/workflows/scan.yml`, on pull requests and pushes to `main`) builds the image with a random decoy token, downloads trivy by version and checks its sha256 before running it, then calls `npm run scan`. Actions are pinned by commit (`actions/checkout` `3d3c42e5…` = v7.0.1, `actions/cache` `55cc8345…` = v6.1.0), not by tag: a scanner runs with the job's credentials, and trivy's own release and action tags were replaced with credential-stealing builds in 2026, so a moved tag must not change what runs.
+
+### Demo: image
+
+<!-- TODO(hw-28): remove after homework -->
+
+`npm run demo:image` reads the built image, not the Dockerfile text, except for `stages` (the `FROM` lines of `docker/Dockerfile`): `shell-inside` tries `sh`, `/bin/sh`, `/bin/bash` and `/busybox/sh` as the entrypoint; `runtime-uid` is `Config.User`, resolved through the image's own `/etc/passwd` when it is a name and `0` when it is empty; the token from `.npm_token` is searched in `docker history --no-trunc`, in `docker image inspect` and in every layer listed by the `manifest.json` of `docker save` (decompressed, the config blob left out). It exits `1` when an invariant breaks. `npm run demo:image:leaky` builds two broken variants from `demo/leaky/` in a throwaway context and runs the same script on them. Three runs each, identical:
+
+| Key | `demo:image` | `ARG` in the final stage | `COPY` + `rm` in the next layer |
+|---|---|---|---|
+| `stages` | 6 | 2 | 2 |
+| `shell-inside` | 0 | 1 | 1 |
+| `runtime-uid` | 65532 | 0 | 0 |
+| `token-in-history` | 0 | 2 (`ARG NPM_TOKEN=…`, `RUN \|1 NPM_TOKEN=…`) | 0 |
+| `token-in-config` | 0 | 0 | 0 |
+| `token-in-layers` | 0 | 0 | 1 |
+| exit | 0 | 1 | 1 |
+
+No single channel sees both leaks: `ARG` lives only in the history, `rm` leaves only a whiteout on top of the layer that still holds the bytes. An `ARG` used only in a builder stage does not show in the final image's history at all (measured: all three counters `0`), so the leaky variant uses it in the stage that becomes the image.
+
+## Health and graceful shutdown
+
+- `GET /healthz` (liveness) checks nothing but the process: it answers while the event loop runs. A dependency that is down must not get a pod restarted.
+- `GET /readyz` (readiness) answers `200` only when Postgres answers a ping within 500 ms and the instance is not draining, otherwise `503` with the failed check (`database` or `shutdown`). Kafka, RabbitMQ and Redis are left out on purpose: an outage of one of them would take every pod out of the load balancer at once, and the Redis paths already degrade by policy.
+- `SIGTERM` (`enableShutdownHooks()`, the Nest default): `HealthShutdownService.onModuleDestroy()` turns readiness red at once and waits `DRAIN_MS` while the instance keeps serving; only then do the other modules close their clients and `app.close()` closes the socket. Closing first would refuse new connections while the load balancer still sends traffic.
+- Why `onModuleDestroy` of the health module: Nest runs shutdown hooks module by module, awaited one at a time, in the reverse order of initialisation, so modules near the root go first and deeply imported or global ones last. `HealthModule` is imported by `AppModule`; `TemporalModule`, `KafkaModule`, `StorageModule` and `RedisModule` sit deeper and close after the drain. Only `OrderPlaceWorker` (same depth) stops before it, which doesn't touch HTTP. The e2e test logs in during the drain, so a change of that order fails it: with the drain moved to `beforeApplicationShutdown` the login gets `500 Connection is closed.` (Redis). `@nestjs/terminus`' `gracefulShutdownTimeoutMs` waits in `beforeApplicationShutdown` as well, so it is not used.
+- `useProcessExit: true`: by default Nest re-raises the signal to itself after the hooks (`process.kill(process.pid, signal)`), and a container's PID 1 ignores a signal it has no handler for, so the pod would hang until `terminationGracePeriodSeconds` and get `SIGKILL` (`137`). Measured on `node:24-alpine` with that pattern: still `running` 3 s after `SIGTERM`. With the option Nest calls `process.exit(0)`. Distroless has no `tini`/`dumb-init` to reap signals instead.
+- During the drain every response carries `Connection: close` (`HealthDrainMiddleware`), the way Go's `Server.Shutdown` turns keep-alive off. Readiness only stops new connections from reaching the pod; a client with a keep-alive connection keeps sending on it, and when `app.close()` closes that socket a request written at the same moment dies with `UND_ERR_SOCKET`. Measured in kind, 16 keep-alive clients during a rollout: 24 and 17 failed out of about 121 000 without the header, 0 out of 81 897 and 83 290 with it (fewer requests because every client reconnects once per drained pod).
+- The drain runs on every close, `SIGINT` and `app.close()` in tests included; set `DRAIN_MS=0` locally to skip it.
+- There is no artificial warm-up before `listen()`: connecting TypeORM, the Kafka producer, RabbitMQ, Temporal and both Redis instances takes about 2.65 s from process start to the first answer (three runs: 2.65, 2.66, 2.65 s), so a pod without a readiness probe gets traffic it cannot answer yet.
+
+## Kubernetes
+
+### Cluster
+
+kind `v0.33.0`, one node `kindest/node:v1.36.4` (pinned by digest in `k8s/kind-config.yaml`; v1.36 because the local `kubectl` is v1.35 and a client supports one minor version of skew), on Docker with 31 GiB of memory (`docker info`: `Total Memory: 31.02GiB`). kind gives the node no memory limit of its own: it takes what it uses from Docker's total, measured with `docker stats` at 640 MiB idle and 2.1 GiB with four API pods (about 217 MiB each, `kubectl top`); the compose dependencies the pods use add about 1.7 GiB (Kafka 1.2 GiB of it). Measured on this machine: `kind create … --wait 120s` until the node is `Ready` 27.7 / 29.2 / 30.6 s, joining the compose network and `kind load docker-image` 12.9–15.6 s.
+
+- `npm run cluster:up` (`scripts/cluster-up.sh`) creates the cluster unless it exists, connects the node to the network of the running compose `db` container (`marketplace-api-v2_default` here; compose names it after the checkout's directory, so the script reads it, and `COMPOSE_NETWORK` overrides it) and loads `marketplace-api:hw28` into it together with an immutable tag `marketplace-api:<first 12 hex of the image's linux/amd64 manifest digest>` (`scripts/lib/image.sh`). Run it again after every `image:build`: an image built on the host does not exist in the cluster, and the pod would hang in `ErrImagePull` whatever its `imagePullPolicy`. kind reloads the image every time (about 8 s) because Docker's containerd image store reports the manifest-list digest as the image id and the node the config digest, so they never match.
+- `cluster:up` also applies metrics-server `v0.9.0` (`kubectl apply -k k8s/metrics-server`): `components.yaml` is the release manifest unchanged, the kustomization pins the image by digest and adds `--kubelet-insecure-tls`, because kind's kubelets serve a self-signed certificate without IP SANs and metrics-server would refuse to scrape them. On a real cluster the kubelet certificates are signed by the cluster CA and the flag goes away. Without it the HPA has no CPU numbers (`cpu: <unknown>/70%`) and can only hold `minReplicas`.
+- `npm run cluster:down` deletes it.
+- Only the API runs in the cluster. Postgres (through pgbouncer), Kafka, RabbitMQ, Temporal, both Redis instances and MinIO stay in compose, as managed services would stay outside a production cluster. With the node on the compose network, pods resolve the compose service names through CoreDNS and Docker's DNS (checked from a pod: `db-bouncer:5432`, `kafka:29092`, `rabbitmq:5672`, `temporal:7233`, `redis-cache:6379`, `redis-queue:6379`, `minio:9000` all open), so Kafka's internal listener, which already advertises `kafka:29092`, works without another listener.
+- The scripts use `$KUBECONFIG` when it is set; locally the cluster lives in `~/.kube/kind-marketplace`, so creating it doesn't switch the default context of another kubeconfig.
+
+### Variables
+
+What the Pulumi program reads. Rows marked «сховище» come from Infisical (the vault of homework #11) through `scripts/with-secrets.sh`, or are exported with `SKIP_VAULT=1`; without any of them `pulumi preview` stops and names it. None of them is written to a file.
+
+| Variable | Source | Why |
+|---|---|---|
+| `DBPASSWORD` | сховище (Infisical, #11) | Postgres password, K8s Secret → pod |
+| `DBUSER` | сховище (Infisical, #11) | Postgres user, K8s Secret → pod |
+| `RABBITMQ_USER` | сховище (Infisical, #11) | RabbitMQ user, K8s Secret → pod |
+| `RABBITMQ_PASSWORD` | сховище (Infisical, #11) | RabbitMQ password, K8s Secret → pod |
+| `JWT_PRIVATE_KEY` | сховище (Infisical, #11) | signs access tokens, K8s Secret → pod |
+| `JWT_PUBLIC_KEY` | сховище (Infisical, #11) | verification keys (PEM list), K8s Secret → pod |
+| `REDIS_CACHE_URL` | сховище (Infisical, #11) | redis-cache URL with its password; the program swaps the host for `redis-cache:6379`, K8s Secret → pod |
+| `REDIS_QUEUE_URL` | сховище (Infisical, #11) | redis-queue URL with its password; host swapped for `redis-queue:6379`, K8s Secret → pod |
+| `REFRESH_TOKEN_PEPPER` | сховище (Infisical, #11) | HMAC pepper of refresh tokens, K8s Secret → pod |
+| `GOOGLE_CLIENT_SECRET` | сховище (Infisical, #11) | Sign in with Google, K8s Secret → pod |
+| `STORAGE_ACCESS_KEY` | сховище (Infisical, #11) | S3/MinIO access key, K8s Secret → pod |
+| `STORAGE_SECRET_KEY` | сховище (Infisical, #11) | S3/MinIO secret key, K8s Secret → pod |
+| `PULUMI_CONFIG_PASSPHRASE` | сховище (Infisical, #11) | encrypts the secrets in the Pulumi state; not passed to the cluster |
+| `GOOGLE_CLIENT_ID` | `.env` (not a secret: it is in every Google sign-in URL) | Sign in with Google; plain env in the pod |
+| `IMAGE_REF` | `scripts/infra.sh` (computed) | the immutable image tag `cluster:up` loaded |
+| `PULUMI_BACKEND_URL` | environment, default `file://<repo>/infra/.pulumi-state` | local file backend, no `pulumi login` |
+| `KUBECONFIG` | environment, optional | which kubeconfig holds the `kind-marketplace` context |
+| `SKIP_VAULT` | environment | `1` skips Infisical: the values above must then be exported |
+
+The non-secret settings of the pod (`db-bouncer:5432`, `kafka:29092`, `DRAIN_MS`, …) are written in the program, see below.
+
+### Deploy (Pulumi)
+
+`infra/` is a Pulumi TypeScript program (CLI `v3.272.0`, `@pulumi/pulumi` 3.272.0, `@pulumi/kubernetes` 4.34.2). Node 24 runs `index.ts` itself (type stripping, `typescript: false` in `Pulumi.yaml`), so there is no ts-node or build step. `npm run preview`, `npm run up` and `npm run destroy` go through `scripts/with-secrets.sh dev` and `scripts/infra.sh`, which uses a file backend (`PULUMI_BACKEND_URL`, by default `file://<repo>/infra/.pulumi-state`), selects or creates the stack `dev` and installs `infra/node_modules` on the first run. Every command runs with `--refresh`: after `cluster:down` and `cluster:up` the state still lists the old resources, and without a refresh `up` answered `8 unchanged` against an empty cluster (measured); with it the same `up` recreated the 6 missing resources. The homework warns that `pulumi refresh` drops a K8s Secret from the state so the next `up` fails with `already exists`; with `data` (not `stringData`) and the provider's server-side apply it doesn't happen here (measured: the Secret is in `pulumi stack export` before and after `pulumi refresh`, its data still wrapped as a secret, and the next `up` reports `8 unchanged`). The state and `infra/Pulumi.dev.yaml` are not committed: the passphrase salt in the stack file belongs to whoever created the stack.
+
+- **Vault first.** Before declaring anything, the program checks the twelve app secrets (`infra/vault.ts`, kept equal to `SECRET_NAMES` by `test/infra/vault.spec.ts`) and `PULUMI_CONFIG_PASSPHRASE`, and stops with `error: Missing from the vault: <names>` (`pulumi.RunError`, no stack trace). Each of the thirteen removed one at a time fails `preview` with its own name.
+- **Secret.** The values go into `marketplace-api-secrets` as `data` (base64), wrapped in `pulumi.secret`, so the state stores them encrypted with the passphrase and `preview` prints `data: [secret]`. Base64 is an encoding, not encryption: whoever can `get secret` in the namespace reads them. The pod reads each through `secretKeyRef`; a pod-template annotation carries the sha256 of all values, so a rotated secret rolls the pods on the next `up` (an env var from a Secret never changes in a running pod).
+- **Redis URLs.** The vault holds them with the host the app uses outside Docker (`localhost:6380`, `localhost:6381`); the program keeps the user and password from the vault and only swaps the address for the compose name (`redis-cache:6379`, `redis-queue:6379`, configurable as `redisCacheAddress`/`redisQueueAddress`). The other settings the pod needs (`db-bouncer:5432`, `kafka:29092`, …) are written in the program, because `.env` describes a process on the host and is not read at all with `SKIP_VAULT=1`. The pod itself runs with `SKIP_VAULT=1`: inside the cluster the Secret is the source, so the `INFISICAL_*` variables are placeholders the schema requires. `GOOGLE_CLIENT_ID` is not a secret (it travels in the browser URL) but is per environment, so the program takes it from the environment (`.env` through the wrapper) and stops with `error: Missing setting: GOOGLE_CLIENT_ID` without it; `OIDC_REDIRECT_BASE_URL` is `http://localhost:30080`.
+- **Rollout.** `maxUnavailable: 0`, `maxSurge: 1`: a new pod must be ready before an old one gets `SIGTERM`. `terminationGracePeriodSeconds` defaults to `ceil(drainMs / 1000) + 10` = 15 s, and the program refuses a grace period that isn't longer than `drainMs`. The probes are split: `startupProbe` and `livenessProbe` on `/healthz` (restart only a hung process), `readinessProbe` on `/readyz` every 2 s with `failureThreshold: 1` (out of the Service as soon as the drain starts or Postgres stops answering). The `startupProbe` (`/healthz` every 1 s, 60 failures) holds the other two off until the process first answers, so a slow start has 60 s before a restart while a hung running process is restarted after 30 s (liveness every 10 s, 3 failures); without it the same liveness would also kill a start slower than 30 s, and raising `initialDelaySeconds` instead would delay noticing a hang for the pod's whole life.
+- **Replicas.** No `spec.replicas` in the program; see *Replicas and the HPA* below.
+- **Pod.** `runAsUser: 65532` (the distroless `nonroot` user), `runAsNonRoot`, `readOnlyRootFilesystem` with an `emptyDir` on `/tmp` for the ffmpeg work files, all capabilities dropped, `RuntimeDefault` seccomp, no service account token. Requests `250m`/`384Mi` (CPU requests are what the HPA percentage is measured against), memory limit `768Mi`, no CPU limit.
+- **Service.** `NodePort` `30080`, published by kind on `127.0.0.1:30080`; PDB `maxUnavailable: 1`.
+- **Image.** Pulumi knows the image only as the string in the pod spec, so the program never uses the moving tag `hw28`: with it a rebuilt image changed nothing in the spec, `up` answered `unchanged` and the old pods kept the old code, while any pod the HPA or a restart created took the new image under the same tag, two versions side by side. `scripts/infra.sh` passes `IMAGE_REF` = the immutable tag that `cluster:up` loaded, and stops with `image … is not in the cluster: run npm run cluster:up` when the node lacks it (otherwise the pods would sit in `ErrImagePull` until the progress deadline). The tag is the digest of the platform manifest, not the image id: with the containerd image store the id is the digest of the index, which carries a BuildKit attestation with the build time and changed on every rebuild (`7ec60ae62793`, `88b4dff57f57` for the same code), while the platform manifest stayed `df05608f3ad1`. Measured: a rebuild without changes → `8 unchanged`; a changed log line → `ee274e37ebf3` and a rolling update; the change reverted → back to `df05608f3ad1` from the build cache, and the Deployment reused its old ReplicaSet. Old tags stay on the host and the node until removed (`docker image rm`, `cluster:down`).
+- **`REV`.** The `rev` config value (`npm run up -- -c rev=2`) goes into the pod env, so changing it rolls the same image again; a code change doesn't need it.
+- **Rollout settings.** `drainMs`, `readiness` (`false` drops the startup and readiness probes), `maxUnavailable` and `maxSurge` are config values with the safe defaults above, so the demo can switch them off; the program refuses `maxUnavailable` and `maxSurge` both `0`, a rollout that could never replace a pod.
+
+Measured: `up` from nothing 11.6 s (8 resources; the first pod ready after 4 s), `destroy` 11.6 s, `up` with nothing changed 2 s. A quick check before the load demo: `rev=1 → 2` took 10.4 s while a sequential `curl` loop sent 12 062 requests to `/healthz`, all `200`.
+
+### Replicas and the HPA
+
+`spec.replicas` of a Deployment has one writer too many as soon as an HPA targets it. The HPA writes it through the `scale` subresource every 15 s; a program that also declares `replicas: 2` writes it on every `up`. With server-side apply that is a conflict of field ownership between two managers: the next `up` either takes the field back and resets the pod count to the declared number, so a deploy during a load peak scales the service down to 2 until the HPA's next loop, or stops on the field conflict, depending on whether the apply is forced. Without metrics-server (kind's default) the conflict is invisible, because the HPA has no CPU numbers (`cpu: <unknown>/70%`) and never writes; with metrics-server, as here, it is real. So the program leaves `replicas` out and the HPA (`autoscaling/v2`, CPU 70 %, `minReplicas: 2`, `maxReplicas: 4`) is the only owner: `kubectl get deploy -o json --show-managed-fields` shows `spec.replicas` under `kube-controller-manager` (subresource `scale`) and not under `pulumi-kubernetes`, and a second `up` reports `8 unchanged`. The price is the first creation: a new Deployment starts with Kubernetes' default of one pod and the HPA raises it to `minReplicas` within one loop, even without metrics (measured: the second pod about 20 s after the first); the program refuses `minReplicas` below 2, since one pod can't be drained without downtime. Measured with metrics-server: idle pods use 18m CPU (`7%/70%`); 64 concurrent connections on `/healthz` for 120 s took it to `246%/70%` and the HPA to 4 pods within about 45 s, with 1 872 885 requests and no error during the scale-up.
+
+### Secrets in the cluster
+
+The runtime secrets travel vault → `scripts/with-secrets.sh` → Pulumi program → K8s Secret → `secretKeyRef` in the pod, and no value is in the Deployment manifest (`kubectl get deploy -o json` holds the references and a sha256 checksum, none of the thirteen values). The build secret (`.npm_token`, BuildKit `--mount=type=secret`) is a different thing: it protects the image during `docker build`; the K8s Secret protects git and the manifests at run time; neither replaces the other. Base64 in `data` is an encoding, not encryption: a local cluster stores it in etcd in plain text (no `EncryptionConfiguration` by default), and anyone allowed to `get secret` in the namespace reads it, so putting a value into a Secret means taking it out of git, not encrypting it. This path also keeps copies in two more places, etcd and the Pulumi state (encrypted with the passphrase), and makes rotation a deploy: a rotated JWT key reaches the pods only on the next `npm run up`, which rolls them through the checksum annotation, while the app's own 60 s re-read of the vault does nothing with `SKIP_VAULT=1`.
+
+In production the values would not go through the deploy tool at all. External Secrets Operator runs in the cluster and keeps a K8s Secret in sync with the vault from an `ExternalSecret` object (only that object goes through Pulumi or git, never a value), so a rotation needs no deploy. The Secrets Store CSI driver mounts the values as files straight from the vault into the pod, with no Secret object in etcd unless sync is turned on, and updates the files in place. Better still for this app, which already reads Infisical itself: the pod logs in with its own Kubernetes identity (Infisical Kubernetes Auth, the ServiceAccount token checked through `TokenReview`), with no secret zero to deliver and the 60 s re-read working again. That is planned after the homework; the K8s Secret path stays for grading with `SKIP_VAULT=1`. No operator is installed here.
+
+### Demo: rollout
+
+<!-- TODO(hw-28): remove after homework -->
+
+`npm run demo:rollout` (`demo/rollout.sh`, profile `safe`) or `npm run demo:rollout -- broken`. It needs the stack up and a product in the database (`npm run seed`). Each run first applies the profile's settings without load (`npm run up`), because how a pod stops is decided by the spec of the old pod, then starts `demo/rollout/load.mjs` (16 keep-alive clients on `GET /product/<id>`, a request is `ok` only on a `2xx` within 2 s), waits 3 s, runs `npm run up -- -c rev=<now>`, waits until only the new ReplicaSet has pods, all ready, keeps the load 3 s longer and stops it, never before `5000` requests. `rollout-seconds` is from the start of that `up` to that point. `broken` puts the safe settings back afterwards. Exit `1` when `requests` is below 5000 or the safe profile failed a request.
+
+| Profile | Settings | `requests` | `failed` | `rollout-seconds` |
+|---|---|---|---|---|
+| `safe` | `drainMs=5000`, probes, `maxUnavailable: 0`, `maxSurge: 1` | 40 957 / 46 163 / 48 516 | 0 / 0 / 0 | 17.8 / 19.0 / 20.0 |
+| `broken` | `drainMs=0`, no startup or readiness probe, `maxUnavailable: 1`, `maxSurge: 0` | 21 134 / 28 358 | 9 243 / 16 532 | 4.0 / 4.0 |
+
+In `broken` an old pod is killed before its replacement exists and closes its sockets at once, and the new pod is in the Service from the moment its container starts, about 2.65 s before it listens; the failures are almost all closed or reset sockets (`UND_ERR_SOCKET` 9 072 and 16 391, `ECONNRESET` 155 and 130, a few 2 s timeouts). The safe rollout is slower because each pod waits for a ready replacement and drains for 5 s.
+
+### Demo: PodDisruptionBudget
+
+<!-- TODO(hw-28): remove after homework -->
+
+`npm run demo:pdb` (`demo/pdb.sh`) waits until every pod is ready and the budget allows a disruption, then sends two evictions in a row through the Eviction API (`POST /api/v1/namespaces/marketplace/pods/<pod>/eviction` over `kubectl proxy`, so the HTTP status is the API server's own), the call `kubectl drain` and the cluster autoscaler make. `healthy` is the PDB's `status.currentHealthy`; `minAvailable` is `status.desiredHealthy`: the budget is written as `maxUnavailable: 1`, and Kubernetes derives the minimum from the current number of pods (2 − 1 = 1). Exit `1` unless the codes are `201` and `429`. Three runs, identical:
+
+| Key | Value |
+|---|---|
+| `healthy` | 2 |
+| `minAvailable` | 1 |
+| `evict-1` | 201 |
+| `evict-2` | 429 `Cannot evict pod as it would violate the pod's disruption budget.` |
+
+The first eviction takes `disruptionsAllowed` from 1 to 0 at once, so the second, sent right after, is refused until the Deployment's replacement is ready and the evicted pod has finished its drain (6.0 / 7.0 / 6.0 s). Under the load generator the same run lost nothing: 21 636 requests, `failed=0`, because an evicted pod stops through the same `SIGTERM` drain.
+
+- **`maxUnavailable` rather than `minAvailable`.** With the HPA the pod count moves between 2 and 4. `maxUnavailable: 1` always means one pod at a time; a fixed `minAvailable: 1` would let a node drain take three of four pods at once.
+- **What the budget does not cover.** It guards voluntary evictions only. A rollout is limited by the Deployment's own `maxUnavailable`/`maxSurge`, not by the PDB; `kubectl delete pod`, a crashed node or an OOM kill ignore it.
 
 ## Secrets
 
@@ -515,47 +638,55 @@ Integration and e2e tests start their containers once per run (Postgres, RabbitM
 
 ## Grading
 
-<!-- TODO(hw-26): remove after homework -->
+<!-- TODO(hw-28): remove after homework -->
 
-The demos start the API themselves, so they need the whole stack (Postgres, RabbitMQ, Kafka, Temporal, both Redis instances, MinIO and the nginx edge). The values below are the dev credentials from `docker-compose.yml` and `secrets/*.example`; the grader has no vault, hence `SKIP_VAULT=1`.
+Tools: Docker with BuildKit and compose v2 (about 4 GiB free for the node, four pods and the dependencies), Node 24, kind `v0.33.0`, `kubectl` 1.35 or newer, the Pulumi CLI `v3.272.0` (`curl -fsSL https://get.pulumi.com | sh -s -- --version 3.272.0`), `jq`, `curl`, `openssl`, `zstd`. trivy is optional: without it `npm run scan` runs the pinned `aquasec/trivy` image. Ports `30080` (the NodePort), `33310`, `5672`, `9092`, `7233`, `6380`, `6381`, `9010` and `8088` must be free. The grader has no vault, hence `SKIP_VAULT=1`; the values are the dev credentials from `docker-compose.yml` and `secrets/*.example`. Run everything from the repository root, in one shell.
 
 ```bash
 cp .env.example .env
 for f in db_password rabbitmq_password redis_password minio_root_password storage_secret_key; do cp secrets/$f.txt.example secrets/$f.txt; done
 docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue minio minio-init edge
 
+export SKIP_VAULT=1
 export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
 export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
-export KAFKA_BROKERS=127.0.0.1:9092
-export TEMPORAL_ADDRESS=127.0.0.1:7233
+export KAFKA_BROKERS=127.0.0.1:9092 TEMPORAL_ADDRESS=127.0.0.1:7233
 export REDIS_CACHE_URL=redis://default:changeme@127.0.0.1:6380
 export REDIS_QUEUE_URL=redis://default:changeme@127.0.0.1:6381
 export JWT_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
 export JWT_PUBLIC_KEY="$(printf '%s' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
 export REFRESH_TOKEN_PEPPER=grader-pepper
-export GOOGLE_CLIENT_SECRET=grader-unused
-export STORAGE_ENDPOINT=http://127.0.0.1:9010
-export STORAGE_REGION=us-east-1
-export STORAGE_BUCKET=marketplace-media
-export STORAGE_ACCESS_KEY=media-app
-export STORAGE_SECRET_KEY=changeme-media
-export MEDIA_PUBLIC_BASE_URL=http://127.0.0.1:8088
-export SKIP_VAULT=1
+export GOOGLE_CLIENT_ID=grader-unused GOOGLE_CLIENT_SECRET=grader-unused
+export STORAGE_ENDPOINT=http://127.0.0.1:9010 STORAGE_ACCESS_KEY=media-app STORAGE_SECRET_KEY=changeme-media
+export PULUMI_BACKEND_URL="file://$PWD/.pulumi"
+export PULUMI_CONFIG_PASSPHRASE=hw28-grading
 
 npm ci
 npm run build
 npm run migrate
+npm run seed
+npm --prefix infra ci
 
-npm run demo:upload
-npm run demo:multipart
-npm run demo:cdn
+printf 'dummy-npm-token' > .npm_token
+npm run image:build
+npm run cluster:up
+npm run up
+
+npm run demo:image
+SCAN_MAX=-1 npm run scan; echo "exit(max=-1)=$?"
+SCAN_MAX=99999 npm run scan; echo "exit(max=99999)=$?"
+npm run demo:rollout
+npm run demo:rollout -- broken
+npm run demo:pdb
+
+npm run destroy && npm run cluster:down
 ```
 
-- `--wait` matters: without it the demos start before MinIO and Postgres accept connections. `minio-init` stays up with a healthcheck so that `--wait` returns `0`.
-- Name the services: the compose file also has the Infisical stack, which needs credentials of its own.
-- `npm run build` is required: the demos, the API they start, the edge shim and `migrate` run the compiled `dist/`.
-- Free ports `3101`–`3103` (the API instances the demos start) and `8787` (the edge shim `demo:cdn` starts) before running the demos; a demo refuses to start a process on a busy port.
-- The MinIO data is a named volume; each demo cleans up its own objects and rows first, so they can run any number of times.
+- Names the criteria ask for: namespace `marketplace`; Deployment, Service, PDB and HPA `marketplace-api`; Secret `marketplace-api-secrets`. `kind create` adds the context `kind-marketplace` to the default kubeconfig and makes it current; the Pulumi program deploys only to that context.
+- `npm run migrate` and `npm run seed` run on the host against the compose Postgres: the pods don't migrate, and `demo:rollout` loads `GET /product/<id>` of the first seeded product.
+- The exported `DBHOST`, `REDIS_*_URL`, … are for the commands on the host. The program passes only the secrets on to the cluster and swaps the Redis host for the compose name; the pods reach the dependencies through the compose network the node joins.
+- `npm run up` computes `IMAGE_REF` itself; a bare `cd infra && pulumi preview` without it stops with `Missing setting: IMAGE_REF` after the vault check, so removing a vault variable still names that variable first.
+- Run `demo:pdb` after the rollout demos, not before checking `disruptionsAllowed`: the demo spends the budget, which is back to `1` once the evicted pod is replaced (about 6 s). `demo:rollout -- broken` puts the safe settings back before it prints.
 
 ## Configuration
 
@@ -581,8 +712,9 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | `OIDC_REDIRECT_BASE_URL` | no | `http://localhost:3000` | base of the callbacks: `<base>/auth/<provider>/callback` must match the redirect URI registered at the provider exactly |
 | `STORAGE_ENDPOINT` | no | empty | S3-compatible endpoint (`http://localhost:9010` for MinIO); empty means AWS S3 and virtual-hosted URLs |
 | `STORAGE_REGION` | no | `us-east-1` | bucket region, part of every signature |
-| `STORAGE_BUCKET` | no | `marketplace-media` | the one private bucket (`media/`, `assets/`) |
+| `STORAGE_BUCKET` | no | `marketplace-media` | the one private bucket (`media/`) |
 | `MEDIA_PUBLIC_BASE_URL` | no | `http://localhost:8088` | CDN base that public media URLs are built on (the nginx edge locally, a CloudFront domain in production) |
+| `DRAIN_MS` | no | `5000` | after `SIGTERM`, how long the instance stays up with readiness red before it closes; must be below `terminationGracePeriodSeconds` |
 | `INFISICAL_SITE_URL`, `INFISICAL_CLIENT_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT` | yes | — | secret store access |
 
 Secret values (`DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`) come from Infisical, or from the environment with `SKIP_VAULT=1`.

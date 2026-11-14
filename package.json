@@ -32,10 +32,17 @@
     "migrate:generate": "bash scripts/with-secrets.sh dev npx typeorm migration:generate -d dist/data-source.js",
     "seed": "bash scripts/with-secrets.sh dev node dist/seed.js",
     "edge": "bash scripts/with-secrets.sh dev node dist/edge.js",
-    "assets:publish": "bash scripts/with-secrets.sh dev node dist/asset-publish.js",
-    "demo:upload": "bash scripts/with-secrets.sh dev node dist/demo/upload.js",
-    "demo:multipart": "bash scripts/with-secrets.sh dev node dist/demo/multipart.js",
-    "demo:cdn": "bash scripts/with-secrets.sh dev node dist/demo/cdn.js"
+    "image:build": "DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile --secret id=npm_token,src=.npm_token -t marketplace-api:hw28 .",
+    "scan": "SCAN_MAX=${SCAN_MAX:-2} bash scripts/scan.sh",
+    "cluster:up": "bash scripts/cluster-up.sh",
+    "cluster:down": "kind delete cluster --name ${KIND_CLUSTER:-marketplace}",
+    "preview": "bash scripts/with-secrets.sh dev bash scripts/infra.sh preview",
+    "up": "bash scripts/with-secrets.sh dev bash scripts/infra.sh up",
+    "destroy": "bash scripts/with-secrets.sh dev bash scripts/infra.sh destroy",
+    "demo:image": "bash demo/image.sh",
+    "demo:image:leaky": "bash demo/leaky/run.sh",
+    "demo:rollout": "bash demo/rollout.sh",
+    "demo:pdb": "bash demo/pdb.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "~3.1152.0",
@@ -55,12 +62,13 @@
     "@nestjs/observe": "^0.1.8",
     "@nestjs/platform-express": "^12.2.0",
     "@nestjs/schedule": "^12.0.2",
+    "@nestjs/terminus": "^12.1.0",
     "@nestjs/throttler": "~6.7.1",
     "@nestjs/typeorm": "^12.0.1",
-    "@temporalio/activity": "~1.24.0",
-    "@temporalio/client": "~1.24.0",
-    "@temporalio/worker": "~1.24.0",
-    "@temporalio/workflow": "~1.24.0",
+    "@temporalio/activity": "~1.25.0",
+    "@temporalio/client": "~1.25.0",
+    "@temporalio/worker": "~1.25.0",
+    "@temporalio/workflow": "~1.25.0",
     "argon2": "^0.45.1",
     "bullmq": "~6.3.11",
     "class-transformer": "^0.5.1",
@@ -86,7 +94,7 @@
     "@nestjs/testing": "^12.2.0",
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.16.1",
-    "@temporalio/testing": "~1.24.0",
+    "@temporalio/testing": "~1.25.0",
     "@testcontainers/postgresql": "^12.1.0",
     "@types/amqplib": "^0.10.8",
     "@types/express": "^5.0.0",
@@ -105,5 +113,8 @@
   },
   "engines": {
     "node": ">=24"
+  },
+  "overrides": {
+    "multer": "2.5.0"
   }
 }

@@ -1,11 +1,10 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { MetricsController } from './metrics.controller.js';
 import { MetricsMiddleware } from './metrics.middleware.js';
 import { MetricsService } from './metrics.service.js';
+import { MetricsServerService } from './metrics-server.service.js';
 
 @Module({
-  controllers: [MetricsController],
-  providers: [MetricsService],
+  providers: [MetricsService, MetricsServerService],
   exports: [MetricsService],
 })
 export class MetricsModule implements NestModule {

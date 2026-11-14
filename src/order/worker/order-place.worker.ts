@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { NativeConnection, Worker } from '@temporalio/worker';
 import { EnvironmentService } from '../../generic/environment/environment.module.js';
+import { TemporalClientService } from '../../generic/temporal/temporal-client.service.js';
 import { OrderPlaceActivity } from '../activity/order-place.activity.js';
 import { OrderTaskQueueEnum } from '../enum/order-task-queue.enum.js';
 import type { OrderPlaceActivitiesInterface } from '../workflow/order-place-workflow.interface.js';
@@ -19,10 +20,11 @@ export class OrderPlaceWorker implements OnApplicationBootstrap, OnModuleDestroy
   constructor(
     private readonly environment: EnvironmentService,
     private readonly activity: OrderPlaceActivity,
+    private readonly temporal: TemporalClientService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    this.connection = await NativeConnection.connect({ address: this.environment.get('TEMPORAL_ADDRESS') });
+    this.connection = await NativeConnection.connect(await this.temporal.connectionOptions());
     this.worker = await Worker.create({
       connection: this.connection,
       namespace: this.environment.get('TEMPORAL_NAMESPACE'),

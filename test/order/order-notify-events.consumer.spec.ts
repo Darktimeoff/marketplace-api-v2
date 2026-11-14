@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { OrderStatusEnum } from '@marketplace/contracts-core';
 import { OrderNotifyEventsConsumer } from '../../src/order/consumer/order-notify-events.consumer.js';
 import { OrderNotifyService } from '../../src/order/service/order-notify.service.js';
-import { KafkaRejectedMessageException } from '../../src/generic/kafka/exception/kafka-rejected-message.exception.js';
-import type { KafkaConsumerService } from '../../src/generic/kafka/kafka-consumer.service.js';
-import type { KafkaSubscriptionInterface } from '../../src/generic/kafka/interface/kafka-subscription.interface.js';
+import { EventRejectedException } from '../../src/generic/messaging/exception/event-rejected.exception.js';
+import type { EventSubscriberInterface } from '../../src/generic/messaging/interface/event-subscriber.interface.js';
+import type { EventSubscriptionInterface } from '../../src/generic/messaging/interface/event-subscriber.interface.js';
 
-function aGateway(): { notify: OrderNotifyService; subscription: KafkaSubscriptionInterface } {
+function aGateway(): { notify: OrderNotifyService; subscription: EventSubscriptionInterface } {
   const notify = new OrderNotifyService();
-  let subscription!: KafkaSubscriptionInterface;
-  const consumer = { register: (registered: KafkaSubscriptionInterface) => { subscription = registered; } } as unknown as KafkaConsumerService;
+  let subscription!: EventSubscriptionInterface;
+  const consumer = { register: (registered: EventSubscriptionInterface) => { subscription = registered; } } as unknown as EventSubscriberInterface;
   new OrderNotifyEventsConsumer(consumer, notify).onModuleInit();
   return { notify, subscription };
 }
@@ -40,7 +40,7 @@ describe('OrderNotifyEventsConsumer', () => {
     const { notify, subscription } = aGateway();
 
     await subscription.handle({ type: 'order.shipped', data: { orderPublicId: ORDER } }, { partition: 0, offset: '0' });
-    await expect(subscription.handle({ type: 'order.paid', data: {} }, { partition: 0, offset: '1' })).rejects.toBeInstanceOf(KafkaRejectedMessageException);
+    await expect(subscription.handle({ type: 'order.paid', data: {} }, { partition: 0, offset: '1' })).rejects.toBeInstanceOf(EventRejectedException);
 
     expect(notify.getAfter(ORDER, 0)).toEqual([]);
   });

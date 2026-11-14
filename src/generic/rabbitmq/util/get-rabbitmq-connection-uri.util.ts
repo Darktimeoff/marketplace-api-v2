@@ -6,6 +6,7 @@ export async function getRabbitMqConnectionUri(environment: EnvironmentService, 
   const password = await secrets.get('RABBITMQ_PASSWORD');
   const host = environment.get('RABBITMQ_HOST')
   const port = environment.get('RABBITMQ_PORT')
+  const scheme = environment.get('TLS_MODE') === 'verify-full' ? 'amqps' : 'amqp'
 
-  return `amqp://${user}:${password}@${host}:${port}`;
+  return `${scheme}://${user}:${password}@${host}:${port}`;
 }

@@ -3,7 +3,7 @@ import { EnvironmentService } from "../environment/environment.module.js";
 import { InfisicalSDK } from "@infisical/sdk";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { SecretsInterface } from "./secrets.interface.js";
+import { CloudSecretsInterface, SecretsInterface } from "./secrets.interface.js";
 
 const SKIP_VAULT = process.env.SKIP_VAULT === '1';
 
@@ -27,7 +27,7 @@ export class SecretManagerService implements OnModuleInit {
     await this.ready()
   }
 
-  async get(name: keyof SecretsInterface) {
+  async get(name: keyof SecretsInterface | keyof CloudSecretsInterface) {
     if (SKIP_VAULT) {
       return this.fromEnvironmentOrFail(name)
     }
@@ -46,7 +46,7 @@ export class SecretManagerService implements OnModuleInit {
     }
   }
 
-  private fromEnvironmentOrFail(name: keyof SecretsInterface): string {
+  private fromEnvironmentOrFail(name: keyof SecretsInterface | keyof CloudSecretsInterface): string {
     const value = process.env[name]
 
     if (!value) {
@@ -64,7 +64,7 @@ export class SecretManagerService implements OnModuleInit {
     return this.session
   }
 
-  private async readSecret(name: keyof SecretsInterface) {
+  private async readSecret(name: keyof SecretsInterface | keyof CloudSecretsInterface) {
     return (await this.client.secrets().getSecret({
       projectId: this.environment.get('INFISICAL_PROJECT_ID'),
       environment: this.environment.get('INFISICAL_ENVIRONMENT'),
@@ -73,11 +73,46 @@ export class SecretManagerService implements OnModuleInit {
   }
 
   private async authenticate() {
+    if (this.environment.get('INFISICAL_AUTH_METHOD') === 'jwt') {
+      this.client.auth().accessToken(await this.loginWithServiceAccountToken())
+      return
+    }
+
+    const clientId = this.environment.get('INFISICAL_CLIENT_ID')
+
+    if (!clientId) {
+      throw new Error('INFISICAL_CLIENT_ID is required with INFISICAL_AUTH_METHOD=universal')
+    }
+
     const clientSecret = (await readFile(this.CLIENT_SECRET_PATH, 'utf-8')).trim()
 
     await this.client.auth().universalAuth.login({
-      clientId: this.environment.get('INFISICAL_CLIENT_ID'),
+      clientId,
       clientSecret,
     });
+  }
+
+  private async loginWithServiceAccountToken(): Promise<string> {
+    const identityId = this.environment.get('INFISICAL_IDENTITY_ID')
+
+    if (!identityId) {
+      throw new Error('INFISICAL_IDENTITY_ID is required with INFISICAL_AUTH_METHOD=jwt')
+    }
+
+    const jwt = (await readFile(this.environment.get('INFISICAL_JWT_PATH'), 'utf-8')).trim()
+    const response = await fetch(`${this.environment.get('INFISICAL_SITE_URL')}/api/v1/auth/jwt-auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ identityId, jwt }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Infisical JWT login answered ${response.status}: ${(await response.text()).slice(0, 200)}`)
+    }
+
+    const { accessToken } = await response.json() as { accessToken: string }
+    this.logger.log(`Logged in to Infisical as identity ${identityId} with the ServiceAccount token`)
+
+    return accessToken
   }
 }

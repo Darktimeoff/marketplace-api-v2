@@ -55,9 +55,12 @@ if (connection.temporalAddress) {
   process.env.TEMPORAL_ADDRESS = connection.temporalAddress;
 }
 
-if (connection.redisCacheUrl && connection.redisQueueUrl) {
-  process.env.REDIS_CACHE_URL = connection.redisCacheUrl;
-  process.env.REDIS_QUEUE_URL = connection.redisQueueUrl;
+if (connection.redis) {
+  process.env.REDIS_CACHE_HOST = connection.redis.cacheHost;
+  process.env.REDIS_CACHE_PORT = String(connection.redis.cachePort);
+  process.env.REDIS_QUEUE_HOST = connection.redis.queueHost;
+  process.env.REDIS_QUEUE_PORT = String(connection.redis.queuePort);
+  process.env.REDIS_PASSWORD = connection.redis.password;
 }
 
 if (connection.storage) {

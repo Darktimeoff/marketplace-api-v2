@@ -17,7 +17,6 @@ import { ProductOutboxCleanupCron } from './cron/product-outbox-cleanup.cron.js'
 import { MediaClient } from './client/media.client.js';
 import { MEDIA_CLIENT } from './constant/product-client.constant.js';
 import { MediaModule } from '../media/media.module.js';
-import { KafkaModule } from '../generic/kafka/kafka.module.js';
 import { QueueModule } from '../generic/queue/queue.module.js';
 import { CategoryModule } from '../category/category.module.js';
 import { BrandModule } from '../brand/brand.module.js';
@@ -29,7 +28,7 @@ import { ProductMediaEventsConsumer } from './consumer/product-media-events.cons
 import { ProductService } from './service/product.service.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Product, ProductTranslation, ProductMedia, ProductMediaVariant, ProductOutbox]), MediaModule, KafkaModule, MessagingModule, QueueModule, CategoryModule, BrandModule],
+  imports: [TypeOrmModule.forFeature([Product, ProductTranslation, ProductMedia, ProductMediaVariant, ProductOutbox]), MediaModule, MessagingModule, QueueModule, CategoryModule, BrandModule],
   controllers: [ProductController],
   providers: [
     ProductRepository,

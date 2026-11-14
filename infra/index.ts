@@ -1,14 +1,26 @@
 import { createHash } from 'node:crypto';
 import * as pulumi from '@pulumi/pulumi';
 import * as k8s from '@pulumi/kubernetes';
-import { VAULT_SECRET_NAMES, missingVaultVariables, pickVaultSecrets, withAddress } from './vault.ts';
+import { VAULT_SECRET_NAMES, missingPodVaultVariables, missingVaultVariables, pickVaultSecrets } from './vault.ts';
 
-const missing = missingVaultVariables(process.env);
+const podReadsVault = process.env.SKIP_VAULT !== '1';
 
-if (missing.length > 0) {
-  throw new pulumi.RunError(
-    `Missing from the vault: ${missing.join(', ')}. Run through scripts/with-secrets.sh, or export them with SKIP_VAULT=1.`,
-  );
+if (podReadsVault) {
+  const missingForPods = missingPodVaultVariables(process.env);
+
+  if (missingForPods.length > 0) {
+    throw new pulumi.RunError(
+      `Missing for the pods to read the vault: ${missingForPods.join(', ')}. Run through npm run up, or deploy with SKIP_VAULT=1 and the secrets exported.`,
+    );
+  }
+} else {
+  const missing = missingVaultVariables(process.env);
+
+  if (missing.length > 0) {
+    throw new pulumi.RunError(
+      `Missing from the vault: ${missing.join(', ')}. Run through scripts/with-secrets.sh, or export them with SKIP_VAULT=1.`,
+    );
+  }
 }
 
 const secrets = pickVaultSecrets(process.env);
@@ -32,16 +44,9 @@ const terminationGraceSeconds = config.getNumber('terminationGraceSeconds') ?? M
 const minReplicas = config.getNumber('minReplicas') ?? 2;
 const maxReplicas = config.getNumber('maxReplicas') ?? 4;
 const nodePort = config.getNumber('nodePort') ?? 30080;
-const readiness = config.getBoolean('readiness') ?? true;
-const maxUnavailable = config.getNumber('maxUnavailable') ?? 0;
-const maxSurge = config.getNumber('maxSurge') ?? 1;
 
 if (terminationGraceSeconds * 1000 <= drainMs) {
   throw new pulumi.RunError(`terminationGraceSeconds (${terminationGraceSeconds}) must be longer than drainMs (${drainMs} ms)`);
-}
-
-if (maxUnavailable === 0 && maxSurge === 0) {
-  throw new pulumi.RunError('maxUnavailable and maxSurge cannot both be 0: the rollout could never replace a pod');
 }
 
 if (minReplicas < 2) {
@@ -52,15 +57,8 @@ const name = 'marketplace-api';
 const labels = { app: name };
 const port = 3000;
 
-const podSecrets = {
-  ...secrets,
-  REDIS_CACHE_URL: withAddress(secrets.REDIS_CACHE_URL, config.get('redisCacheAddress') ?? 'redis-cache:6379'),
-  REDIS_QUEUE_URL: withAddress(secrets.REDIS_QUEUE_URL, config.get('redisQueueAddress') ?? 'redis-queue:6379'),
-};
-
 const settings: Record<string, string> = {
   NODE_ENV: 'production',
-  SKIP_VAULT: '1',
   PORT: String(port),
   DBHOST: 'db-bouncer',
   DBPORT: '5432',
@@ -68,6 +66,10 @@ const settings: Record<string, string> = {
   RABBITMQ_HOST: 'rabbitmq',
   RABBITMQ_PORT: '5672',
   KAFKA_BROKERS: 'kafka:29092',
+  REDIS_CACHE_HOST: 'redis-cache',
+  REDIS_CACHE_PORT: '6379',
+  REDIS_QUEUE_HOST: 'redis-queue',
+  REDIS_QUEUE_PORT: '6379',
   TEMPORAL_ADDRESS: 'temporal:7233',
   TEMPORAL_NAMESPACE: 'default',
   STORAGE_ENDPOINT: 'http://minio:9000',
@@ -76,16 +78,33 @@ const settings: Record<string, string> = {
   MEDIA_PUBLIC_BASE_URL: 'http://localhost:8088',
   OIDC_REDIRECT_BASE_URL: `http://localhost:${nodePort}`,
   GOOGLE_CLIENT_ID: googleClientId,
-  INFISICAL_SITE_URL: 'http://infisical:8080',
-  INFISICAL_CLIENT_ID: 'unused-with-skip-vault',
-  INFISICAL_PROJECT_ID: 'unused-with-skip-vault',
-  INFISICAL_ENVIRONMENT: 'dev',
   DRAIN_MS: String(drainMs),
   REV: rev,
 };
 
+const tokenDir = '/var/run/secrets/infisical';
+
+const vaultTrustStack = config.get('vaultTrustStack') ?? `organization/vault-trust/${pulumi.getStack()}`;
+
+const vaultSettings: Record<string, pulumi.Input<string>> = podReadsVault
+  ? {
+      INFISICAL_AUTH_METHOD: 'jwt',
+      INFISICAL_SITE_URL: 'http://infisical-backend:8080',
+      INFISICAL_IDENTITY_ID: new pulumi.StackReference(vaultTrustStack).requireOutput('identityId') as pulumi.Output<string>,
+      INFISICAL_JWT_PATH: `${tokenDir}/token`,
+      INFISICAL_PROJECT_ID: process.env.INFISICAL_PROJECT_ID!.trim(),
+      INFISICAL_ENVIRONMENT: process.env.INFISICAL_ENVIRONMENT!.trim(),
+    }
+  : {
+      SKIP_VAULT: '1',
+      INFISICAL_SITE_URL: 'http://infisical:8080',
+      INFISICAL_CLIENT_ID: 'unused-with-skip-vault',
+      INFISICAL_PROJECT_ID: 'unused-with-skip-vault',
+      INFISICAL_ENVIRONMENT: 'dev',
+    };
+
 const secretsChecksum = createHash('sha256')
-  .update(VAULT_SECRET_NAMES.map((key) => `${key}=${podSecrets[key]}`).join('\n'))
+  .update(VAULT_SECRET_NAMES.map((key) => `${key}=${secrets[key]}`).join('\n'))
   .digest('hex');
 
 const provider = new k8s.Provider('kind', { context: kubeContext });
@@ -96,16 +115,110 @@ const namespace = new k8s.core.v1.Namespace(
   { provider },
 );
 
-const secret = new k8s.core.v1.Secret(
-  `${name}-secrets`,
+const secret = podReadsVault
+  ? undefined
+  : new k8s.core.v1.Secret(
+      `${name}-secrets`,
+      {
+        metadata: { name: `${name}-secrets`, namespace: namespace.metadata.name, labels },
+        type: 'Opaque',
+        data: pulumi.secret(
+          Object.fromEntries(VAULT_SECRET_NAMES.map((key) => [key, Buffer.from(secrets[key]).toString('base64')])),
+        ),
+      },
+      { provider },
+    );
+
+const serviceAccount = podReadsVault
+  ? new k8s.core.v1.ServiceAccount(
+      name,
+      {
+        metadata: { name, namespace: namespace.metadata.name, labels },
+        automountServiceAccountToken: false,
+      },
+      { provider },
+    )
+  : undefined;
+
+const podSecurityContext = {
+  runAsNonRoot: true,
+  runAsUser: 65532,
+  runAsGroup: 65532,
+  seccompProfile: { type: 'RuntimeDefault' },
+};
+
+const containerSecurityContext = {
+  allowPrivilegeEscalation: false,
+  readOnlyRootFilesystem: true,
+  capabilities: { drop: ['ALL'] },
+};
+
+const podEnv = [
+  ...Object.entries({ ...settings, ...vaultSettings }).map(([key, value]) => ({ name: key, value })),
+  ...(secret
+    ? VAULT_SECRET_NAMES.map((key) => ({
+        name: key,
+        valueFrom: { secretKeyRef: { name: secret.metadata.name, key } },
+      }))
+    : []),
+];
+
+const podVolumeMounts = [
+  { name: 'tmp', mountPath: '/tmp' },
+  ...(podReadsVault ? [{ name: 'infisical-token', mountPath: tokenDir, readOnly: true }] : []),
+];
+
+const podVolumes = [
+  { name: 'tmp', emptyDir: { sizeLimit: '512Mi' } },
+  ...(podReadsVault
+    ? [
+        {
+          name: 'infisical-token',
+          projected: {
+            sources: [{ serviceAccountToken: { audience: 'infisical', expirationSeconds: 3600, path: 'token' } }],
+          },
+        },
+      ]
+    : []),
+];
+
+const migrateLabels = { app: `${name}-migrate` };
+
+const migrateJob = new k8s.batch.v1.Job(
+  `${name}-migrate`,
   {
-    metadata: { name: `${name}-secrets`, namespace: namespace.metadata.name, labels },
-    type: 'Opaque',
-    data: pulumi.secret(
-      Object.fromEntries(VAULT_SECRET_NAMES.map((key) => [key, Buffer.from(podSecrets[key]).toString('base64')])),
-    ),
+    metadata: { name: `${name}-migrate-${image.split(':').pop()}`, namespace: namespace.metadata.name, labels: migrateLabels },
+    spec: {
+      backoffLimit: 2,
+      activeDeadlineSeconds: 300,
+      template: {
+        metadata: { labels: migrateLabels },
+        spec: {
+          restartPolicy: 'Never',
+          serviceAccountName: serviceAccount?.metadata.name,
+          automountServiceAccountToken: false,
+          securityContext: podSecurityContext,
+          containers: [
+            {
+              name: 'migrate',
+              image,
+              imagePullPolicy: 'IfNotPresent',
+              args: ['dist/migrate.js'],
+              env: podEnv,
+              resources: {
+                requests: { cpu: '100m', memory: '256Mi' },
+                limits: { memory: '512Mi' },
+              },
+              securityContext: containerSecurityContext,
+              volumeMounts: podVolumeMounts,
+            },
+          ],
+          volumes: podVolumes,
+        },
+      },
+    },
   },
-  { provider },
+  { provider, deleteBeforeReplace: true },
 );
 
 const deployment = new k8s.apps.v1.Deployment(
@@ -118,75 +231,57 @@ const deployment = new k8s.apps.v1.Deployment(
       progressDeadlineSeconds: 180,
       strategy: {
         type: 'RollingUpdate',
-        rollingUpdate: { maxUnavailable, maxSurge },
+        rollingUpdate: { maxUnavailable: 0, maxSurge: 1 },
       },
       template: {
         metadata: {
           labels,
-          annotations: { 'marketplace/secrets-checksum': secretsChecksum },
+          annotations: secret ? { 'marketplace/secrets-checksum': secretsChecksum } : {},
         },
         spec: {
           terminationGracePeriodSeconds: terminationGraceSeconds,
+          serviceAccountName: serviceAccount?.metadata.name,
           automountServiceAccountToken: false,
-          securityContext: {
-            runAsNonRoot: true,
-            runAsUser: 65532,
-            runAsGroup: 65532,
-            seccompProfile: { type: 'RuntimeDefault' },
-          },
+          securityContext: podSecurityContext,
           containers: [
             {
               name: 'api',
               image,
               imagePullPolicy: 'IfNotPresent',
               ports: [{ name: 'http', containerPort: port }],
-              env: [
-                ...Object.entries(settings).map(([key, value]) => ({ name: key, value })),
-                ...VAULT_SECRET_NAMES.map((key) => ({
-                  name: key,
-                  valueFrom: { secretKeyRef: { name: secret.metadata.name, key } },
-                })),
-              ],
+              env: podEnv,
               resources: {
                 requests: { cpu: '250m', memory: '384Mi' },
                 limits: { memory: '768Mi' },
               },
-              ...(readiness
-                ? {
-                    startupProbe: {
-                      httpGet: { path: '/healthz', port: 'http' },
-                      periodSeconds: 1,
-                      failureThreshold: 60,
-                    },
-                    readinessProbe: {
-                      httpGet: { path: '/readyz', port: 'http' },
-                      periodSeconds: 2,
-                      timeoutSeconds: 1,
-                      failureThreshold: 1,
-                      successThreshold: 1,
-                    },
-                  }
-                : {}),
+              startupProbe: {
+                httpGet: { path: '/healthz', port: 'http' },
+                periodSeconds: 1,
+                failureThreshold: 60,
+              },
+              readinessProbe: {
+                httpGet: { path: '/readyz', port: 'http' },
+                periodSeconds: 2,
+                timeoutSeconds: 1,
+                failureThreshold: 1,
+                successThreshold: 1,
+              },
               livenessProbe: {
                 httpGet: { path: '/healthz', port: 'http' },
                 periodSeconds: 10,
                 timeoutSeconds: 2,
                 failureThreshold: 3,
               },
-              securityContext: {
-                allowPrivilegeEscalation: false,
-                readOnlyRootFilesystem: true,
-                capabilities: { drop: ['ALL'] },
-              },
-              volumeMounts: [{ name: 'tmp', mountPath: '/tmp' }],
+              securityContext: containerSecurityContext,
+              volumeMounts: podVolumeMounts,
             },
           ],
-          volumes: [{ name: 'tmp', emptyDir: { sizeLimit: '512Mi' } }],
+          volumes: podVolumes,
         },
       },
     },
   },
-  { provider },
+  { provider, dependsOn: [migrateJob] },
 );
 
 const service = new k8s.core.v1.Service(
@@ -233,5 +328,6 @@ new k8s.autoscaling.v2.HorizontalPodAutoscaler(
   { provider },
 );
 
+export const migrateJobName = migrateJob.metadata.name;
 export const url = pulumi.interpolate`http://localhost:${service.spec.ports[0].nodePort}`;
 export const deployedRev = rev;

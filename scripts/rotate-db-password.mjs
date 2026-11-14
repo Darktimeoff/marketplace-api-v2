@@ -41,7 +41,7 @@ async function main() {
   const user = env.DBUSER;
   const database = env.DBNAME;
 
-  const infisical = await createAuthenticatedInfisicalClient(env, rootDir);
+  const infisical = await createAuthenticatedInfisicalClient(env, rootDir, 'admin');
 
   const oldPassword = await readCurrentPassword(infisical, env);
   const newPassword = generatePassword();

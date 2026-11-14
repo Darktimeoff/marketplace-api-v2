@@ -1,0 +1,17 @@
+{
+  "name": "marketplace-vault-trust",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "dependencies": {
+    "@pulumi/infisical": "file:sdks/infisical",
+    "@pulumi/pulumi": "3.272.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^6.0.2"
+  },
+  "allowScripts": {
+    "file:sdks/infisical": true
+  }
+}

@@ -11,7 +11,7 @@ import { CountryCodeEnum } from '@marketplace/contracts-core';
 import { AppModule } from '../../src/app.module.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
-import { KafkaProducerService } from '../../src/generic/kafka/kafka-producer.service.js';
+import { KafkaEventPublisher } from '../../src/generic/kafka/kafka-event-publisher.js';
 import { truncateAllTables } from '../support/isolation.js';
 
 interface ReceivedInterface {
@@ -157,7 +157,7 @@ describe('Identity events (e2e)', () => {
   });
 
   it('keeps the event in the outbox while Kafka fails and sends it on a later run', async () => {
-    vi.spyOn(app.get(KafkaProducerService), 'publish').mockRejectedValueOnce(new Error('broker down'));
+    vi.spyOn(app.get(KafkaEventPublisher), 'publish').mockRejectedValueOnce(new Error('broker down'));
     vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const email = `jane-${randomUUID()}@example.com`;
 

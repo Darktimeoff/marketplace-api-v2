@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DataSource, DataSourceOptions } from 'typeorm';
+import { getTlsOptions } from './generic/tls/util/get-tls-options.util.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -21,15 +22,6 @@ function required(name: string): string {
   return value;
 }
 
-/**
- * Никаких зашитых хостов и паролей: всё приходит из process.env, который наполняет
- * обёртка scripts/with-secrets.sh из хранилища ДЗ #11.
- *
- * Имена переменных — те же, что уже используются в проекте с ДЗ #11: DBHOST/DBPORT/
- * DBUSER/DBNAME описаны в .env.example и zod-схеме, DBPASSWORD лежит в Infisical
- * (см. SecretsInterface). Отдельный набор DB_* здесь означал бы, что значения из
- * хранилища не подхватываются вообще.
- */
 function connectionOptions(): DataSourceOptions {
   const base = {
     type: 'postgres',
@@ -51,6 +43,7 @@ function connectionOptions(): DataSourceOptions {
     username: required('DBUSER'),
     password: required('DBPASSWORD'),
     database: required('DBNAME'),
+    ssl: getTlsOptions(process.env.TLS_MODE, process.env.TLS_CA_PATH, required('DBHOST')),
   } as DataSourceOptions;
 }
 

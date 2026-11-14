@@ -17,11 +17,13 @@ export class StorageClientService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
+    const usesKeys = this.environment.get('STORAGE_AUTH') === 'keys';
+
     this.client = createStorageClient({
       region: this.environment.get('STORAGE_REGION'),
       endpoint: this.environment.get('STORAGE_ENDPOINT'),
-      accessKeyId: await this.secrets.get('STORAGE_ACCESS_KEY'),
-      secretAccessKey: await this.secrets.get('STORAGE_SECRET_KEY'),
+      accessKeyId: usesKeys ? await this.secrets.get('STORAGE_ACCESS_KEY') : undefined,
+      secretAccessKey: usesKeys ? await this.secrets.get('STORAGE_SECRET_KEY') : undefined,
     });
   }
 

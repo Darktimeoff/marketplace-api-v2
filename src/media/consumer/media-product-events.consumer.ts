@@ -1,8 +1,9 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { MediaAttachmentTypeEnum } from '@marketplace/contracts-core';
 import { ProductCreatedEvent, TopicEnum } from '@marketplace/messaging-contracts';
-import { KafkaConsumerService } from '../../generic/kafka/kafka-consumer.service.js';
-import { KafkaRejectedMessageException } from '../../generic/kafka/exception/kafka-rejected-message.exception.js';
+import { EVENT_SUBSCRIBER } from '../../generic/messaging/constant/messaging.constant.js';
+import { EventRejectedException } from '../../generic/messaging/exception/event-rejected.exception.js';
+import type { EventSubscriberInterface } from '../../generic/messaging/interface/event-subscriber.interface.js';
 import { MediaClaimConfirmCommandHandler } from '../command-handler/media-claim-confirm.command-handler.js';
 import { MediaConsumerGroupEnum } from '../enum/media-consumer-group.enum.js';
 import { productCreatedEventSchema } from '../schema/product-created-event.schema.js';
@@ -10,7 +11,7 @@ import { productCreatedEventSchema } from '../schema/product-created-event.schem
 @Injectable()
 export class MediaProductEventsConsumer implements OnModuleInit {
   constructor(
-    private readonly consumer: KafkaConsumerService,
+    @Inject(EVENT_SUBSCRIBER) private readonly consumer: EventSubscriberInterface,
     private readonly claimConfirm: MediaClaimConfirmCommandHandler,
   ) {}
 
@@ -30,7 +31,7 @@ export class MediaProductEventsConsumer implements OnModuleInit {
     const parsed = productCreatedEventSchema.safeParse(event);
 
     if (!parsed.success) {
-      throw new KafkaRejectedMessageException(parsed.error.message);
+      throw new EventRejectedException(parsed.error.message);
     }
 
     const { productPublicId, mediaIds } = parsed.data.data;

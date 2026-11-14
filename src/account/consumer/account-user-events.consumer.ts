@@ -1,7 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { TopicEnum, UserCreatedEvent } from '@marketplace/messaging-contracts';
-import { KafkaConsumerService } from '../../generic/kafka/kafka-consumer.service.js';
-import { KafkaRejectedMessageException } from '../../generic/kafka/exception/kafka-rejected-message.exception.js';
+import { EVENT_SUBSCRIBER } from '../../generic/messaging/constant/messaging.constant.js';
+import { EventRejectedException } from '../../generic/messaging/exception/event-rejected.exception.js';
+import type { EventSubscriberInterface } from '../../generic/messaging/interface/event-subscriber.interface.js';
 import { AccountCreateCommandHandler } from '../command-handler/account-create.command-handler.js';
 import { AccountConsumerGroupEnum } from '../enum/account-consumer-group.enum.js';
 import { userCreatedEventSchema } from '../schema/user-created-event.schema.js';
@@ -11,7 +12,7 @@ export class AccountUserEventsConsumer implements OnModuleInit {
   private readonly logger = new Logger(AccountUserEventsConsumer.name);
 
   constructor(
-    private readonly consumer: KafkaConsumerService,
+    @Inject(EVENT_SUBSCRIBER) private readonly consumer: EventSubscriberInterface,
     private readonly accountCreate: AccountCreateCommandHandler,
   ) {}
 
@@ -31,7 +32,7 @@ export class AccountUserEventsConsumer implements OnModuleInit {
     const parsed = userCreatedEventSchema.safeParse(event);
 
     if (!parsed.success) {
-      throw new KafkaRejectedMessageException(parsed.error.message);
+      throw new EventRejectedException(parsed.error.message);
     }
 
     const { publicId } = parsed.data.data;

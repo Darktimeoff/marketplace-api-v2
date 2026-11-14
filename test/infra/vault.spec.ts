@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { SECRET_NAMES } from '../../src/generic/secret-manager/secret-names.constant.js';
 import {
+  POD_VAULT_VARIABLE_NAMES,
   VAULT_SECRET_NAMES,
   VAULT_VARIABLE_NAMES,
+  missingPodVaultVariables,
   missingVaultVariables,
   pickVaultSecrets,
-  withAddress,
 } from '../../infra/vault.js';
 
 describe('infra vault variables', () => {
@@ -33,9 +34,15 @@ describe('infra vault variables', () => {
     expect(secrets).not.toHaveProperty('PULUMI_CONFIG_PASSPHRASE');
   });
 
-  it('moves a Redis URL to the in-cluster address and keeps its credentials and database', () => {
-    expect(withAddress('redis://default:p%40ss@localhost:6380/0', 'redis-cache:6379')).toBe(
-      'redis://default:p%40ss@redis-cache:6379/0',
-    );
+  it('asks only for the project and the passphrase when the pods read the vault themselves', () => {
+    const environment = Object.fromEntries(POD_VAULT_VARIABLE_NAMES.map((name) => [name, `value-of-${name}`]));
+
+    for (const name of POD_VAULT_VARIABLE_NAMES) {
+      expect(missingPodVaultVariables({ ...environment, [name]: undefined })).toEqual([name]);
+      expect(missingPodVaultVariables({ ...environment, [name]: '  ' })).toEqual([name]);
+    }
+
+    expect(missingPodVaultVariables(environment)).toEqual([]);
+    expect(POD_VAULT_VARIABLE_NAMES).not.toContain('DBPASSWORD');
   });
 });

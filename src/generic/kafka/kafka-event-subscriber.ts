@@ -3,24 +3,24 @@ import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@ne
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { EnvironmentService } from '../environment/environment.module.js';
 import { KafkaClientService } from './kafka-client.service.js';
-import { KafkaProducerService } from './kafka-producer.service.js';
-import { KafkaRejectedMessageException } from './exception/kafka-rejected-message.exception.js';
-import type { KafkaSubscriptionInterface } from './interface/kafka-subscription.interface.js';
+import { KafkaEventPublisher } from './kafka-event-publisher.js';
+import { EventRejectedException } from '../messaging/exception/event-rejected.exception.js';
+import type { EventSubscriberInterface, EventSubscriptionInterface } from '../messaging/interface/event-subscriber.interface.js';
 
 @Injectable()
-export class KafkaConsumerService implements OnApplicationBootstrap, OnModuleDestroy {
-  private readonly logger = new Logger(KafkaConsumerService.name);
-  private readonly subscriptions: KafkaSubscriptionInterface[] = [];
+export class KafkaEventSubscriber implements EventSubscriberInterface, OnApplicationBootstrap, OnModuleDestroy {
+  private readonly logger = new Logger(KafkaEventSubscriber.name);
+  private readonly subscriptions: EventSubscriptionInterface[] = [];
   private readonly consumers: KafkaJS.Consumer[] = [];
   private readonly assignmentTimeoutMs = 30000;
 
   constructor(
     private readonly environment: EnvironmentService,
     private readonly client: KafkaClientService,
-    private readonly producer: KafkaProducerService,
+    private readonly producer: KafkaEventPublisher,
   ) {}
 
-  register(subscription: KafkaSubscriptionInterface): void {
+  register(subscription: EventSubscriptionInterface): void {
     this.subscriptions.push(subscription);
   }
 
@@ -44,7 +44,7 @@ export class KafkaConsumerService implements OnApplicationBootstrap, OnModuleDes
     }
   }
 
-  private async start({ groupId, topic, broadcast = false, handle }: KafkaSubscriptionInterface): Promise<void> {
+  private async start({ groupId, topic, broadcast = false, handle }: EventSubscriptionInterface): Promise<void> {
     const consumerGroupId = broadcast ? `${groupId}.${randomUUID()}` : groupId;
     const deadLetterTopic = broadcast ? null : `${groupId}.dlt`;
 
@@ -62,7 +62,7 @@ export class KafkaConsumerService implements OnApplicationBootstrap, OnModuleDes
         try {
           await handle(JSON.parse(message.value?.toString() ?? ''), { partition, offset: message.offset });
         } catch (error) {
-          if (error instanceof SyntaxError || error instanceof KafkaRejectedMessageException) {
+          if (error instanceof SyntaxError || error instanceof EventRejectedException) {
             this.logger.warn(`${consumerGroupId} rejected ${position}: ${error.message}`);
 
             if (deadLetterTopic) {

@@ -614,6 +614,7 @@ A request that answered 500 at 03:15 should take a minute to explain, not an eve
 |---|---|---|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `.env` through `scripts/with-secrets.sh` | OTLP/HTTP base of the trace backend (`http://127.0.0.1:22918`, Tempo); the SDK appends `/v1/traces`. Unset: spans are still created (logs need the `trace_id`) but not exported |
 | `GRAFANA_ADMIN_PASSWORD` | vault (Infisical, #11) | Grafana admin; compose refuses to start without it. Anonymous users get Viewer only, so the dashboard opens without a login |
+| `OTEL_BSP_SCHEDULE_DELAY` | environment, default `5000` | ms between span exports. `telemetry.ts` builds the batch processor itself, shared with the Temporal plugin, so it reads only this one of the `OTEL_BSP_*` settings |
 | `METRICS_PORT` | `.env`, default `9464` | internal port that serves `/metrics`, never exposed through the API port or a Service; `0` in tests |
 | `LOG_LEVEL` | environment, default `info` | pino level; the tests set `silent` |
 | `OTEL_SDK_DISABLED` | environment | `true` turns tracing off. An empty `OTEL_EXPORTER_OTLP_ENDPOINT` does not: the wrapper fills empty values from `.env` |
@@ -633,6 +634,32 @@ Addresses are settings and only the password is a secret, the same split as `DBH
 - **OpenTelemetry starts before the app** (`src/telemetry.ts`, `node --import ./dist/telemetry.js dist/main.js`: `exec` in `nest-cli.json`, `CMD` in the Dockerfile). The project is ESM, so the file registers OpenTelemetry's loader hook; imported from `main.ts` it would come after `http`, `express` and `pg` were loaded and patch nothing. `TelemetryShutdownService` flushes the last batch on `SIGTERM` (measured: with a 60 s batch delay, 0 spans before `SIGTERM`, 6 after).
 - **Instrumentations:** `http` (server span, `traceparent`; `/healthz`, `/readyz`, `/metrics` untraced), `express` (route spans, middleware layers off), `pg` and `ioredis` (only inside a trace), `amqplib` (puts `traceparent` into RabbitMQ headers). `@opentelemetry/instrumentation-nestjs-core` declares `>=4.0.0 <12` and we run Nest 12.2.0; the two internals it patches (`NestFactoryStatic.create`, `RouterExecutionContext.create`) are unchanged in Nest 12, so `Nest12Instrumentation` widens the range to `<13`. That patches private Nest classes: an update may silently drop the controller spans, so `test/generic/telemetry/nest-instrumentation.spec.ts` fails when either method disappears or the package starts to support Nest 12 itself (then the subclass goes).
 - **5xx is an ERROR span.** OpenTelemetry leaves a 4xx `Unset` (the client's fault): an alert on span errors sees server faults, not bad requests.
+- **Own spans come from `@Traced()`** (`src/generic/telemetry/decorator/traced.decorator.ts`), not from `tracer.startActiveSpan` in business code. Options read the method arguments: `name`, `kind`, `attributes`, `parent` (a `traceparent` to continue) and `link` (a `traceparent` to link to).
+
+#### One trace across async boundaries
+
+`POST /order` → outbox → Kafka consumers → Temporal saga → RabbitMQ charge → Kafka again is one trace in Tempo. Measured: 63 spans, 0 orphans:
+
+```
+POST /order
+  OrderPlaceCommandHandler.execute
+    OrderRepository.create
+    publish order.events → process order.events
+    start orderPlaceWorkflow
+      StartWorkflow:orderPlaceWorkflow → RunWorkflow:orderPlaceWorkflow
+        StartActivity:reserveStock → RunActivity:reserveStock
+        StartActivity:chargeCustomer → RunActivity:chargeCustomer
+          publish account.commands → account.customer.charge process
+        StartActivity:releaseStock → RunActivity:releaseStock
+        StartActivity:markFailed → RunActivity:markFailed
+          publish order.events → process order.events
+```
+
+- **The outbox stores the context.** Every outbox row has a `traceparent` column filled in the same transaction from the active span. The relay runs later and outside the request, so the row is the only place the context can come from.
+- **The relay publishes as a child of the stored context.** `MessagePublisherService.publish` opens a `PRODUCER` span `publish <topic>` and puts its `traceparent` into the CloudEvent `traceparent` extension and the Kafka header.
+- **The consumer continues the trace, and only a first delivery does.** `KafkaEventSubscriber.process` opens a `CONSUMER` span `process <topic>`: a child of the producer on a normal delivery, a new trace with a span link on a redelivery. A message retried an hour later then does not stretch the request's trace to an hour. The consumer's log lines carry the request's `trace_id`.
+- **Temporal uses `@temporalio/interceptors-opentelemetry-v2`** (`OpenTelemetryPlugin`, one instance in `TemporalClientService.plugins` for the client and the worker). The client interceptor puts `traceparent` into the workflow headers. Workflow spans are created inside the sandbox with deterministic ids and leave it through a sink. That sink is called only on the first run, not on replay, so a replay does not duplicate spans. The plugin targets OpenTelemetry SDK 2.x and we run 3.x. The span shape it emits (`parentSpanContext`, `instrumentationScope`) is the same, so one exporter takes both. Its nested 2.x packages are pinned in `overrides` (2.12.0). `src/generic/telemetry/span-export.ts` hands sandbox spans to the processor `telemetry.ts` exports with; in tests, where the SDK never starts, it drops them.
+- **`correlationid` is not a second trace id.** The flow is correlated by `traceparent`, the entity by `subject`. `correlationid` is set only on an RPC reply: the id of the request it answers, which is also the AMQP `correlationId` the RPC client matches replies by.
 
 ### Metrics (RED)
 

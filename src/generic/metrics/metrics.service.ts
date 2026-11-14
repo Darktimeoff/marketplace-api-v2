@@ -4,6 +4,7 @@ import { Counter, Histogram, Registry } from 'prom-client';
 @Injectable()
 export class MetricsService {
   readonly registry = new Registry();
+  private readonly durationBuckets = [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.5, 1, 2.5, 5, 10, 30];
 
   private readonly requests = new Counter({
     name: 'http_requests_total',
@@ -16,6 +17,7 @@ export class MetricsService {
     name: 'http_request_duration_seconds',
     help: 'HTTP request duration by method and route template',
     labelNames: ['method', 'route'],
+    buckets: this.durationBuckets,
     registers: [this.registry],
   });
 

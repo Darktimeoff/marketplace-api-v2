@@ -2,13 +2,14 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { trace } from '@opentelemetry/api';
+import { requestContextFields } from './request-context.js';
 
 const unloggedPaths = ['/healthz', '/readyz', '/metrics'];
 
-function traceFields(): { trace_id?: string } {
+function contextFields(): object {
   const traceId = trace.getActiveSpan()?.spanContext().traceId;
 
-  return traceId ? { trace_id: traceId } : {};
+  return { ...(traceId ? { trace_id: traceId } : {}), ...requestContextFields() };
 }
 
 function pathOf(request: IncomingMessage): string {
@@ -22,7 +23,7 @@ function pathOf(request: IncomingMessage): string {
       pinoHttp: {
         level: process.env.LOG_LEVEL || 'info',
         autoLogging: { ignore: (request) => unloggedPaths.includes(pathOf(request)) },
-        mixin: traceFields,
+        mixin: contextFields,
         serializers: {
           req: (request: IncomingMessage) => ({ method: request.method, path: pathOf(request) }),
           res: (response: ServerResponse) => ({ statusCode: response.statusCode }),

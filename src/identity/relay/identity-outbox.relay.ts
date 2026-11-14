@@ -73,6 +73,7 @@ export class IdentityOutboxRelay implements OnApplicationBootstrap {
       datacontenttype: 'application/json',
       subject: row.aggregateId,
       correlationid: row.aggregateId,
+      ...(row.traceparent ? { traceparent: row.traceparent } : {}),
       data: row.payload,
     };
   }

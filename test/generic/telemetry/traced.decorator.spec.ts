@@ -1,7 +1,8 @@
 import 'reflect-metadata';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { SetMetadata } from '@nestjs/common';
-import { context, SpanStatusCode, trace } from '@opentelemetry/api';
+import { context, propagation, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
+import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import { InMemorySpanExporter, SimpleSpanProcessor, TracerProvider } from '@opentelemetry/sdk-trace';
 import { Traced } from '../../../src/generic/telemetry/decorator/traced.decorator.js';
@@ -34,11 +35,13 @@ describe('Traced decorator', () => {
   beforeAll(() => {
     context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
     trace.setGlobalTracerProvider(provider);
+    propagation.setGlobalPropagator(new W3CTraceContextPropagator());
   });
 
   afterAll(async () => {
     await provider.shutdown();
     trace.disable();
+    propagation.disable();
     context.disable();
   });
 
@@ -73,5 +76,29 @@ describe('Traced decorator', () => {
 
     expect(Reflect.getMetadata('role', WithMetadata.prototype.run)).toBe('admin');
     expect(WithMetadata.prototype.run.name).toBe('run');
+  });
+
+  it('takes the name, kind, attributes and the parent trace from the method arguments', async () => {
+    class OrderEventsRelay {
+      @Traced({
+        name: (topic) => `publish ${topic}`,
+        kind: SpanKind.PRODUCER,
+        parent: (_, traceparent) => traceparent,
+        attributes: (topic) => ({ 'messaging.destination.name': topic }),
+      })
+      async publish(_topic: string, _traceparent: string | null): Promise<void> {}
+    }
+
+    await new OrderEventsRelay().publish('order.events', '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01');
+    await new OrderEventsRelay().publish('order.events', null);
+    const [continued, own] = exporter.getFinishedSpans();
+
+    expect(continued.name).toBe('publish order.events');
+    expect(continued.kind).toBe(SpanKind.PRODUCER);
+    expect(continued.attributes).toEqual({ 'messaging.destination.name': 'order.events' });
+    expect(continued.spanContext().traceId).toBe('4bf92f3577b34da6a3ce929d0e0e4736');
+    expect(continued.parentSpanContext?.spanId).toBe('00f067aa0ba902b7');
+    expect(own.parentSpanContext).toBeUndefined();
+    expect(own.spanContext().traceId).not.toBe('4bf92f3577b34da6a3ce929d0e0e4736');
   });
 });

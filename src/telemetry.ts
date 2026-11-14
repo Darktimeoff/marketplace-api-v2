@@ -7,6 +7,7 @@ import { ExpressInstrumentation, ExpressLayerType } from '@opentelemetry/instrum
 import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
 import { IORedisInstrumentation } from '@opentelemetry/instrumentation-ioredis';
 import { AmqplibInstrumentation } from '@opentelemetry/instrumentation-amqplib';
+import { NestInstrumentation } from '@opentelemetry/instrumentation-nestjs-core';
 
 register('@opentelemetry/instrumentation/hook.mjs', import.meta.url);
 
@@ -14,9 +15,23 @@ process.env.OTEL_METRICS_EXPORTER ??= 'none';
 process.env.OTEL_LOGS_EXPORTER ??= 'none';
 
 const untracedPaths = ['/healthz', '/readyz', '/metrics'];
+const nestVersions = ['>=4.0.0 <13'];
 
 function isUntraced(request: IncomingMessage): boolean {
   return untracedPaths.includes((request.url ?? '').split('?')[0]);
+}
+
+class Nest12Instrumentation extends NestInstrumentation {
+  override init() {
+    const module = super.init();
+    module.supportedVersions = nestVersions;
+
+    for (const file of module.files) {
+      file.supportedVersions = nestVersions;
+    }
+
+    return module;
+  }
 }
 
 export const telemetry = new NodeSDK({
@@ -25,6 +40,7 @@ export const telemetry = new NodeSDK({
   instrumentations: [
     new HttpInstrumentation({ ignoreIncomingRequestHook: isUntraced }),
     new ExpressInstrumentation({ ignoreLayersType: [ExpressLayerType.MIDDLEWARE] }),
+    new Nest12Instrumentation(),
     new PgInstrumentation({ requireParentSpan: true }),
     new IORedisInstrumentation({ requireParentSpan: true }),
     new AmqplibInstrumentation(),

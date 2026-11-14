@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Logger } from '@nestjs/common';
+import { Logger, SetMetadata } from '@nestjs/common';
 import { Log } from '../../../src/generic/logging/decorator/log.decorator.js';
 
 class OrderCleanupCron {
@@ -36,5 +36,16 @@ describe('Log decorator', () => {
     await expect(new OrderCleanupCron().handle(true)).rejects.toThrow('database down');
     expect(error.mock.calls[0][0]).toBe('handle: failed: Error: database down');
     expect(error.mock.calls[0][1]).toContain('Error: database down');
+  });
+
+  it('keeps the method name and the metadata Nest decorators put on it, so routes and span names survive', () => {
+    class OrderController {
+      @Log('placing order')
+      @SetMetadata('role', 'buyer')
+      async create(): Promise<void> {}
+    }
+
+    expect(OrderController.prototype.create.name).toBe('create');
+    expect(Reflect.getMetadata('role', OrderController.prototype.create)).toBe('buyer');
   });
 });

@@ -39,7 +39,7 @@ export const telemetry = new NodeSDK({
   ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT ? { traceExporter: new OTLPTraceExporter() } : { spanProcessors: [] }),
   instrumentations: [
     new HttpInstrumentation({ ignoreIncomingRequestHook: isUntraced }),
-    new ExpressInstrumentation({ ignoreLayersType: [ExpressLayerType.MIDDLEWARE] }),
+    new ExpressInstrumentation({ ignoreLayersType: [ExpressLayerType.MIDDLEWARE], ignoreLayers: [/\*splat/] }),
     new Nest12Instrumentation(),
     new PgInstrumentation({ requireParentSpan: true }),
     new IORedisInstrumentation({ requireParentSpan: true }),

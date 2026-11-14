@@ -1,4 +1,5 @@
 import { SpanStatusCode, trace } from '@opentelemetry/api';
+import { keepMethodIdentity } from '../../decorator/util/keep-method-identity.util.js';
 
 const tracer = trace.getTracer('marketplace-api');
 
@@ -21,11 +22,7 @@ export function Traced(): MethodDecorator {
       });
     }
 
-    for (const key of Reflect.getMetadataKeys(original)) {
-      Reflect.defineMetadata(key, Reflect.getMetadata(key, original), traced);
-    }
-
-    Object.defineProperty(traced, 'name', { value: original.name });
+    keepMethodIdentity(original, traced);
     descriptor.value = traced;
   };
 }

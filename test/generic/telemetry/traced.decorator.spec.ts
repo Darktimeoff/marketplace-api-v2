@@ -101,4 +101,18 @@ describe('Traced decorator', () => {
     expect(own.parentSpanContext).toBeUndefined();
     expect(own.spanContext().traceId).not.toBe('4bf92f3577b34da6a3ce929d0e0e4736');
   });
+
+  it('starts a trace of its own with a link to the given traceparent instead of continuing it', async () => {
+    class OrderEventsConsumer {
+      @Traced({ link: traceparent => traceparent })
+      async process(_: string): Promise<void> {}
+    }
+
+    await new OrderEventsConsumer().process('00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01');
+    const [span] = exporter.getFinishedSpans();
+
+    expect(span.parentSpanContext).toBeUndefined();
+    expect(span.spanContext().traceId).not.toBe('4bf92f3577b34da6a3ce929d0e0e4736');
+    expect(span.links.map(({ context }) => [context.traceId, context.spanId])).toEqual([['4bf92f3577b34da6a3ce929d0e0e4736', '00f067aa0ba902b7']]);
+  });
 });

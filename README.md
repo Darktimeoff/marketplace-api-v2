@@ -604,6 +604,85 @@ Locally every client talks plain text to compose. Managed services (RDS, ElastiC
 - **Measured** against pgbouncer with the override: `verify-full` with the local CA to `localhost` and `127.0.0.1` connected over TLSv1.3; to `127.0.0.2` and to the machine's own hostname refused (`… is not in the cert's list`); with only the system CAs refused (`unable to verify the first certificate`); plain text refused by pgbouncer (`SSL required`). `npm run migrate:show` and the app (`/readyz` with `database: up`) worked with `verify-full` and failed without it. The pods in kind, still plain text, dropped out of readiness while the override was up and came back without a restart once it was removed.
 - **Measured for the others**, each with the local CA / with only the system CAs / to `127.0.0.2` / in plain text: Redis `PONG` over TLSv1.3 / `self-signed certificate in certificate chain` / `IP: 127.0.0.2 is not in the cert's list` / connection closed; Kafka (SASL_SSL) 5 event topics listed / `certificate verify failed` / `certificate verify failed` (`127.0.0.1`, which is in the certificate, connected) / closed, and a wrong password `SASL authentication error: Invalid username or password`; RabbitMQ `amqps` connected / `self-signed certificate in certificate chain` / `IP: 127.0.0.2 is not in the cert's list` / `Socket closed abruptly`; Temporal client and worker connected / `UnknownIssuer` / `NotValidForNameContext` / transport error. Then the whole app with every dependency on TLS only (`TLS_MODE=verify-full`, Kafka `SASL_SSL` with `PLAIN`, `amqps` on 5671, Temporal through haproxy): `/readyz` `200`, all six Kafka consumers consuming, no error in the log; logins wrote 105 keys to `redis-queue` over TLS.
 
+## Observability
+
+A request that answered 500 at 03:15 should take a minute to explain, not an evening. One key opens both doors: the `trace_id` of the active OpenTelemetry span is in every log line of the request and is the id of its trace in Tempo; a client's `traceparent` (`00-<32 hex trace-id>-<16 hex parent-id>-<flags>`) is continued, not replaced.
+
+### Variables
+
+| Variable | Source | What |
+|---|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `.env` through `scripts/with-secrets.sh` | OTLP/HTTP base of the trace backend (`http://127.0.0.1:22918`, Tempo); the SDK appends `/v1/traces`. Unset: spans are still created (logs need the `trace_id`) but not exported |
+| `PROMETHEUS_URL` | `.env` through the wrapper | Prometheus HTTP API (`http://127.0.0.1:22901`) |
+| `TRACE_API_URL` | `.env` through the wrapper | Tempo HTTP API (`http://127.0.0.1:22904`), read by `demo:trace` |
+| `GRAFANA_ADMIN_PASSWORD` | vault (Infisical, #11) | Grafana admin; compose refuses to start without it. Anonymous users get Viewer only, so the dashboard opens without a login |
+| `METRICS_PORT` | `.env`, default `9464` | internal port that serves `/metrics`, never exposed through the API port or a Service; `0` in tests |
+| `LOG_LEVEL` | environment, default `info` | pino level; the tests set `silent` |
+| `OTEL_SDK_DISABLED` | environment | `true` turns tracing off. An empty `OTEL_EXPORTER_OTLP_ENDPOINT` does not: the wrapper fills empty values from `.env` |
+| `DEMO_FAULTS` | environment | `1` lets `x-demo-fail: 1` throw in `OrderRepository.create` (homework-only, `TODO(hw-29)`) |
+| `GRAFANA_PORT`, `PROMETHEUS_PORT`, `TEMPO_API_PORT`, `TEMPO_OTLP_PORT` | environment, defaults `22900`, `22901`, `22904`, `22918` | stand ports |
+
+Addresses are settings and only the password is a secret, the same split as `DBHOST` / `DBPASSWORD`; the wrapper loads `.env` first and the vault on top, so the demos get both. The stand: `npm run obs:up` / `npm run obs:down` (`observability/docker-compose.yml`: Prometheus `v3.15.1`, Tempo `2.10.10`, Grafana `13.3.0`).
+
+### Logs
+
+- **pino, JSON on stdout** (`nestjs-pino`, `src/generic/logging/logging.module.ts`). It replaces Nest's logger with `app.useLogger`, so every existing `new Logger(X.name)` writes JSON without a change; the logger's context becomes the field `layer` (`renameContext`). `bufferLogs` keeps the startup lines too. The Temporal worker logs through the same logger (`TemporalRuntimeService` installs itself as the Temporal `Runtime` logger), with `workflowId`, `activityType` and the error as fields; before, they went to stderr as text.
+- **The correlator comes from context, not arguments.** A pino `mixin` adds `trace_id` from `trace.getActiveSpan()` and `userId` / `idempotencyKey` from the request's AsyncLocalStorage (`nestjs-cls`: the middleware stores the `Idempotency-Key` header, `AccessTokenGuard` stores the verified person id). No function takes `req` to log. `span_id` is not logged: the request line is written on `finish`, after the server span ended, and would carry the client's span id.
+- **Layers by decorator.** `@Log(pre, post)` (`src/generic/logging/decorator/log.decorator.ts`, on `@rnw-community/log-decorator`) writes before the call and after it succeeds, under the class as `layer`; `@Traced()` opens a span `Class.method` and records an exception on it. `POST /order` logs in `OrderController`, `OrderPlaceCommandHandler` and `OrderRepository` with the same `trace_id`. A failure is logged once, at the boundary that handles it (Nest's `ExceptionsHandler`, the Kafka subscriber, the BullMQ processor), not on every layer it passes. The package's wrapper drops the method name and the metadata Nest decorators put on it (`interceptedMethod`, so the controller span was named `OrderController.interceptedMethod`); both decorators copy them back (`keep-method-identity.util.ts`).
+- **Redaction.** The request line keeps only `method`, the path without its query string (OIDC callbacks carry `code`/`state`) and `statusCode`. On top of that `redact` blanks `req.headers.authorization`, cookies, `set-cookie`, `password` and tokens by explicit path. `redact` does not guess: `*` is exactly one level, so `password` three levels deep is logged, and so is a hand-built `Authorization` with a capital A (measured with the same paths; `test/generic/logging/logging-redaction.spec.ts` pins the covered cases). Bodies are therefore never logged at all, and `redact` is the second line, not the first.
+
+### Traces
+
+- **OpenTelemetry starts before the app** (`src/telemetry.ts`, `node --import ./dist/telemetry.js dist/main.js`: `exec` in `nest-cli.json`, `CMD` in the Dockerfile). The project is ESM, so the file registers OpenTelemetry's loader hook; imported from `main.ts` it would come after `http`, `express` and `pg` were loaded and patch nothing. `TelemetryShutdownService` flushes the last batch on `SIGTERM` (measured: with a 60 s batch delay, 0 spans before `SIGTERM`, 6 after).
+- **Instrumentations:** `http` (server span, `traceparent`; `/healthz`, `/readyz`, `/metrics` untraced), `express` (route spans, middleware layers off), `pg` and `ioredis` (only inside a trace), `amqplib` (puts `traceparent` into RabbitMQ headers). `@opentelemetry/instrumentation-nestjs-core` declares `>=4.0.0 <12` and we run Nest 12.2.0; the two internals it patches (`NestFactoryStatic.create`, `RouterExecutionContext.create`) are unchanged in Nest 12, so `Nest12Instrumentation` widens the range to `<13`. That patches private Nest classes: an update may silently drop the controller spans, which `demo:trace` catches (`controller-span`).
+- **5xx is an ERROR span.** OpenTelemetry leaves a 4xx `Unset` (the client's fault), so the demo needs a real 500.
+
+### Metrics (RED)
+
+`http_requests_total{method, route, status}` and `http_request_duration_seconds{method, route}` (`prom-client`, own registry, `src/generic/metrics/`), recorded on the response's `finish`, served by a separate `node:http` server on `METRICS_PORT`. `route` is the template Express matched (`/order/:id`), never the raw path: a hundred ids add no series. A request that matched no route is `unmatched` (Express reports Nest's catch-all as `{/*splat}`).
+
+| Panel | RED question | PromQL |
+|---|---|---|
+| Rate — requests per second | how many requests does each route serve | `sum by (route) (rate(http_requests_total[1m]))` |
+| Errors — share of 5xx | which share of each route's answers is a server error | `sum by (route) (rate(http_requests_total{status=~"5.."}[1m])) / sum by (route) (rate(http_requests_total[1m]))` |
+| Duration — p95 | how long do 95 % of each route's requests take | `histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket[1m])))` |
+
+The dashboard is `observability/grafana/dashboards/red.json`, provisioned with both datasources (`observability/grafana/provisioning/`). `[1m]`, not `[5m]`, for a one-minute demo. `rate` needs two scrapes that differ: 40 requests inside one 5 s scrape interval showed Rate `0` and Errors `NaN`; the same load spread over 30 s showed Rate 1.09 req/s, Errors 0.25 (15 of 60, exactly the injected share) and p95 24 ms.
+
+**Buckets:** `0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.5, 1, 2.5, 5, 10, 30` s. Measured `POST /order` on this machine:
+
+| Load | p50 | p90 | p99 | max |
+|---|---|---|---|---|
+| 50 sequential | 10.9 ms | 17.4 ms | 58.3 ms | 58.3 ms |
+| 200, 16 concurrent | 71.8 ms | 86.8 ms | 154.0 ms | 163.7 ms |
+| 200, 32 concurrent | 177.2 ms | 227.0 ms | 247.7 ms | 248.1 ms |
+
+The default buckets put everything above 100 ms into one bucket (`0.1–0.25`) and left six empty above it, so p95 under load was only known to ±75 ms. The new ones are dense where the traffic is (5–300 ms) and keep 0.5–30 s for degradation: the order transaction retries up to 10 times, so seconds are real when Postgres locks. The top finite bucket, 30 s, is above any plausible worst case, so `histogram_quantile` does not flatten at the edge exactly when things are bad; nothing caps a request (no request timeout, no `statement_timeout`), so a request beyond 30 s would land in `+Inf`, which `above-top-bucket` counts.
+
+### Demos
+
+Each builds the app, starts it on free ports with `DEMO_FAULTS=1`, prints `key=number`, checks its claim and exits with `1` when it is broken (`demo/`, `TODO(hw-29)`). Three runs in a row printed the same numbers:
+
+| `npm run demo:logs` | `npm run demo:metrics` | `npm run demo:trace` |
+|---|---|---|
+| `non-json-lines=0` | `sent-ok=40` | `response-status=500` |
+| `request-lines=6` | `sent-fail=15` | `spans=16` |
+| `layers=3` | `counter-delta=55` | `orphan-spans=0` |
+| `distinct-trace-ids=1` | `errors-delta=15` | `controller-span=1` |
+| `trace-id-matches-header=1` | `top-bucket-le=30` | `trace-matches-header=1` |
+| `burst=8` | `above-top-bucket=0` | `log-lines=4` |
+| `burst-trace-ids=8` | `distinct-ids=100` | `trace-matches-log=1` |
+| `burst-uneven=0` | `series-before=7` | `span-status-error=1` |
+| `secret-req-logged=1` | `series-after=7` | |
+| `secret-in-logs=0` | | |
+
+- **`demo:logs`** sends one order, eight concurrent orders with their own `traceparent`, a request with `Authorization: Bearer <marker>` and a login with a marker password, then reads the app's stdout: every line parses, the order's lines span 3 layers with one `trace_id` equal to the header's, the eight groups have equal size, the secret requests are logged and no marker is.
+- **`demo:metrics`** counts from two scrapes of `/metrics` around 55 orders (15 with `x-demo-fail: 1`), takes `_count − _bucket{le="30"}` for `/order`, and counts the counter's series around 100 `GET /order/<random id>` after one warm-up request.
+- **`demo:trace`** sends one failing order and polls Tempo for its trace (until the span count is stable, 30 s timeout, since spans leave in batches). It finds the request's log lines by its `Idempotency-Key`, not by `trace_id`, so `trace-matches-log` compares two independent paths (ALS → log, span → Tempo).
+- With `OTEL_SDK_DISABLED=true` `demo:logs` and `demo:trace` fail with exit 1 and name the broken keys.
+
+**Stand footprint:** `npm run obs:up` waits 28 s; Grafana 306 MiB, Prometheus 44 MiB, Tempo 22 MiB, about 372 MiB beside the kind node (910 MiB) on a 31 GiB machine. Tempo's image is distroless (no shell, no `wget`), so it has no healthcheck; it answers `/ready` about 16 s after start, which `demo:trace` covers by polling.
+
 ## Secrets
 
 Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_PASSWORD`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` (see `SecretsInterface`). Like Postgres, a Redis instance is a setting for where it runs (`REDIS_CACHE_HOST`/`REDIS_CACHE_PORT`, `REDIS_QUEUE_HOST`/`REDIS_QUEUE_PORT`) and a secret for who may use it (`REDIS_PASSWORD`, one for both instances): the host differs between the host machine (`localhost:6380`) and a pod (`redis-cache:6379`), the password doesn't, so a pod reading the vault itself gets a value that works there. `npm run bootstrap:secrets` writes `REDIS_PASSWORD` to `secrets/redis_password.txt` for compose, so it lives in one place. Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.
@@ -637,6 +716,7 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `PORT` | no | `3000` | HTTP port |
+| `METRICS_PORT` | no | `9464` | internal port that serves `/metrics` (see *Observability*) |
 | `DBHOST` | yes | — | Postgres (pgbouncer) host |
 | `DBPORT` | no | `3000` | Postgres (pgbouncer) port |
 | `DBNAME` | yes | — | Postgres database |

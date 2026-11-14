@@ -26,7 +26,7 @@ export class MediaUnattachedCleanupCron implements OnModuleInit {
     });
   }
 
-  @Log(undefined, ({ deleted, skipped, createdBefore }: { deleted: number; skipped: number; createdBefore: Date }) => `deleted ${deleted} media never attached since before ${createdBefore.toISOString()}, skipped ${skipped} claimed meanwhile`)
+  @Log(undefined, ({ deleted, skipped, createdBefore }) => `deleted ${deleted} media never attached since before ${createdBefore.toISOString()}, skipped ${skipped} claimed meanwhile`)
   async deleteUnattached(): Promise<{ deleted: number; skipped: number; createdBefore: Date }> {
     const createdBefore = subHours(new Date(), this.unattachedTtlHours);
     let deleted = 0;

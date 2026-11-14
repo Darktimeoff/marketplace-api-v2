@@ -26,7 +26,7 @@ export class MediaOrphanCleanupCron implements OnModuleInit {
     });
   }
 
-  @Log(undefined, ({ deleted, createdBefore }: { deleted: number; createdBefore: Date }) => `deleted ${deleted} orphan uploads pending since before ${createdBefore.toISOString()}`)
+  @Log(undefined, ({ deleted, createdBefore }) => `deleted ${deleted} orphan uploads pending since before ${createdBefore.toISOString()}`)
   async deleteOrphans(): Promise<{ deleted: number; createdBefore: Date }> {
     const createdBefore = subHours(new Date(), this.pendingTtlHours);
     let deleted = 0;

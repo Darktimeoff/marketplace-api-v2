@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { Log } from '../../generic/decorator/log.decorator.js';
 import { Transactional } from '@nestjs-cls/transactional';
 import { randomUUID } from 'node:crypto';
 import { MediaStatusEnum, type MediaUploadResponseInterface } from '@marketplace/contracts-core';
@@ -12,7 +13,6 @@ import type { Media } from '../entity/media.entity.js';
 
 @Injectable()
 export class MediaUploadRequestCommandHandler {
-  private readonly logger = new Logger(MediaUploadRequestCommandHandler.name);
 
   constructor(
     private readonly media: MediaRepository,
@@ -28,19 +28,24 @@ export class MediaUploadRequestCommandHandler {
       throw new BadRequestException(`${input.mimeType} is limited to ${type.maxSizeBytes} bytes`);
     }
 
-    const media = await this.findOrCreate(input, ownerPublicId, idempotencyKey);
-
-    if (media.status !== MediaStatusEnum.PENDING) {
-      throw new ConflictException('Media is already uploaded');
-    }
-
-    this.logger.log(`upload requested media=${media.publicId} key=${media.storageKey} size=${media.sizeBytes} multipart=${media.uploadId !== null}`);
+    const media = await this.request(input, ownerPublicId, idempotencyKey);
 
     if (media.uploadId) {
       return this.responses.toMultipartUpload(media, this.plan.partSize(media.sizeBytes), this.plan.partCount(media.sizeBytes));
     }
 
     return this.responses.toUpload(media, await this.storage.presignUpload(media));
+  }
+
+  @Log(undefined, media => `upload requested media=${media.publicId} key=${media.storageKey} size=${media.sizeBytes} multipart=${media.uploadId !== null}`)
+  private async request(input: MediaUploadInput, ownerPublicId: string, idempotencyKey: string | null): Promise<Media> {
+    const media = await this.findOrCreate(input, ownerPublicId, idempotencyKey);
+
+    if (media.status !== MediaStatusEnum.PENDING) {
+      throw new ConflictException('Media is already uploaded');
+    }
+
+    return media;
   }
 
   @Transactional()

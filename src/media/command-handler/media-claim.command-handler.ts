@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Log } from '../../generic/decorator/log.decorator.js';
 import { Transactional } from '@nestjs-cls/transactional';
 import { MediaClaimStatusEnum } from '@marketplace/contracts-core';
 import type { MediaClaimRpc } from '@marketplace/messaging-contracts';
@@ -18,9 +19,7 @@ export class MediaClaimCommandHandler {
 
   async execute(request: MediaClaimRpc.RequestInterface): Promise<MediaClaimRpc.ResponseType> {
     try {
-      const response = await this.claimAll(request);
-      this.logger.log(`claimed ${request.mediaIds.length} media for ${request.attachTo.type}=${request.attachTo.id}`);
-      return response;
+      return await this.claimAll(request);
     } catch (error) {
       if (error instanceof MediaClaimRejectedException) {
         this.logger.warn(`claim rejected for ${request.attachTo.type}=${request.attachTo.id} media=[${error.rejectedMediaIds.join(',')}]`);
@@ -31,6 +30,7 @@ export class MediaClaimCommandHandler {
     }
   }
 
+  @Log(undefined, (_response, request) => `claimed ${request.mediaIds.length} media for ${request.attachTo.type}=${request.attachTo.id}`)
   @Transactional()
   private async claimAll(request: MediaClaimRpc.RequestInterface): Promise<MediaClaimRpc.ClaimedResponseInterface> {
     const claimed = await this.media.claim(

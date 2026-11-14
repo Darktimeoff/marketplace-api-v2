@@ -21,7 +21,7 @@ export class MediaClaimReleaseCron implements OnModuleInit {
     });
   }
 
-  @Log(undefined, (released: number) => `released ${released} expired media claims`)
+  @Log(undefined, released => `released ${released} expired media claims`)
   async releaseExpired(): Promise<number> {
     return this.media.releaseExpiredClaims();
   }

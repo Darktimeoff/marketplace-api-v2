@@ -23,7 +23,7 @@ export class OrderWorkflowOutboxCleanupCron implements OnModuleInit {
     });
   }
 
-  @Log(undefined, (deleted: number) => `deleted ${deleted} started workflow outbox rows`)
+  @Log(undefined, deleted => `deleted ${deleted} started workflow outbox rows`)
   async deleteStarted(): Promise<number> {
     return this.outbox.deleteStartedBefore(subDays(new Date(), this.startedRetentionDays));
   }

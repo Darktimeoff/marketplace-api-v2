@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Log } from '../../generic/decorator/log.decorator.js';
 import { MediaStatusEnum, type MediaResponseInterface } from '@marketplace/contracts-core';
 import { MediaRepository } from '../repository/media.repository.js';
 import { MediaStorageService } from '../service/media-storage.service.js';
@@ -32,10 +33,11 @@ export class MediaUploadCompleteCommandHandler {
       throw new ConflictException(`Media is ${media.status}`);
     }
 
-    return this.responses.toMedia(await this.complete(media));
+    return this.responses.toMedia((await this.complete(media)).ready);
   }
 
-  private async complete(media: Media): Promise<Media> {
+  @Log(undefined, ({ ready, etag }) => `upload completed media=${ready.publicId} size=${ready.sizeBytes} etag=${etag}`)
+  private async complete(media: Media): Promise<{ ready: Media; etag: string | null }> {
     const stored = (await this.storage.head(media.storageKey)) ?? (media.uploadId ? await this.assemble(media, media.uploadId) : null);
 
     if (!stored) {
@@ -54,8 +56,7 @@ export class MediaUploadCompleteCommandHandler {
       throw new ConflictException('Media is no longer pending');
     }
 
-    this.logger.log(`upload completed media=${media.publicId} size=${stored.sizeBytes} etag=${stored.etag}`);
-    return ready;
+    return { ready, etag: stored.etag };
   }
 
   private async assemble(media: Media, uploadId: string) {

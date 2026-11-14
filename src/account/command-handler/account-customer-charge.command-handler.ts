@@ -1,5 +1,6 @@
 import { AccountCustomerChargeRpc } from "@marketplace/messaging-contracts";
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
+import { Log } from "../../generic/decorator/log.decorator.js";
 import { AccountRepository } from "../repository/account.repository.js";
 import { Transactional } from "@nestjs-cls/transactional";
 import { AccountCustomerChargeRejectedException } from "../exception/insufficient-stock.exception.js";
@@ -10,7 +11,6 @@ import { TransactionTypeEnum } from '../enum/transaction-type.enum.js';
 
 @Injectable()
 export class AccountCustomerChargeCommandHandler {
-  private readonly logger = new Logger(AccountCustomerChargeCommandHandler.name)
 
   constructor(
     private readonly repository: AccountRepository,
@@ -19,8 +19,7 @@ export class AccountCustomerChargeCommandHandler {
 
   async execute(request: AccountCustomerChargeRpc.RequestInterface): Promise<AccountCustomerChargeRpc.ResponseType> {
     try {
-      const applied = await this.inbox.processOnce(AccountInboxConsumerEnum.CUSTOMER_CHARGE, request.chargeId, () => this.charge(request))
-      this.logger.log(`${applied ? 'charged' : 'skipped charge'} id=${request.chargeId}`)
+      await this.chargeOnce(request)
       return { status: 'success' }
     } catch (e) {
       if (e instanceof AccountCustomerChargeRejectedException) {
@@ -29,6 +28,11 @@ export class AccountCustomerChargeCommandHandler {
 
       throw e
     }
+  }
+
+  @Log(undefined, (applied, request) => `${applied ? 'charged' : 'skipped charge'} id=${request.chargeId}`)
+  private chargeOnce(request: AccountCustomerChargeRpc.RequestInterface): Promise<boolean> {
+    return this.inbox.processOnce(AccountInboxConsumerEnum.CUSTOMER_CHARGE, request.chargeId, () => this.charge(request))
   }
 
   @Transactional()

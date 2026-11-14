@@ -23,7 +23,7 @@ export class MediaOutboxCleanupCron implements OnModuleInit {
     });
   }
 
-  @Log(undefined, (deleted: number) => `deleted ${deleted} published outbox rows`)
+  @Log(undefined, deleted => `deleted ${deleted} published outbox rows`)
   async deletePublished(): Promise<number> {
     return this.outbox.deletePublishedBefore(subDays(new Date(), this.publishedRetentionDays));
   }

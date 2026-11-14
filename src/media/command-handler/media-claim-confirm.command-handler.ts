@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Log } from '../../generic/decorator/log.decorator.js';
 import { Transactional } from '@nestjs-cls/transactional';
 import { MediaAttachmentTypeEnum } from '@marketplace/contracts-core';
 import { MediaRepository } from '../repository/media.repository.js';
@@ -24,12 +25,10 @@ export class MediaClaimConfirmCommandHandler {
 
     if (confirmed < mediaIds.length) {
       this.logger.warn(`confirmed ${confirmed} of ${mediaIds.length} media for ${attachedToType}=${attachedToId}: the rest is attached elsewhere or gone`);
-      return;
     }
-
-    this.logger.log(`confirmed ${confirmed} media for ${attachedToType}=${attachedToId}`);
   }
 
+  @Log(undefined, (confirmed, mediaIds, attachedToType, attachedToId) => (confirmed.length === mediaIds.length ? `confirmed ${confirmed.length} media for ${attachedToType}=${attachedToId}` : ''))
   @Transactional()
   private async confirm(mediaIds: string[], attachedToType: MediaAttachmentTypeEnum, attachedToId: string): Promise<string[]> {
     const confirmed = await this.media.confirmClaim(mediaIds, attachedToType, attachedToId);

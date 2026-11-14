@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Log } from '../../generic/decorator/log.decorator.js';
 import { Transactional } from '@nestjs-cls/transactional';
 import type { MediaVariantsGeneratedEvent } from '@marketplace/messaging-contracts';
 import { ProductMediaRepository } from '../repository/product-media.repository.js';
@@ -15,18 +16,19 @@ export class ProductMediaVariantsSaveCommandHandler {
     private readonly variants: ProductMediaVariantRepository,
   ) {}
 
+  @Log(undefined, (saved, data) => (saved ? `saved ${data.variants.length} variants media=${data.mediaPublicId}` : ''))
   @Transactional()
-  async execute(data: Pick<MediaVariantsGeneratedEvent.DataInterface, 'mediaPublicId' | 'thumbHash' | 'variants'>): Promise<void> {
+  async execute(data: Pick<MediaVariantsGeneratedEvent.DataInterface, 'mediaPublicId' | 'thumbHash' | 'variants'>): Promise<boolean> {
     const media = await this.productMedia.findByMediaPublicId(data.mediaPublicId);
 
     if (!media) {
       this.logger.warn(`skipped variants media=${data.mediaPublicId}: not attached to a product`);
-      return;
+      return false;
     }
 
     await this.variants.createManyIgnoringExisting(this.toVariants(media, data.variants));
     await this.productMedia.setThumbHash(media.id, data.thumbHash);
-    this.logger.log(`saved ${data.variants.length} variants media=${data.mediaPublicId}`);
+    return true;
   }
 
   private toVariants(media: ProductMedia, variants: MediaVariantsGeneratedEvent.VariantInterface[]): ProductMediaVariantCreateEntityInterface[] {

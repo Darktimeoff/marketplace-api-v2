@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Log } from '../../generic/decorator/log.decorator.js';
 import { CronExpression } from '@nestjs/schedule';
 import { subDays } from 'date-fns';
 import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-job-registry.service.js';
@@ -6,7 +7,6 @@ import { OrderWorkflowOutboxRepository } from '../repository/order-workflow-outb
 
 @Injectable()
 export class OrderWorkflowOutboxCleanupCron implements OnModuleInit {
-  private readonly logger = new Logger(OrderWorkflowOutboxCleanupCron.name);
   private readonly jobName = 'order-workflow-outbox-cleanup';
   private readonly startedRetentionDays = 7;
 
@@ -23,8 +23,8 @@ export class OrderWorkflowOutboxCleanupCron implements OnModuleInit {
     });
   }
 
-  async deleteStarted(): Promise<void> {
-    const deleted = await this.outbox.deleteStartedBefore(subDays(new Date(), this.startedRetentionDays));
-    this.logger.log(`deleted ${deleted} started workflow outbox rows`);
+  @Log(undefined, (deleted: number) => `deleted ${deleted} started workflow outbox rows`)
+  async deleteStarted(): Promise<number> {
+    return this.outbox.deleteStartedBefore(subDays(new Date(), this.startedRetentionDays));
   }
 }

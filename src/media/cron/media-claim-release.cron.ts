@@ -1,11 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Log } from '../../generic/decorator/log.decorator.js';
 import { CronExpression } from '@nestjs/schedule';
 import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-job-registry.service.js';
 import { MediaRepository } from '../repository/media.repository.js';
 
 @Injectable()
 export class MediaClaimReleaseCron implements OnModuleInit {
-  private readonly logger = new Logger(MediaClaimReleaseCron.name);
   private readonly releaseJobName = 'media-claim-release';
 
   constructor(
@@ -21,8 +21,8 @@ export class MediaClaimReleaseCron implements OnModuleInit {
     });
   }
 
-  async releaseExpired(): Promise<void> {
-    const released = await this.media.releaseExpiredClaims();
-    this.logger.log(`released ${released} expired media claims`);
+  @Log(undefined, (released: number) => `released ${released} expired media claims`)
+  async releaseExpired(): Promise<number> {
+    return this.media.releaseExpiredClaims();
   }
 }

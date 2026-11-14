@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Log } from '../../generic/decorator/log.decorator.js';
 import { CronExpression } from '@nestjs/schedule';
 import { subHours } from 'date-fns';
 import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-job-registry.service.js';
@@ -7,7 +8,6 @@ import { MediaStorageService } from '../service/media-storage.service.js';
 
 @Injectable()
 export class MediaOrphanCleanupCron implements OnModuleInit {
-  private readonly logger = new Logger(MediaOrphanCleanupCron.name);
   private readonly cleanupJobName = 'media-orphan-cleanup';
   private readonly pendingTtlHours = 24;
   private readonly batchSize = 100;
@@ -26,7 +26,8 @@ export class MediaOrphanCleanupCron implements OnModuleInit {
     });
   }
 
-  async deleteOrphans(): Promise<void> {
+  @Log(undefined, ({ deleted, createdBefore }: { deleted: number; createdBefore: Date }) => `deleted ${deleted} orphan uploads pending since before ${createdBefore.toISOString()}`)
+  async deleteOrphans(): Promise<{ deleted: number; createdBefore: Date }> {
     const createdBefore = subHours(new Date(), this.pendingTtlHours);
     let deleted = 0;
 
@@ -48,6 +49,6 @@ export class MediaOrphanCleanupCron implements OnModuleInit {
       }
     }
 
-    this.logger.log(`deleted ${deleted} orphan uploads pending since before ${createdBefore.toISOString()}`);
+    return { deleted, createdBefore };
   }
 }

@@ -3,11 +3,15 @@ import { TransactionHost } from '@nestjs-cls/transactional';
 import { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import { Order, type OrderCreateEntityInterface } from '../entity/order.entity.js';
 import { OrderStatusEnum } from '@marketplace/contracts-core';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
+import { Traced } from '../../generic/telemetry/decorator/traced.decorator.js';
 
 @Injectable()
 export class OrderRepository {
   constructor(private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>) {}
 
+  @Traced()
+  @Log(undefined, (order) => `inserted order=${order.publicId} status=${order.status}`)
   create(input: OrderCreateEntityInterface): Promise<Order> {
     const orders = this.txHost.tx.getRepository(Order);
     return orders.save(orders.create(input));

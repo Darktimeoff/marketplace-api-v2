@@ -3,17 +3,18 @@ import { TransactionHost } from '@nestjs-cls/transactional';
 import { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import { In, LessThan } from 'typeorm';
 import { MediaOutbox, type MediaOutboxCreateEntityInterface } from '../entity/media-outbox.entity.js';
+import { currentTraceparent } from '../../generic/telemetry/util/current-traceparent.util.js';
 
 @Injectable()
 export class MediaOutboxRepository {
   constructor(private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>) {}
 
   async create(input: MediaOutboxCreateEntityInterface): Promise<void> {
-    await this.txHost.tx.getRepository(MediaOutbox).insert(input);
+    await this.txHost.tx.getRepository(MediaOutbox).insert({ ...input, traceparent: currentTraceparent() });
   }
 
   async createManyIgnoringExisting(input: MediaOutboxCreateEntityInterface[]): Promise<void> {
-    await this.txHost.tx.getRepository(MediaOutbox).createQueryBuilder().insert().values(input).orIgnore().execute();
+    await this.txHost.tx.getRepository(MediaOutbox).createQueryBuilder().insert().values(input.map((row) => ({ ...row, traceparent: currentTraceparent() }))).orIgnore().execute();
   }
 
   claimUnpublished(limit: number): Promise<MediaOutbox[]> {

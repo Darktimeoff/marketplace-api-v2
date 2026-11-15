@@ -10,6 +10,10 @@ import { OrderOutboxAggregateTypeEnum } from '../../src/order/enum/order-outbox-
 import { createTestModule, type TestModule } from '../support/test-module.js';
 import { truncateAllTables } from '../support/isolation.js';
 import { MessageBrokerEnum } from '../../src/generic/messaging/enum/message-broker.enum.js';
+import { context, propagation, trace } from '@opentelemetry/api';
+import { W3CTraceContextPropagator } from '@opentelemetry/core';
+import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
+import { TracerProvider } from '@opentelemetry/sdk-trace';
 
 @Module({
   imports: [TypeOrmModule.forFeature([OrderOutbox])],
@@ -114,5 +118,29 @@ describe('OrderOutboxRepository', () => {
     expect(deleted).toBe(1);
     const remaining = (await testModule.dataSource.getRepository(OrderOutbox).find()).map(({ id }) => id).toSorted();
     expect(remaining).toEqual([recentPublished, oldUnpublished].toSorted());
+  });
+
+  it('stores the traceparent of the active span with the row, and none outside a trace', async () => {
+    const provider = new TracerProvider();
+    context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
+    trace.setGlobalTracerProvider(provider);
+    propagation.setGlobalPropagator(new W3CTraceContextPropagator());
+
+    try {
+      const traced = await provider.getTracer('test').startActiveSpan('POST /order', async (span) => {
+        const id = await aRow(0);
+        span.end();
+        return { id, traceparent: `00-${span.spanContext().traceId}-${span.spanContext().spanId}-01` };
+      });
+      const untraced = await aRow(0);
+      const rows = await testModule.dataSource.getRepository(OrderOutbox).findBy({});
+
+      expect(rows.find((row) => row.id === traced.id)?.traceparent).toBe(traced.traceparent);
+      expect(rows.find((row) => row.id === untraced)?.traceparent).toBeNull();
+    } finally {
+      trace.disable();
+      propagation.disable();
+      context.disable();
+    }
   });
 });

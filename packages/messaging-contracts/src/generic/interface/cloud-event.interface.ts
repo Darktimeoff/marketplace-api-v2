@@ -6,6 +6,8 @@ export interface CloudEventInterface<TType extends string, TData> {
   time: string;
   datacontenttype: 'application/json';
   subject?: string;
+  /** On a reply only: the id of the request it answers. */
   correlationid?: string;
+  traceparent?: string;
   data: TData;
 }

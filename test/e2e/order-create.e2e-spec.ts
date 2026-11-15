@@ -199,7 +199,6 @@ describe('Order create (e2e)', () => {
       time: paidRow.createdAt.toISOString(),
       datacontenttype: 'application/json',
       subject: order.publicId,
-      correlationid: order.publicId,
       data: {
         orderPublicId: order.publicId,
         buyerPublicId: buyer.identityPublicId,

@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
+import { SpanKind } from '@opentelemetry/api';
 import { EnvironmentService } from '../environment/environment.module.js';
 import { KafkaClientService } from './kafka-client.service.js';
 import { KafkaEventPublisher } from './kafka-event-publisher.js';
 import { EventRejectedException } from '../messaging/exception/event-rejected.exception.js';
 import type { EventSubscriberInterface, EventSubscriptionInterface } from '../messaging/interface/event-subscriber.interface.js';
+import type { KafkaDeliveryInterface } from './interface/kafka-delivery.interface.js';
+import { Traced } from '../telemetry/decorator/traced.decorator.js';
 
 @Injectable()
 export class KafkaEventSubscriber implements EventSubscriberInterface, OnApplicationBootstrap, OnModuleDestroy {
@@ -13,6 +16,7 @@ export class KafkaEventSubscriber implements EventSubscriberInterface, OnApplica
   private readonly subscriptions: EventSubscriptionInterface[] = [];
   private readonly consumers: KafkaJS.Consumer[] = [];
   private readonly assignmentTimeoutMs = 30000;
+  private readonly failedOffsets = new Map<string, string>();
 
   constructor(
     private readonly environment: EnvironmentService,
@@ -56,30 +60,17 @@ export class KafkaEventSubscriber implements EventSubscriberInterface, OnApplica
     await consumer.connect();
     await consumer.subscribe({ topic });
     await consumer.run({
-      eachMessage: async ({ partition, message }) => {
-        const position = `${topic}/${partition}@${message.offset}`;
-
-        try {
-          await handle(JSON.parse(message.value?.toString() ?? ''), { partition, offset: message.offset });
-        } catch (error) {
-          if (error instanceof SyntaxError || error instanceof EventRejectedException) {
-            this.logger.warn(`${consumerGroupId} rejected ${position}: ${error.message}`);
-
-            if (deadLetterTopic) {
-              await this.producer.send(deadLetterTopic, {
-                key: message.key,
-                value: message.value,
-                headers: { ...message.headers, dlt_reason: error.message, dlt_source: position },
-              });
-            }
-
-            return;
-          }
-
-          this.logger.error(`${consumerGroupId} failed ${position}, retrying`, error instanceof Error ? error.stack : String(error));
-          throw error;
-        }
-      },
+      eachMessage: ({ partition, message }) =>
+        this.process({
+          groupId: consumerGroupId,
+          topic,
+          partition,
+          message,
+          handle,
+          deadLetterTopic,
+          traceparent: message.headers?.traceparent?.toString(),
+          redelivered: this.failedOffsets.get(`${consumerGroupId}/${topic}/${partition}`) === message.offset,
+        }),
     });
     this.consumers.push(consumer);
 
@@ -88,6 +79,49 @@ export class KafkaEventSubscriber implements EventSubscriberInterface, OnApplica
     }
 
     this.logger.log(`${consumerGroupId} consuming ${topic}`);
+  }
+
+  @Traced({
+    name: delivery => `process ${delivery.topic}`,
+    kind: SpanKind.CONSUMER,
+    parent: delivery => (delivery.redelivered ? undefined : delivery.traceparent),
+    link: delivery => (delivery.redelivered ? delivery.traceparent : undefined),
+    attributes: delivery => ({
+      'messaging.system': 'kafka',
+      'messaging.destination.name': delivery.topic,
+      'messaging.consumer.group.name': delivery.groupId,
+      'messaging.destination.partition.id': String(delivery.partition),
+      'messaging.kafka.offset': Number(delivery.message.offset),
+      'messaging.message.redelivered': delivery.redelivered,
+    }),
+  })
+  private async process({ groupId, topic, partition, message, handle, deadLetterTopic }: KafkaDeliveryInterface): Promise<void> {
+    const position = `${topic}/${partition}@${message.offset}`;
+    const attemptKey = `${groupId}/${topic}/${partition}`;
+
+    try {
+      await handle(JSON.parse(message.value?.toString() ?? ''), { partition, offset: message.offset });
+      this.failedOffsets.delete(attemptKey);
+    } catch (error) {
+      if (error instanceof SyntaxError || error instanceof EventRejectedException) {
+        this.failedOffsets.delete(attemptKey);
+        this.logger.warn(`${groupId} rejected ${position}: ${error.message}`);
+
+        if (deadLetterTopic) {
+          await this.producer.send(deadLetterTopic, {
+            key: message.key,
+            value: message.value,
+            headers: { ...message.headers, dlt_reason: error.message, dlt_source: position },
+          });
+        }
+
+        return;
+      }
+
+      this.failedOffsets.set(attemptKey, message.offset);
+      this.logger.error(`${groupId} failed ${position}, retrying`, error instanceof Error ? error.stack : String(error));
+      throw error;
+    }
   }
 
   private async waitForAssignment(consumer: KafkaJS.Consumer, groupId: string): Promise<void> {

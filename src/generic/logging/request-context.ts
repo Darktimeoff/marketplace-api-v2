@@ -1,7 +1,6 @@
 import type { IncomingMessage } from 'node:http';
 import { ClsServiceManager, type ClsService } from 'nestjs-cls';
 import type { RequestContextInterface } from './interface/request-context.interface.js';
-import { markDemoFault } from '../../demo/demo-fault.js';
 
 export function setRequestContext(cls: ClsService<RequestContextInterface>, request: IncomingMessage): void {
   const idempotencyKey = request.headers['idempotency-key'];
@@ -9,8 +8,6 @@ export function setRequestContext(cls: ClsService<RequestContextInterface>, requ
   if (idempotencyKey) {
     cls.set('idempotencyKey', Array.isArray(idempotencyKey) ? idempotencyKey[0] : idempotencyKey);
   }
-
-  markDemoFault(request); // TODO(hw-29): remove after homework
 }
 
 export function requestContextFields(): Pick<RequestContextInterface, 'userId' | 'idempotencyKey'> {

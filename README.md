@@ -320,7 +320,7 @@ Authorization Code flow with PKCE (OIDC). Google only tells us who the person is
 
 Errors: Google refused (`invalid_grant`, `access_denied`) or a check failed → `401 Sign-in with google failed` with the reason in the log; Google or Redis unavailable → `503`. The logs never carry the email or Google's tokens.
 
-To use real Google: in Google Cloud Console create an OAuth client of type *Web application* with the redirect URIs `http://localhost:3000/auth/google/callback` (the app on the host) and `http://localhost:30080/auth/google/callback` (the kind NodePort; Google answers `redirect_uri_mismatch` for any URI not listed, checked for both), add your account as a test user while the app is in *Testing*, put the client id in `.env` and the secret in the vault, then open `http://localhost:3000/auth/google`. The e2e tests run against `test/support/fake-oidc-provider.ts`, a minimal provider (discovery, JWKS, authorize, token with the PKCE check) that can also deny consent or sign a wrong `nonce`, `aud` or an unverified email.
+To use real Google: in Google Cloud Console create an OAuth client of type *Web application* with the redirect URIs `http://localhost:3000/auth/google/callback` (the app on the host) and `https://localhost:30080/auth/google/callback` (the cluster through the gateway; Google accepts `localhost` with any scheme and port but refuses `*.localhost` such as `marketplace.localhost`, asking for a public top-level domain; Google answers `redirect_uri_mismatch` for any URI not listed, checked for both), add your account as a test user while the app is in *Testing*, put the client id in `.env` and the secret in the vault, then open `http://localhost:3000/auth/google`. The e2e tests run against `test/support/fake-oidc-provider.ts`, a minimal provider (discovery, JWKS, authorize, token with the PKCE check) that can also deny consent or sign a wrong `nonce`, `aud` or an unverified email.
 
 **Adding another OpenID Connect provider** (Microsoft, GitLab, Auth0, Keycloak, …) is configuration: discovery, PKCE, `state`/`nonce`, the `id_token` checks, the routes and the tests are shared (`OidcClientService`, `OidcController`, one discovery per provider):
 
@@ -481,7 +481,12 @@ The stream is fed from Kafka, not from the code that changes the status. Order w
 `npm run scan` runs trivy on `marketplace-api:hw28` (`SCAN_IMAGE`), counts the findings of the report and compares them with `SCAN_MAX`: `found <= max-allowed` prints `gate=pass` and exits `0`, otherwise `gate=fail` and `1`. A missing report (the scanner failed, the image doesn't exist) or a non-numeric `SCAN_MAX` exits `2`, never `pass`. It prints `image=`, `severity=`, `ignore-unfixed=`, `found=`, `max-allowed=`, `gate=` and, after `#`, the split by severity and by target.
 
 - Counted: `CRITICAL,HIGH` (`SCAN_SEVERITY`) with `--ignore-unfixed` (`SCAN_IGNORE_UNFIXED=false` counts everything): only what an update can fix, so the number is something we can act on.
-- Working threshold `2` (the default in the `scan` npm script, used by CI): the count on 2026-11-08, so a new finding fails the gate and the threshold is lowered as findings are fixed. Both are HIGH in `zlib1g` of the distroless base, fixed in Debian (`+deb13u1`) and waiting for a rebuilt image. The first scan found 15 and the rest were closed the same day: `@temporalio/*` 1.24 → 1.25 brought the Rust crate `zip` 8.5.1 → 9.0.5 inside `core-bridge` (1 CRITICAL, 3 HIGH); `npm update` brought `fast-uri` 3.1.9 and `source-map-js` 1.2.2; `overrides.multer: 2.5.0` replaces the `2.4.0` that `@nestjs/platform-express` 12.2 pins exactly (drop the override once Nest is ≥ 12.3, which pins `2.5.0` itself); moving from `nodejs24-debian12` to `nodejs24-debian13` (and the build stages from bookworm to trixie, so the native modules are built against the runtime's glibc) removed the 7 in `libssl3` (1 CRITICAL, 6 HIGH). The trivy database changes daily, so the same image can fail tomorrow without a code change; that is the point of the gate, not a flake.
+- Working threshold `0` (the default in the `scan` npm script, used by CI). It was `2` on 2026-11-08, for two HIGH findings in `zlib1g` of the distroless base, fixed in Debian. The image built on 2026-11-15 has none left, so any new CRITICAL or HIGH that an update can fix fails the gate.
+- **`npm audit` (production dependencies).** It reported 2 HIGH for `zod`, [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5): memory exhaustion while validating oversized constrained collections, every version below 4.6.6. Its suggested fix was a major *downgrade* of `@infisical/sdk` to 2.3.5, which drops the API the JWT sign-in uses.
+  - Our own `zod` is `^4.6.7`. It validates Kafka and RabbitMQ messages, which come from other services, so that was the real exposure.
+  - The SDK still asks for `zod@^3.23.8`, and no fixed 3.x exists. `overrides` gives it `zod` 4.6.7 too. The SDK only validates the arguments our code passes it.
+  - Checked: tests on all layers, the app on the host signing in with Universal Auth and loading the signing keys, and a pod signing in with JWT. `npm audit --omit=dev` reports 0.
+  - Drop the override once the SDK depends on `zod` 4.
 - trivy `0.76.1` is a binary on `PATH` when there is one, otherwise `docker run aquasec/trivy:0.76.1` with the Docker socket and a `trivy-cache` volume; both gave the same `found`.
 - CI (`.github/workflows/scan.yml`, on pull requests and pushes to `main`) builds the image with a random decoy token, downloads trivy by version and checks its sha256 before running it, then calls `npm run scan`. Actions are pinned by commit (`actions/checkout` `3d3c42e5…` = v7.0.1, `actions/cache` `55cc8345…` = v6.1.0), not by tag: a scanner runs with the job's credentials, and trivy's own release and action tags were replaced with credential-stealing builds in 2026, so a moved tag must not change what runs.
 
@@ -506,7 +511,7 @@ kind `v0.33.0`, one node `kindest/node:v1.36.4` (pinned by digest in `k8s/kind-c
 - `cluster:up` also applies metrics-server `v0.9.0` (`kubectl apply -k k8s/metrics-server`): `components.yaml` is the release manifest unchanged, the kustomization pins the image by digest and adds `--kubelet-insecure-tls`, because kind's kubelets serve a self-signed certificate without IP SANs and metrics-server would refuse to scrape them. On a real cluster the kubelet certificates are signed by the cluster CA and the flag goes away. Without it the HPA has no CPU numbers (`cpu: <unknown>/70%`) and can only hold `minReplicas`.
 - `npm run cluster:down` deletes it.
 - Only the API runs in the cluster. Postgres (through pgbouncer), Kafka, RabbitMQ, Temporal, both Redis instances and MinIO stay in compose, as managed services would stay outside a production cluster. With the node on the compose network, pods resolve the compose service names through CoreDNS and Docker's DNS (checked from a pod: `db-bouncer:5432`, `kafka:29092`, `rabbitmq:5672`, `temporal:7233`, `redis-cache:6379`, `redis-queue:6379`, `minio:9000` all open), so Kafka's internal listener, which already advertises `kafka:29092`, works without another listener.
-- The scripts use `$KUBECONFIG` when it is set; locally the cluster lives in `~/.kube/kind-marketplace`, so creating it doesn't switch the default context of another kubeconfig.
+- The scripts (`cluster:up`, `cluster:down`, `up`, `preview`, `destroy`) use `$KUBECONFIG` and default it to `~/.kube/kind-marketplace`. Without that default, `kind create cluster` would write its context into `~/.kube/config` and make it the current one, and the next `kubectl` meant for another cluster would hit kind.
 
 ### Variables
 
@@ -538,7 +543,7 @@ With `SKIP_VAULT=1`:
 | `GOOGLE_CLIENT_ID` | `.env` (not a secret: it is in every Google sign-in URL) | Sign in with Google; plain env in the pod |
 | `IMAGE_REF` | `scripts/infra.sh` (computed) | the immutable image tag `cluster:up` loaded |
 | `PULUMI_BACKEND_URL` | environment, default `file://<repo>/infra/.pulumi-state` | local file backend, no `pulumi login` |
-| `KUBECONFIG` | environment, optional | which kubeconfig holds the `kind-marketplace` context |
+| `KUBECONFIG` | environment, default `~/.kube/kind-marketplace` | which kubeconfig holds the `kind-marketplace` context |
 | `SKIP_VAULT` | environment | `1` deploys with a K8s Secret instead of pods reading the vault: the values above must then be exported |
 
 The non-secret settings of the pod (`db-bouncer:5432`, `kafka:29092`, `DRAIN_MS`, …) are written in the program, see below.
@@ -549,17 +554,49 @@ The non-secret settings of the pod (`db-bouncer:5432`, `kafka:29092`, `DRAIN_MS`
 
 - **Vault first.** With `SKIP_VAULT=1`, before declaring anything, the program checks the eleven app secrets (`infra/vault.ts`, kept equal to `SECRET_NAMES` by `test/infra/vault.spec.ts`) and `PULUMI_CONFIG_PASSPHRASE`, and stops with `error: Missing from the vault: <names>` (`pulumi.RunError`, no stack trace). Each of the twelve removed one at a time fails `preview` with its own name.
 - **Secret** (`SKIP_VAULT=1` only). The values go into `marketplace-api-secrets` as `data` (base64), wrapped in `pulumi.secret`, so the state stores them encrypted with the passphrase and `preview` prints `data: [secret]`. Base64 is an encoding, not encryption: whoever can `get secret` in the namespace reads them. The pod reads each through `secretKeyRef`; a pod-template annotation carries the sha256 of all values, so a rotated secret rolls the pods on the next `up` (an env var from a Secret never changes in a running pod).
-- **Settings.** The settings the pod needs (`db-bouncer:5432`, `kafka:29092`, `redis-cache:6379`, `redis-queue:6379`, …) are written in the program, because `.env` describes a process on the host and is not read at all with `SKIP_VAULT=1`. With `SKIP_VAULT=1` the pod runs with `SKIP_VAULT=1` too: the Secret is the source, so the `INFISICAL_*` variables are placeholders the schema requires. `GOOGLE_CLIENT_ID` is not a secret (it travels in the browser URL) but is per environment, so the program takes it from the environment (`.env` through the wrapper) and stops with `error: Missing setting: GOOGLE_CLIENT_ID` without it; `OIDC_REDIRECT_BASE_URL` is `http://localhost:30080`.
+- **Settings.** The settings the pod needs (`db-bouncer:5432`, `kafka:29092`, `redis-cache:6379`, `redis-queue:6379`, …) are written in the program, because `.env` describes a process on the host and is not read at all with `SKIP_VAULT=1`. With `SKIP_VAULT=1` the pod runs with `SKIP_VAULT=1` too: the Secret is the source, so the `INFISICAL_*` variables are placeholders the schema requires. `GOOGLE_CLIENT_ID` is not a secret (it travels in the browser URL) but is per environment, so the program takes it from the environment (`.env` through the wrapper) and stops with `error: Missing setting: GOOGLE_CLIENT_ID` without it; `OIDC_REDIRECT_BASE_URL` is `https://localhost:30080` and `TRUST_PROXY_HOPS` is `1` (see *Entry: gateway and TLS*).
 - **Rollout.** `maxUnavailable: 0`, `maxSurge: 1`: a new pod must be ready before an old one gets `SIGTERM`. `terminationGracePeriodSeconds` defaults to `ceil(drainMs / 1000) + 10` = 15 s, and the program refuses a grace period that isn't longer than `drainMs`. The probes are split: `startupProbe` and `livenessProbe` on `/healthz` (restart only a hung process), `readinessProbe` on `/readyz` every 2 s with `failureThreshold: 1` (out of the Service as soon as the drain starts or Postgres stops answering). The `startupProbe` (`/healthz` every 1 s, 60 failures) holds the other two off until the process first answers, so a slow start has 60 s before a restart while a hung running process is restarted after 30 s (liveness every 10 s, 3 failures); without it the same liveness would also kill a start slower than 30 s, and raising `initialDelaySeconds` instead would delay noticing a hang for the pod's whole life.
 - **Replicas.** No `spec.replicas` in the program; see *Replicas and the HPA* below.
 - **Pod.** `runAsUser: 65532` (the distroless `nonroot` user), `runAsNonRoot`, `readOnlyRootFilesystem` with an `emptyDir` on `/tmp` for the ffmpeg work files, all capabilities dropped, `RuntimeDefault` seccomp, no API-server token (`automountServiceAccountToken: false`; the only token is the vault one below). Requests `250m`/`384Mi` (CPU requests are what the HPA percentage is measured against), memory limit `768Mi`, no CPU limit.
-- **Service.** `NodePort` `30080`, published by kind on `127.0.0.1:30080`; PDB `maxUnavailable: 1`.
+- **Service.** `ClusterIP`: the pods are reached only through the gateway (see *Entry: gateway and TLS*); PDB `maxUnavailable: 1`.
 - **Image.** Pulumi knows the image only as the string in the pod spec, so the program never uses the moving tag `hw28`: with it a rebuilt image changed nothing in the spec, `up` answered `unchanged` and the old pods kept the old code, while any pod the HPA or a restart created took the new image under the same tag, two versions side by side. `scripts/infra.sh` passes `IMAGE_REF` = the immutable tag that `cluster:up` loaded, and stops with `image … is not in the cluster: run npm run cluster:up` when the node lacks it (otherwise the pods would sit in `ErrImagePull` until the progress deadline). The tag is the digest of the platform manifest, not the image id: with the containerd image store the id is the digest of the index, which carries a BuildKit attestation with the build time and changed on every rebuild (`7ec60ae62793`, `88b4dff57f57` for the same code), while the platform manifest stayed `df05608f3ad1`. Measured: a rebuild without changes → `8 unchanged`; a changed log line → `ee274e37ebf3` and a rolling update; the change reverted → back to `df05608f3ad1` from the build cache, and the Deployment reused its old ReplicaSet. Old tags stay on the host and the node until removed (`docker image rm`, `cluster:down`).
 - **Migrations as a Job.** Every `up` declares the Job `marketplace-api-migrate-<image tag>` (same image, env, ServiceAccount, vault token and security context as the pods, `args: ["dist/migrate.js"]`, `backoffLimit: 2`, 300 s deadline), and the Deployment `dependsOn` it: Pulumi waits for `Succeeded: 1` before it touches the Deployment, so new code never runs before its schema, and a failed migration stops the rollout with the old pods serving. The tag in the name makes a new image a new Job (`deleteBeforeReplace`); the same image keeps the finished one (`9 unchanged`). `dist/migrate.js` is a small Nest context (`EnvironmentModule`, `SecretManagerModule`, `PostgresOptionsService`) because the TypeORM CLI (`npm run migrate`) reads `DBUSER`/`DBPASSWORD` from the environment, and a pod reading the vault has none there; the app (`createTypeOrmOptions`) and the Job (`createMigrationOptions`) share one private `connectionOptions()`. Measured: on an empty Postgres it applied 47 migrations, then `no pending migrations`; in kind the Job logged in with the ServiceAccount token, finished in 3–5 s, then the Deployment rolled.
 - **`REV`.** The `rev` config value (`npm run up -- -c rev=2`) goes into the pod env, so changing it rolls the same image again; a code change doesn't need it.
 - **Rollout settings.** `drainMs`, `readiness` (`false` drops the startup and readiness probes), `maxUnavailable` and `maxSurge` are config values with the safe defaults above; the program refuses `maxUnavailable` and `maxSurge` both `0`, a rollout that could never replace a pod.
 
 Measured: `up` from nothing 11.6 s (8 resources; the first pod ready after 4 s), `destroy` 11.6 s, `up` with nothing changed 2 s. A first check: `rev=1 → 2` took 10.4 s while a sequential `curl` loop sent 12 062 requests to `/healthz`, all `200`.
+
+### Entry: gateway and TLS
+
+```
+https://localhost:30080
+  └▶ kind: 127.0.0.1:30080 → node :30080
+      └▶ Service of the Envoy proxy (NodePort 30080 → 10443) → Envoy: TLS ends, HTTP/2, HSTS
+          └▶ HTTPRoute "/" → Service marketplace-api (ClusterIP :80) → pod :3000
+```
+
+- **Gateway API with Envoy Gateway, not an Ingress.** ingress-nginx is retired: best-effort maintenance ended in March 2026, with no releases or security fixes after it, and Kubernetes points to Gateway API. Its roles are split: the `GatewayClass` names the controller, the `Gateway` owns the listener, TLS and the certificate, and the `HTTPRoute` owns paths and backends. What used to be per-controller annotations (headers, weights, timeouts) is in the standard. `infra/gateway.ts` declares an `EnvoyProxy` that makes the proxy's Service a NodePort on `30080` instead of a `LoadBalancer` nobody serves in kind; the listener has no host name, so `localhost` and `marketplace.localhost` both work. A new host port would mean recreating the cluster and re-establishing the vault's trust in its token keys, so the existing `30080` now speaks HTTPS only.
+- **Installed as Helm releases by Pulumi** (`k8s.helm.v3.Release`), Envoy Gateway `v1.9.3` and cert-manager `v1.21.3`, so `npm run up` installs, upgrades and removes them like any other resource. Not `k8s.helm.v4.Chart`: it renders a chart into plain resources and skips Helm hooks, and Envoy Gateway's `certgen` Job is a `pre-install` hook that creates the controller's TLS secret. With `Chart` the controller waited six minutes for a secret that never came; a `Release` runs a real `helm install` (hooks, `helm list`, `atomic` rollback).
+- **No redirect from HTTP, HSTS instead.** A client that calls `http://` has already sent its `Authorization` header or password in clear before a redirect arrives, and 301/302 turn a `POST` into a `GET`. So the port answers plain HTTP with nothing (`curl` exit 52) and the error shows at once. The `HTTPRoute` adds `Strict-Transport-Security: max-age=31536000`, so a browser never tries `http://` for this host again.
+- **Certificate.** cert-manager issues it, and our local CA (`scripts/bootstrap-tls.sh`) signs it. `infra/tls.ts` reads `secrets/tls/ca.{crt,key}` (stack key `caDir`), puts them in a Secret in `cert-manager` with the key wrapped in `pulumi.secret` (the state holds it encrypted; no line of it is in `infra/.pulumi-state` in plain text), and declares a `ClusterIssuer` of type `ca` and a `Certificate` `marketplace-tls` for `marketplace.localhost` and `localhost`. It is ECDSA P-256 and valid for 90 days. It renews 30 days before the end, with a new key each time (`rotationPolicy: Always`). In production only the issuer changes (ACME, Vault PKI). `curl --cacert secrets/tls/ca.crt https://localhost:30080/readyz`; for Chrome on Linux, `certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "marketplace local CA" -i secrets/tls/ca.crt`.
+- **The client's address.** Behind a proxy every request comes from the proxy's pod, so the login limit (`<ip>:<login>`) became one limit per login for everyone. Envoy keeps a client's `X-Forwarded-For` and appends the address it saw on the right: `6.6.6.6, 172.27.0.1`. Everything to the left came from the client. `ProxyTrustService` sets Express's `trust proxy` to `TRUST_PROXY_HOPS` (`1` here), so `request.ip` is the entry the one trusted proxy appended, and `request.protocol` is `https` from `X-Forwarded-Proto`. It runs in `AppModule`, not `main.ts`, so e2e tests get it too. `trust proxy: true` would take the leftmost entry, and the test catches that mutation (`ip: '6.6.6.6'`). The span attribute `client.address` is that leftmost entry too, so it is not evidence. With `TRUST_PROXY_HOPS=1`, 8 wrong logins to one account, each with a different forged `X-Forwarded-For`, gave `401` five times and then `429`. Envoy Gateway already gives its Service `externalTrafficPolicy: Local`, so nothing in the cluster rewrites the source. Locally every client is `172.27.0.1`, the gateway of Docker's `kind` network; behind a production load balancer it is the real address, and the setting becomes `2`.
+- **Rate limits at the entry.** A `BackendTrafficPolicy` on the route sets two local limits, each counted per client address (`sourceCIDR` `Distinct`):
+  - 50 requests per second on every path, against a flood from one address;
+  - 20 per minute on `/auth/*`: sign-up, login, refresh and OIDC, the usual targets of guessing and spam.
+
+  They add to the app's `@Throttle` (5 per minute per address and login). Envoy turns a flood away with `429` before it costs the app or Postgres anything, and it covers every `/auth` path, not only login. Responses carry `x-ratelimit-limit`, `-remaining` and `-reset`.
+
+  Measured:
+  - 120 parallel requests to the JWKS gave 55 `200` and 65 `429`, the bucket of 50 plus what refilled meanwhile.
+  - 25 `GET /auth/google` gave exactly 20 `302`, then `429` with the body `local_rate_limited`. That path has no app throttle, so the `429` can only come from Envoy. Other paths still answered `200`.
+  - The access logs mark the refusals `flags=RL`, and their traces hold only Envoy's `ingress` span.
+
+  *Local* means each Envoy pod keeps its own buckets in memory: with N replicas a client gets up to N times the limit. A shared count needs the `Global` type, a ratelimit service with Redis. Locally every client is `172.27.0.1`, so all of them share one bucket.
+- **Envoy traces and access logs into the collector.** The `EnvoyProxy` sends both over OTLP gRPC on 4317, so the collector listens on 4317 too, and the policies let the proxy pods reach it.
+  - **Traces:** provider `OpenTelemetry`, service name `envoy-gateway`, 100 % sampled. Envoy opens the trace and passes `traceparent` on, so its span is the root: `ingress [envoy-gateway] 50.3 ms → router … egress 50.0 ms → POST /order [marketplace-api] 47.4 ms`. A `POST /order` gave 67 spans from both services and 0 orphans. The root shows what the app can't: TLS and proxy time, `peer.address`, the route that matched, and requests that never reached the app.
+  - **Access logs:** an `OpenTelemetry` sink with JSON fields (method, path, status, flags, duration, bytes, protocol, client, upstream, route, request id), so each record reaches Loki with Envoy's `trace_id` and `span_id`. The path is `%PATH(NQ)%`, without the query: the Google callback carries the one-time authorization code in it. `WQ` means *with* query, and a test code sent in the query is not found in Loki. A JSON record has no body, so the collector's `transform/envoy-access-log` builds `GET /order 202` and sets the level from the status (5xx `ERROR`, 4xx `WARN`). That processor touches only `service.name = envoy-gateway`.
+  - **Node-local:** a `backendRef` to a Service makes Envoy fetch the pod IPs itself (EDS) and balance between them, past kube-proxy and the Service's `internalTrafficPolicy: Local`. So the reference is a `Backend` with the FQDN `otel-collector.marketplace.svc.cluster.local:4317` (the controller runs with `extensionApis.enableBackend`). Envoy resolves the Service's ClusterIP, and kube-proxy keeps the traffic on the node: the admin `config_dump` shows the `tracing` and `accesslog_otel_0_0` clusters pointing at that name, not at pod IPs.
+- **Measured:** `/readyz` answered `HTTP/2 200` with the HSTS header for both host names. Without the CA, `curl` failed the certificate check (exit 60). A pod with open egress reached neither the API pod's 3000 nor its Service's 80. The kubelet's probes still pass under the policies (both pods `1/1`, no restarts). An order and a real Google sign-in completed through the gateway.
 
 ### Replicas and the HPA
 
@@ -592,7 +629,18 @@ By default the pods read Infisical themselves, as the app does on the host, inst
 
 Locally every client talks plain text to compose. Managed services (RDS, ElastiCache, MSK, Amazon MQ, Temporal Cloud) expect TLS. One switch, `TLS_MODE`, turns it on for every client at once: `disable` (default) locally, `verify-full` in the cloud. A switch per service would let one of them stay plain text by omission. `TLS_CA_PATH` adds CA certificates to the system ones instead of replacing them, so one setting serves services with public certificates (MSK, Temporal Cloud) and with a provider's private CA (the RDS bundle) together; several CAs can be concatenated into the file. The mode isn't derived from `NODE_ENV`: the pods in kind run with `production` and still talk plain text to compose. All clients build their options in `src/generic/tls/util/get-tls-options.util.ts`.
 
+- **The CA may sign only our names.** It carries a critical `nameConstraints` extension, built from the same name list as the server certificate: `localhost` and its subdomains, `127.0.0.1`, and the compose names. Trusting a CA in a browser or system store means accepting whatever it signs for any host. Without the constraint, anyone with `ca.key`, which also sits in the cluster's Secret `cert-manager/local-ca`, could sign `google.com` and intercept that browser's HTTPS. With it, a certificate for `google.com` signed by the same key fails with `error 47: permitted subtree violation`, while `marketplace.localhost`, `kafka` and the gateway's certificate verify. A DNS constraint also covers subdomains, so `localhost` permits `marketplace.localhost`. When the script finds a CA without constraints, it shreds the key and makes a new one. Everything the old CA signed is then reissued: run the script, `npm run up` to replace the cluster's Secret, then delete the Secret `marketplace-tls` so cert-manager issues a new certificate. Pulumi's state history keeps the old key, encrypted with the passphrase.
 - **Local CA.** `bash scripts/bootstrap-tls.sh` writes a local CA and one server certificate for the compose names (`db-bouncer`, `redis-cache`, `redis-queue`, `rabbitmq`, `kafka`, `temporal`, `localhost`, `127.0.0.1`) to `secrets/tls/` (outside git, keys `600`). `docker-compose.tls.yml` switches the services to TLS: `docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d db-bouncer`. The plain `docker compose up` is unchanged; pods and other clients that still speak plain text are refused while the override is up.
+- **Pods in kind over TLS (opt-in).** `CLUSTER_TLS_MODE=verify-full npm run up` switches the pods; without it they stay plain text, like the host run. It is an environment variable, not a stack key, so the choice isn't committed in `Pulumi.dev.yaml`.
+  - With it, the program sets `TLS_MODE=verify-full` and `TLS_CA_PATH=/etc/marketplace-ca/ca.crt`. The local CA comes from a ConfigMap `dependencies-ca` mounted read-only, and the pod template carries its checksum, so a new CA rolls the pods.
+  - The pods then talk to `rabbitmq:5671`, `kafka:29093` and `temporal-tls:7234`, and to `db-bouncer` and both Redis on their usual ports. The policies open 29093 and 7234.
+  - Kafka gets a third listener in the override, `PODS` (`SSL`, `kafka:29093`). The internal `29092` stays plain text, because the broker and Kafka UI use it. This listener encrypts and checks the broker's name but doesn't authenticate the pods.
+  - `temporal-tls` is now in the certificate and in the CA's name constraints. The script compares the CA's constraints with its name list and replaces the CA when they differ, so after a new name you run `npm run up` and delete the Secret `marketplace-tls`, as for any CA rotation.
+  - Order matters: plain `up` with the new CA, then the override, then `CLUSTER_TLS_MODE=verify-full npm run up`.
+  - Measured:
+    - Between the override and the switch, the plain-text pods went `0/1` without a restart: pgbouncer answered `SSL required` and Redis reset the connection.
+    - After the switch, an order went through the whole saga (Kafka, Temporal, the RabbitMQ RPC; 67 spans, 0 orphans).
+    - From a pod, each of `db-bouncer`, `redis-cache`, `redis-queue`, `rabbitmq`, `kafka` and `temporal-tls` gave: with the local CA `TLSv1.3`; with only the system CAs refused (`SELF_SIGNED_CERT_IN_CHAIN` or `UNABLE_TO_VERIFY_LEAF_SIGNATURE`); by IP refused (`ERR_TLS_CERT_ALTNAME_INVALID`).
 - **Only `verify-full`.** `require` would encrypt without checking who answers, which a man in the middle passes, so the app refuses any other value at start.
 - **Postgres.** The app and the migrations CLI (`src/data-source.ts`) both pass `getTlsOptions(TLS_MODE, TLS_CA_PATH, DBHOST)`. The server name is checked against the configured host explicitly: `pg` passes no server name for an IP, and Node then checked the certificate against `localhost`, so with `DBHOST=127.0.0.2` a certificate for `localhost` and `127.0.0.1` was accepted (measured before the fix). The override makes pgbouncer require TLS (`client_tls_sslmode = require`); it copies the key into the container for the `postgres` user, since a bind-mounted `600` key belongs to the host user.
 - **Redis.** Both instances and the BullMQ connections pass `tls` built by the same helper, checked against `REDIS_CACHE_HOST`/`REDIS_QUEUE_HOST`. The override turns off the plain port (`port 0`, `tls-port 6379`).
@@ -613,16 +661,14 @@ A request that answered 500 at 03:15 should take a minute to explain, not an eve
 | Variable | Source | What |
 |---|---|---|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `.env` through `scripts/with-secrets.sh` | OTLP/HTTP base of the trace backend (`http://127.0.0.1:22918`, Tempo); the SDK appends `/v1/traces`. Unset: spans are still created (logs need the `trace_id`) but not exported |
-| `PROMETHEUS_URL` | `.env` through the wrapper | Prometheus HTTP API (`http://127.0.0.1:22901`) |
-| `TRACE_API_URL` | `.env` through the wrapper | Tempo HTTP API (`http://127.0.0.1:22904`), read by `demo:trace` |
-| `GRAFANA_ADMIN_PASSWORD` | vault (Infisical, #11) | Grafana admin; compose refuses to start without it. Anonymous users get Viewer only, so the dashboard opens without a login |
+| `GRAFANA_ADMIN_PASSWORD` | vault (Infisical, #11) | Grafana admin; compose refuses to start without it. There is no anonymous access and no sign-up: Grafana shows logs and traces with user ids and request paths, so it is closed like every other service |
+| `OTEL_BSP_SCHEDULE_DELAY` | environment, default `5000` | ms between span exports. `telemetry.ts` builds the batch processor itself, shared with the Temporal plugin, so it reads only this one of the `OTEL_BSP_*` settings |
 | `METRICS_PORT` | `.env`, default `9464` | internal port that serves `/metrics`, never exposed through the API port or a Service; `0` in tests |
 | `LOG_LEVEL` | environment, default `info` | pino level; the tests set `silent` |
 | `OTEL_SDK_DISABLED` | environment | `true` turns tracing off. An empty `OTEL_EXPORTER_OTLP_ENDPOINT` does not: the wrapper fills empty values from `.env` |
-| `DEMO_FAULTS` | environment | `1` lets `x-demo-fail: 1` throw in `OrderRepository.create` (homework-only, `TODO(hw-29)`) |
-| `GRAFANA_PORT`, `PROMETHEUS_PORT`, `TEMPO_API_PORT`, `TEMPO_OTLP_PORT` | environment, defaults `22900`, `22901`, `22904`, `22918` | stand ports |
+| `GRAFANA_PORT`, `PROMETHEUS_PORT`, `TEMPO_API_PORT`, `LOKI_PORT`, `TEMPO_OTLP_PORT` | environment, defaults `22900`, `22901`, `22904`, `22905`, `22918` | stand ports |
 
-Addresses are settings and only the password is a secret, the same split as `DBHOST` / `DBPASSWORD`; the wrapper loads `.env` first and the vault on top, so the demos get both. The stand: `npm run obs:up` / `npm run obs:down` (`observability/docker-compose.yml`: Prometheus `v3.15.1`, Tempo `2.10.10`, Grafana `13.3.0`).
+Addresses are settings and only the password is a secret, the same split as `DBHOST` / `DBPASSWORD`; the wrapper loads `.env` first and the vault on top. The stand: `npm run obs:up` / `npm run obs:down` (`observability/docker-compose.yml`: Prometheus `v3.15.1`, Tempo `2.10.10`, Loki `3.7.9`, Grafana `13.3.0`).
 
 ### Logs
 
@@ -634,8 +680,34 @@ Addresses are settings and only the password is a secret, the same split as `DBH
 ### Traces
 
 - **OpenTelemetry starts before the app** (`src/telemetry.ts`, `node --import ./dist/telemetry.js dist/main.js`: `exec` in `nest-cli.json`, `CMD` in the Dockerfile). The project is ESM, so the file registers OpenTelemetry's loader hook; imported from `main.ts` it would come after `http`, `express` and `pg` were loaded and patch nothing. `TelemetryShutdownService` flushes the last batch on `SIGTERM` (measured: with a 60 s batch delay, 0 spans before `SIGTERM`, 6 after).
-- **Instrumentations:** `http` (server span, `traceparent`; `/healthz`, `/readyz`, `/metrics` untraced), `express` (route spans, middleware layers off), `pg` and `ioredis` (only inside a trace), `amqplib` (puts `traceparent` into RabbitMQ headers). `@opentelemetry/instrumentation-nestjs-core` declares `>=4.0.0 <12` and we run Nest 12.2.0; the two internals it patches (`NestFactoryStatic.create`, `RouterExecutionContext.create`) are unchanged in Nest 12, so `Nest12Instrumentation` widens the range to `<13`. That patches private Nest classes: an update may silently drop the controller spans, which `demo:trace` catches (`controller-span`).
-- **5xx is an ERROR span.** OpenTelemetry leaves a 4xx `Unset` (the client's fault), so the demo needs a real 500.
+- **Instrumentations:** `http` (server span, `traceparent`; `/healthz`, `/readyz`, `/metrics` untraced), `express` (route spans, middleware layers off), `pg` and `ioredis` (only inside a trace), `amqplib` (puts `traceparent` into RabbitMQ headers). `@opentelemetry/instrumentation-nestjs-core` declares `>=4.0.0 <12` and we run Nest 12.2.0; the two internals it patches (`NestFactoryStatic.create`, `RouterExecutionContext.create`) are unchanged in Nest 12, so `Nest12Instrumentation` widens the range to `<13`. That patches private Nest classes: an update may silently drop the controller spans, so `test/generic/telemetry/nest-instrumentation.spec.ts` fails when either method disappears or the package starts to support Nest 12 itself (then the subclass goes).
+- **5xx is an ERROR span.** OpenTelemetry leaves a 4xx `Unset` (the client's fault): an alert on span errors sees server faults, not bad requests.
+- **Own spans come from `@Traced()`** (`src/generic/telemetry/decorator/traced.decorator.ts`), not from `tracer.startActiveSpan` in business code. Options read the method arguments: `name`, `kind`, `attributes`, `parent` (a `traceparent` to continue) and `link` (a `traceparent` to link to).
+
+#### One trace across async boundaries
+
+`POST /order` → outbox → Kafka consumers → Temporal saga → RabbitMQ charge → Kafka again is one trace in Tempo. Measured: 63 spans, 0 orphans:
+
+```
+POST /order
+  OrderPlaceCommandHandler.execute
+    OrderRepository.create
+    publish order.events → process order.events
+    start orderPlaceWorkflow
+      StartWorkflow:orderPlaceWorkflow → RunWorkflow:orderPlaceWorkflow
+        StartActivity:reserveStock → RunActivity:reserveStock
+        StartActivity:chargeCustomer → RunActivity:chargeCustomer
+          publish account.commands → account.customer.charge process
+        StartActivity:releaseStock → RunActivity:releaseStock
+        StartActivity:markFailed → RunActivity:markFailed
+          publish order.events → process order.events
+```
+
+- **The outbox stores the context.** Every outbox row has a `traceparent` column filled in the same transaction from the active span. The relay runs later and outside the request, so the row is the only place the context can come from.
+- **The relay publishes as a child of the stored context.** `MessagePublisherService.publish` opens a `PRODUCER` span `publish <topic>` and puts its `traceparent` into the CloudEvent `traceparent` extension and the Kafka header.
+- **The consumer continues the trace, and only a first delivery does.** `KafkaEventSubscriber.process` opens a `CONSUMER` span `process <topic>`: a child of the producer on a normal delivery, a new trace with a span link on a redelivery. A message retried an hour later then does not stretch the request's trace to an hour. The consumer's log lines carry the request's `trace_id`.
+- **Temporal uses `@temporalio/interceptors-opentelemetry-v2`** (`OpenTelemetryPlugin`, one instance in `TemporalClientService.plugins` for the client and the worker). The client interceptor puts `traceparent` into the workflow headers. Workflow spans are created inside the sandbox with deterministic ids and leave it through a sink. That sink is called only on the first run, not on replay, so a replay does not duplicate spans. The plugin targets OpenTelemetry SDK 2.x and we run 3.x. The span shape it emits (`parentSpanContext`, `instrumentationScope`) is the same, so one exporter takes both. Its nested 2.x packages are pinned in `overrides` (2.12.0). `src/generic/telemetry/span-export.ts` hands sandbox spans to the processor `telemetry.ts` exports with; in tests, where the SDK never starts, it drops them. The plugin's client interceptor takes its tracer once, in the plugin constructor, so the global tracer provider must be registered first. `telemetry.ts` runs through `--import` before Nest builds `TemporalClientService`; a plugin built earlier would silently lose the `StartWorkflow` span. `test/e2e/order-place-tracing.e2e-spec.ts` runs the saga on a worker without a workflow cache, so every task replays the history, and checks that every workflow span is exported once and that a full replay exports none.
+- **`correlationid` is not a second trace id.** The flow is correlated by `traceparent`, the entity by `subject`. `correlationid` is set only on an RPC reply: the id of the request it answers, which is also the AMQP `correlationId` the RPC client matches replies by.
 
 ### Metrics (RED)
 
@@ -647,7 +719,7 @@ Addresses are settings and only the password is a secret, the same split as `DBH
 | Errors — share of 5xx | which share of each route's answers is a server error | `sum by (route) (rate(http_requests_total{status=~"5.."}[1m])) / sum by (route) (rate(http_requests_total[1m]))` |
 | Duration — p95 | how long do 95 % of each route's requests take | `histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket[1m])))` |
 
-The dashboard is `observability/grafana/dashboards/red.json`, provisioned with both datasources (`observability/grafana/provisioning/`). `[1m]`, not `[5m]`, for a one-minute demo. `rate` needs two scrapes that differ: 40 requests inside one 5 s scrape interval showed Rate `0` and Errors `NaN`; the same load spread over 30 s showed Rate 1.09 req/s, Errors 0.25 (15 of 60, exactly the injected share) and p95 24 ms.
+The dashboard is `observability/grafana/dashboards/red.json`, provisioned with both datasources (`observability/grafana/provisioning/`). `[1m]`, not `[5m]`, so a change shows within a minute. `rate` needs two scrapes that differ: 40 requests inside one 5 s scrape interval showed Rate `0` and Errors `NaN`; the same load spread over 30 s showed Rate 1.09 req/s, Errors 0.25 (15 of 60, exactly the injected share) and p95 24 ms.
 
 **Buckets:** `0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.5, 1, 2.5, 5, 10, 30` s. Measured `POST /order` on this machine:
 
@@ -657,31 +729,96 @@ The dashboard is `observability/grafana/dashboards/red.json`, provisioned with b
 | 200, 16 concurrent | 71.8 ms | 86.8 ms | 154.0 ms | 163.7 ms |
 | 200, 32 concurrent | 177.2 ms | 227.0 ms | 247.7 ms | 248.1 ms |
 
-The default buckets put everything above 100 ms into one bucket (`0.1–0.25`) and left six empty above it, so p95 under load was only known to ±75 ms. The new ones are dense where the traffic is (5–300 ms) and keep 0.5–30 s for degradation: the order transaction retries up to 10 times, so seconds are real when Postgres locks. The top finite bucket, 30 s, is above any plausible worst case, so `histogram_quantile` does not flatten at the edge exactly when things are bad; nothing caps a request (no request timeout, no `statement_timeout`), so a request beyond 30 s would land in `+Inf`, which `above-top-bucket` counts.
+The default buckets put everything above 100 ms into one bucket (`0.1–0.25`) and left six empty above it, so p95 under load was only known to ±75 ms. The new ones are dense where the traffic is (5–300 ms) and keep 0.5–30 s for degradation: the order transaction retries up to 10 times, so seconds are real when Postgres locks. The top finite bucket, 30 s, is above any plausible worst case, so `histogram_quantile` does not flatten at the edge exactly when things are bad; nothing caps a request (no request timeout, no `statement_timeout`), so a request beyond 30 s would land in `+Inf`, visible as `_count − _bucket{le="30"}`.
 
-### Demos
+**Stand footprint:** `npm run obs:up` waits 28 s; Grafana 306 MiB, Prometheus 44 MiB, Tempo 22 MiB, about 372 MiB beside the kind node (910 MiB) on a 31 GiB machine. Tempo's image is distroless (no shell, no `wget`), so it has no healthcheck; it answers `/ready` about 16 s after start, so a client reading traces right after `up` has to poll.
 
-Each builds the app, starts it on a free API port with `/metrics` on `METRICS_PORT` and `DEMO_FAULTS=1`, prints `key=number`, checks its claim and exits with `1` when it is broken (`demo/`, `TODO(hw-29)`). Three runs in a row printed the same numbers:
+**Not observed:** `/healthz`, `/readyz` and `/metrics` get no span, no request log line and no RED sample (`src/generic/telemetry/util/is-unobserved-path.util.ts`, one list for the three). In the cluster the kubelet's probes alone gave about 0.6 req/s per pod with no client, all of it fast answers that pulled p95 down.
 
-| `npm run demo:logs` | `npm run demo:metrics` | `npm run demo:trace` |
+### In the cluster
+
+The backends stay in compose with the other dependencies; each kind node runs an agent that ships to them.
+
+```
+pod ──OTLP──▶ otel-collector (same node) ──otlp_http──▶ tempo:4318
+pod ◀─scrape─ otel-collector (same node) ──remote write─▶ prometheus:9090/api/v1/write
+pod ──stdout──▶ /var/log/pods on the node ◀─filelog─ otel-collector (same node) ──otlp_http──▶ loki:3100/otlp
+```
+
+- **Collector:** `otel/opentelemetry-collector-contrib:0.164.0`, pinned by digest, as a DaemonSet (`infra/otel-collector.ts`), one per node, in its own namespace `observability` (see *Pod Security* below). Its `Role` to watch pods stays in `marketplace`, bound to the collector's ServiceAccount from `observability`. The Service `otel-collector` has `internalTrafficPolicy: Local`: pods send to `http://otel-collector.observability:4318` (`OTEL_EXPORTER_OTLP_ENDPOINT`, stack key `otlpEndpoint`) and kube-proxy keeps the traffic on their own node. Component names are the 0.164 ones (`otlp_http`, `prometheus_remote_write`); the older `otlphttp` / `prometheusremotewrite` no longer exist, and `docker run … validate` catches it.
+- **Which pod:** the Downward API puts `POD_NAME`, `POD_NAMESPACE` and `NODE_NAME` into the pod's env, and `OTEL_RESOURCE_ATTRIBUTES=k8s.pod.name=$(POD_NAME),…` turns them into resource attributes. Kubernetes expands `$(VAR)` only for variables declared earlier in the list, so these come first. `src/generic/telemetry/span-export.ts` builds the one resource (`defaultResource()` + env, process and host detectors + `service.name`) that both `NodeSDK` and the Temporal plugin use, so saga spans carry the pod too.
+- **Metrics:** the collector scrapes pods through `kubernetes_sd`, kept by the `prometheus.io/scrape: 'true'` annotation and the container port named `metrics`, and labels them `pod`, `namespace`, `node`. The selector `spec.nodeName=${env:NODE_NAME}` makes each collector scrape only its own node: without it N collectors would scrape every pod N times and `sum(rate(...))` would show N times the traffic. It reads pods through a namespaced `Role` (`get`, `list`, `watch` on `pods`), not a `ClusterRole`. Prometheus runs with `--web.enable-remote-write-receiver`; the series keep their names (`http_requests_total`, `http_request_duration_seconds_*`), so the RED dashboard works unchanged.
+- **Network:** `cluster:up` connects the kind node to `marketplace-observability_default`, as it does with the dependencies' network, so pods resolve `tempo` and `prometheus`. Without the stand running it warns and goes on; spans and samples are then dropped.
+- **Logs:** the container runtime writes each pod's stdout and stderr to `/var/log/pods/<namespace>_<pod>_<uid>/<container>/<n>.log`, and the collector's `filelog` receiver reads them from a read-only `hostPath`. It takes only `marketplace-api-*/api`, so each collector reads its own node's pods, as with metrics. The operators:
+  1. `container` parses the CRI line (`time stream flag body`), joins split lines and takes `k8s.pod.name`, `k8s.namespace.name` and `k8s.container.name` from the path.
+  2. A body starting with `{` is parsed as pino JSON. Plain text, such as a `DeprecationWarning` on stderr, stays a string.
+  3. `trace_id` becomes the record's `TraceId`.
+  4. The pino level (10–60) becomes the OTel severity, with `overwrite_text` giving `INFO`.
+  5. `time` becomes the record's time, so it is the event's time and not the time the line was written.
+  6. `msg` becomes the body, and `hostname`, `pid`, `logtag` and the file path are dropped.
+
+  The records go to Loki's native OTLP endpoint (stack key `logsEndpoint`). Loki makes the resource attributes with few values into index labels (`service_name`, `k8s_pod_name`, `k8s_namespace_name`, `k8s_container_name`). `trace_id` and the pino fields (`layer`, `req_path`, `res_statusCode`, …) become structured metadata. You can filter on them (`{service_name="marketplace-api"} | trace_id = "…"`), and they add no stream: a label per trace id would create a stream per request.
+- **Reading root's files without root:** `/var/log/pods` is `0750 root:root` and the files `0640 root:root`, so the group `root` can read them. The collector runs as user `10001` with `runAsGroup: 0`, all capabilities dropped and no privilege escalation.
+- **Read positions:** the `file_storage` extension keeps each file's offset and fingerprint in `/var/lib/otelcol/file_storage`, a `hostPath` on the node, so they survive a replaced collector pod, not only a restarted container (an `emptyDir` goes with the pod). With them `start_at: beginning` is safe: only a file with no position, such as a new pod's, is read from the start. An init container gives the directory to `10001:0` with only `CAP_CHOWN`. A `chmod` after the `chown` failed with `Operation not permitted`, because root may change the mode of a file it doesn't own only with `CAP_FOWNER`, so the init container only runs `chown`, which can safely run again.
+- **Grafana:** the Loki datasource turns `trace_id` into a link to Tempo (a derived field matching that metadata), and the Tempo datasource opens a span's logs in Loki (`tracesToLogsV2`, filtered by trace id, ±5 min). Grafana reads provisioning only at start, so after changing a datasource it needs `docker restart marketplace-observability-grafana-1`; `obs:up` recreates only the services whose own definition changed.
+
+Measured in kind with two pods:
+- 30 requests each to `/.well-known/jwks.json` and to an unknown product split 17 + 13 and 14 + 16 between the pods, and Prometheus got the same counts per pod.
+- Tempo finds the trace by `{ resource.k8s.pod.name =~ "marketplace-api-.*" }`, and `kubectl logs` of that pod has the line with the same `trace_id`.
+- A `POST /order` gave one trace of 65 spans, 0 orphans and 0 spans without a pod. The request ran on one pod, the outbox relay and the saga on the other, and the final event was published from the first again.
+- That kind of trace's `trace_id` finds 7 log lines in Loki, from both pods. After `kubectl delete pod`, `kubectl logs` answers `NotFound` and Loki still returns the deleted pod's 6 lines.
+- 10 requests before a collector restart and 10 during it gave exactly 10 + 10 lines in Loki: no line read twice, no line lost while the collector was down.
+
+## Security boundaries
+
+Only the API is public. Everything else is reachable from this machine or from inside the cluster, and the observability backends are closed even there except for the paths that feed them.
+
+| Zone | What | Reachable from |
 |---|---|---|
-| `non-json-lines=0` | `sent-ok=40` | `response-status=500` |
-| `request-lines=6` | `sent-fail=15` | `spans=16` |
-| `layers=3` | `counter-delta=55` | `orphan-spans=0` |
-| `distinct-trace-ids=1` | `errors-delta=15` | `controller-span=1` |
-| `trace-id-matches-header=1` | `top-bucket-le=30` | `trace-matches-header=1` |
-| `burst=8` | `above-top-bucket=0` | `log-lines=4` |
-| `burst-trace-ids=8` | `distinct-ids=100` | `trace-matches-log=1` |
-| `burst-uneven=0` | `series-before=7` | `span-status-error=1` |
-| `secret-req-logged=1` | `series-after=7` | |
-| `secret-in-logs=0` | | |
+| Public | API over HTTPS through Envoy Gateway, `https://localhost:30080` (a cloud load balancer in front of it in production) | clients; TLS, JWT, rate limits |
+| Host only | every published compose port: Postgres through `db-bouncer` 5500, RabbitMQ 5672/15672, Kafka 9092, Kafka UI 8090, Temporal 7233/8233, Redis 6380/6381, MinIO 9010/9011, edge 8088, Infisical 4010, Grafana 22900, Prometheus 22901, Tempo 22904/22918, Loki 22905 | `127.0.0.1` |
+| Docker networks | the same services by name (`kafka:29092`, `tempo:4318`, …) | other containers and the kind node, which is attached to both networks |
+| Cluster | pods in `marketplace`, under the NetworkPolicies below | each other, only as the policies allow |
 
-- **`demo:logs`** sends one order, eight concurrent orders with their own `traceparent`, a request with `Authorization: Bearer <marker>` and a login with a marker password, then reads the app's stdout: every line parses, the order's lines span 3 layers with one `trace_id` equal to the header's, the eight groups have equal size, the secret requests are logged and no marker is.
-- **`demo:metrics`** counts from two scrapes of `/metrics` around 55 orders (15 with `x-demo-fail: 1`), takes `_count − _bucket{le="30"}` for `/order`, and counts the counter's series around 100 `GET /order/<random id>` after one warm-up request.
-- **`demo:trace`** sends one failing order and polls Tempo for its trace (until the span count is stable, 30 s timeout, since spans leave in batches). It finds the request's log lines by its `Idempotency-Key`, not by `trace_id`, so `trace-matches-log` compares two independent paths (ALS → log, span → Tempo).
-- With `OTEL_SDK_DISABLED=true` `demo:logs` and `demo:trace` fail with exit 1 and name the broken keys.
+- **Bound to `127.0.0.1`.** Every `ports:` entry in `docker-compose.yml`, `docker-compose.tls.yml` and `observability/docker-compose.yml` names the address: a bare `5500:5432` publishes on `0.0.0.0`, every interface, so any device on the same Wi-Fi reached Temporal, Kafka, Loki and Prometheus, which have no authentication. A host firewall would not have helped: Docker writes its own iptables rules ahead of `ufw`. Checked from the machine's LAN address: Temporal UI, Kafka, Loki, Prometheus, PgBouncer and Infisical are `closed`, and the same ports are open on `127.0.0.1`. The kind node and the collector use the docker networks, not the published ports, so nothing in the cluster changed.
+- **Grafana has no anonymous access** and no sign-up (`GF_AUTH_ANONYMOUS_ENABLED: "false"`, `GF_USERS_ALLOW_SIGN_UP: "false"`). Logs and traces carry user ids, request paths and the system's shape. Without a login the API answers `401` and a dashboard redirects to the login page. The admin password is `GRAFANA_ADMIN_PASSWORD` in the vault.
+- **Prometheus has no lifecycle API.** Without `--web.enable-lifecycle`, `POST /-/quit` and `POST /-/reload` answer `403`. `127.0.0.1` keeps the network out, but not a process on this machine or a web page that posts to `localhost`; a reload is `docker restart marketplace-observability-prometheus-1`.
+- **Security headers** come from Nest 12's own `app.useSecurityHeaders()` in `main.ts`, not the `helmet` package. Its defaults match helmet 8, and it checks the options once, at startup: an unknown option, a helmet name such as `hsts`, or a CSP value that smuggles in its own `;` is a `SecurityHeadersConfigurationError` instead of a silently weaker policy. It refuses to run after `init()`, because in Express a middleware added then lands behind the routes: a hook added in `onModuleInit` left `x-content-type-options` off every matched route.
+  - The options are in `src/generic/http/constant/security-headers.constant.ts`, and `test/generic/http/security-headers.spec.ts` checks them with the same call.
+  - For a JSON API: `Content-Security-Policy: default-src 'none';frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-origin`, and no `X-Powered-By`.
+  - `Strict-Transport-Security` is off in the app, because the gateway ends TLS and sets it.
+  - Through the gateway, a `200` and a `404` both carry the headers, and HSTS appears once.
+- **Pod Security Admission.** `marketplace` is labelled `restricted` (enforce, warn and audit). The API refuses a pod that runs as root, can escalate privileges, keeps capabilities, has no seccomp profile or mounts `hostPath`. A `--privileged` pod and a pod with no security context are both `Forbidden: violates PodSecurity "restricted:latest"`. The API pods and the migration Job already met the level. A server-side dry run (`kubectl label --dry-run=server … enforce=restricted`) listed the collector as the only violator: it needs `hostPath` for the pod logs and its read positions, and an init container with `CAP_CHOWN`. So the node agent lives in `observability`, labelled `privileged`, and the application namespace stays strict, which is the usual split. `envoy-gateway-system` and `cert-manager` enforce `restricted` too. Helm creates those namespaces, so `NamespacePatch` adds only the labels. Their running pods passed a dry run, but the Helm hooks run only on install or upgrade: Envoy Gateway's `certgen` Job is `pre-install`/`pre-upgrade`, cert-manager's `startupapicheck` is `post-install`. So the check went in three steps:
+  1. The namespaces first got only `warn` and `audit`.
+  2. The hook manifests were taken from the release Secrets (`sh.helm.release.v1.*`) and created with `--dry-run=server`: no warning. As a control, a Job with no security context gets `would violate PodSecurity "restricted:latest"` in the same namespaces.
+  3. `enforce` went on. The hooks' pod templates, created as pods, are admitted. A `--privileged` pod is `Forbidden`.
 
-**Stand footprint:** `npm run obs:up` waits 28 s; Grafana 306 MiB, Prometheus 44 MiB, Tempo 22 MiB, about 372 MiB beside the kind node (910 MiB) on a 31 GiB machine. Tempo's image is distroless (no shell, no `wget`), so it has no healthcheck; it answers `/ready` about 16 s after start, which `demo:trace` covers by polling.
+  `enforce` checks pods. `warn` and `audit` also check the pod templates of Jobs and Deployments, which is what lets a dry run find a hook before it runs.
+- **Moving a node agent.** Pulumi creates a replacement before it deletes the original. The new collector could not open the read positions' file, a bbolt database with an exclusive lock, while the old one still held it (`filelog: storage client: timeout`), and Pulumi would only delete the old one once the new one was ready. Deleting the old DaemonSet by hand broke the loop. The DaemonSet now has `deleteBeforeReplace`: when it has to be replaced, the old one goes first, at the cost of a few seconds without a collector on the node. The read positions make those seconds lossless.
+- **NetworkPolicies** (`infra/network-policies.ts`). kind's kindnet enforces them: a deny-all policy cut a test pod's traffic, and removing it restored the traffic. Policies only add permissions, and a pod no policy selects is fully open, so the first one denies everything:
+  1. `default-deny` — every pod in `marketplace` and in `observability`, ingress and egress.
+  2. `allow-dns` — every pod in both namespaces to kube-dns on 53/udp and 53/tcp.
+  3. `marketplace-api` — in: port 3000 only from the Envoy proxy pods, 9464 only from the collector. Out: the dependencies' network on their ports, the collector on 4318, and the internet on 443 only (Google OIDC), private ranges excluded.
+  4. `envoy-proxy` (in `envoy-gateway-system`) — in: 10443, the TLS listener behind the NodePort, and 19003 for readiness. Out: the API pods on 3000, the controller's xDS ports 18000–18002, DNS.
+  5. `marketplace-api-migrate` — the migration Job to Postgres and Infisical only.
+  6. `otel-collector` (in `observability`) — in: 4318 only from the API pods, 4317 only from Envoy, plus the health port. Out: the stand (Tempo, Loki, Prometheus), the API pods' 9464, and the Kubernetes API for `kubernetes_sd`.
+
+  The docker subnets and the API server's address differ per machine, so `scripts/infra.sh` reads them with `docker inspect` (`DEPENDENCIES_CIDR`, `OBSERVABILITY_CIDR`, `API_SERVER_CIDR`, overridable). Without them the program stops instead of creating policies with empty ranges. Measured after restarting the pods, so no connection opened before the policies survived in conntrack:
+  - An order went through the whole saga: Temporal, the RabbitMQ RPC, Kafka.
+  - From an API pod, the following opened: `db-bouncer:5432`, the collector, `accounts.google.com:443`.
+  - From an API pod, the following were blocked: Loki, `example.com:80` and the Kubernetes API.
+  - A pod with open egress reached the API's 3000 but not its 9464 or the collector's 4318.
+  - A pod no policy allows reached nothing.
+
+**In production:**
+- The dependencies sit in private subnets with no public address, and security groups admit only the API's nodes. A password is the second line of defence, the network is the first.
+- Grafana is behind SSO or a VPN, and the backends accept writes only from the collector, with authentication.
+- Egress to the internet is narrowed to host names with FQDN policies (Cilium, Calico). A plain NetworkPolicy matches IP ranges only, so here it is "any public address on 443".
+
+**Still open:**
+- **The API run on the host** (`npm run start:dev`) listens on `0.0.0.0` for 3000 and 9464 (`app.listen(PORT)`, the metrics server). Prometheus in a container reaches 9464 through `host.docker.internal`, so binding it to `127.0.0.1` would need the docker bridge address instead.
+- **The edge shim** listens on `0.0.0.0:8787`, so the bridge network can reach it (see "CDN: chosen form and the AWS variant").
+- **Unauthenticated writes.** Prometheus remote write, Loki and Tempo accept writes without authentication from anything on this machine or the docker networks. Basic auth or mTLS between them and the collector would close that.
 
 ## Secrets
 
@@ -709,50 +846,6 @@ Integration and e2e tests start their containers once per run (Postgres, RabbitM
 
 `test:all` runs the suites side by side because integration and e2e start their own containers. Inside a suite the files run in `TEST_WORKERS` workers (default `4`; `TEST_WORKERS=1` runs them one by one on a machine with little memory). Every e2e file boots the whole app, and every test wipes the database and Redis, so workers can't share infrastructure: the global setup starts one container set per worker in parallel (e2e: Postgres, RabbitMQ, Kafka, Temporal, MinIO, two Redis; integration: Postgres and two Redis) and each worker connects to its own set by `VITEST_POOL_ID`. Four e2e sets take about 4 GB of memory.
 
-## Grading
-
-<!-- TODO(hw-29): remove after homework -->
-
-Tools: Docker with compose v2, Node 24, `openssl`. Ports `22900`, `22901`, `22904`, `22918` (the stand), `33310`, `5672`, `9092`, `7233`, `6380`, `6381`, `9010` (the dependencies) and `9464` (the app's metrics, scraped by Prometheus from the host) must be free. The grader has no vault, hence `SKIP_VAULT=1`: the wrapper then runs the command as is, and the values are the dev ones from `secrets/*.example`. Run everything from the repository root, in one shell; the exports come before `docker compose` because compose reads `DBUSER` and `GRAFANA_ADMIN_PASSWORD` from them.
-
-```bash
-cp .env.example .env
-for f in db_password rabbitmq_password redis_password minio_root_password storage_secret_key; do cp secrets/$f.txt.example secrets/$f.txt; done
-
-export SKIP_VAULT=1
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:22918
-export PROMETHEUS_URL=http://127.0.0.1:22901
-export TRACE_API_URL=http://127.0.0.1:22904
-export GRAFANA_ADMIN_PASSWORD=grader-grafana
-export DBHOST=127.0.0.1 DBPORT=33310 DBUSER=root DBPASSWORD=changeme DBNAME=api
-export RABBITMQ_HOST=127.0.0.1 RABBITMQ_PORT=5672 RABBITMQ_USER=root RABBITMQ_PASSWORD=changeme
-export KAFKA_BROKERS=127.0.0.1:9092 TEMPORAL_ADDRESS=127.0.0.1:7233
-export REDIS_CACHE_HOST=127.0.0.1 REDIS_CACHE_PORT=6380 REDIS_QUEUE_HOST=127.0.0.1 REDIS_QUEUE_PORT=6381 REDIS_PASSWORD=changeme
-export JWT_PRIVATE_KEY="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
-export JWT_PUBLIC_KEY="$(printf '%s' "$JWT_PRIVATE_KEY" | openssl pkey -pubout)"
-export REFRESH_TOKEN_PEPPER=grader-pepper
-export GOOGLE_CLIENT_ID=grader-unused GOOGLE_CLIENT_SECRET=grader-unused
-export STORAGE_ENDPOINT=http://127.0.0.1:9010 STORAGE_ACCESS_KEY=media-app STORAGE_SECRET_KEY=changeme-media
-
-docker compose up -d --wait db db-bouncer rabbitmq kafka temporal redis-cache redis-queue minio minio-init
-docker compose -f observability/docker-compose.yml up -d --wait
-
-npm ci
-npm run build
-npm run migrate
-npm run seed
-
-npm run demo:logs
-npm run demo:metrics
-npm run demo:trace
-
-docker compose -f observability/docker-compose.yml down
-```
-
-- Grafana: `http://127.0.0.1:22900`, folder *Marketplace*, dashboard *Marketplace API — RED*; anonymous users see it read-only, `admin` / `$GRAFANA_ADMIN_PASSWORD` logs in. Prometheus: `http://127.0.0.1:22901/targets` shows `marketplace-api` `up` while a demo runs: the demo's app takes a free API port but serves `/metrics` on `METRICS_PORT` (`9464`), the port Prometheus scrapes, so the dashboard shows the demo's traffic. Nothing else may hold `9464` while a demo runs.
-- Each demo builds and starts its own app with `DEMO_FAULTS=1`, so nothing else has to run. `demo:trace` waits up to 30 s for Tempo, which is ready about 16 s after `up`.
-- `npm run seed` gives `POST /order` an offer: the demos order the seeded offer with the most stock.
-
 ## Configuration
 
 Validated at startup with zod (`src/generic/environment/environment.schema.ts`); `npm run check:env` fails if `.env.example` drifts from the schema.
@@ -761,6 +854,7 @@ Validated at startup with zod (`src/generic/environment/environment.schema.ts`);
 |---|---|---|---|
 | `PORT` | no | `3000` | HTTP port |
 | `METRICS_PORT` | no | `9464` | internal port that serves `/metrics` (see *Observability*) |
+| `TRUST_PROXY_HOPS` | no | `0` | reverse proxies in front of the app whose `X-Forwarded-For` entry is trusted: `0` on the host, `1` behind the gateway (see *Entry: gateway and TLS*) |
 | `DBHOST` | yes | — | Postgres (pgbouncer) host |
 | `DBPORT` | no | `3000` | Postgres (pgbouncer) port |
 | `DBNAME` | yes | — | Postgres database |

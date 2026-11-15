@@ -1,6 +1,7 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { MetricsService } from './metrics.service.js';
+import { isUnobservedPath } from '../telemetry/util/is-unobserved-path.util.js';
 
 @Injectable()
 export class MetricsMiddleware implements NestMiddleware {
@@ -10,6 +11,10 @@ export class MetricsMiddleware implements NestMiddleware {
   constructor(private readonly metrics: MetricsService) {}
 
   use(request: Request, response: Response, next: NextFunction): void {
+    if (isUnobservedPath(request.originalUrl)) {
+      return next();
+    }
+
     const startedAt = process.hrtime.bigint();
 
     response.once('finish', () => {

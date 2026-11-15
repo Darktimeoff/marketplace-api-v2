@@ -23,6 +23,7 @@ describe('RabbitMqRpcService', () => {
       routingKey: 'account.customer.charge',
       timeout: 5000,
       expiration: 5000,
+      correlationId: chargeId,
       payload: {
         specversion: '1.0',
         id: chargeId,
@@ -31,7 +32,6 @@ describe('RabbitMqRpcService', () => {
         time: expect.any(String),
         datacontenttype: 'application/json',
         subject: chargeId,
-        correlationid: chargeId,
         data: { chargeId, customerPublicId: '9c82efe4-36c4-4767-b525-42e95cdbc5a3', amount: '160.00' },
       },
     });

@@ -33,9 +33,9 @@
     "seed": "bash scripts/with-secrets.sh dev node dist/seed.js",
     "edge": "bash scripts/with-secrets.sh dev node dist/edge.js",
     "image:build": "DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile --secret id=npm_token,src=.npm_token -t marketplace-api:hw28 .",
-    "scan": "SCAN_MAX=${SCAN_MAX:-2} bash scripts/scan.sh",
+    "scan": "SCAN_MAX=${SCAN_MAX:-0} bash scripts/scan.sh",
     "cluster:up": "bash scripts/cluster-up.sh",
-    "cluster:down": "kind delete cluster --name ${KIND_CLUSTER:-marketplace}",
+    "cluster:down": "KUBECONFIG=${KUBECONFIG:-$HOME/.kube/kind-marketplace} kind delete cluster --name ${KIND_CLUSTER:-marketplace}",
     "preview": "bash scripts/with-secrets.sh dev bash scripts/infra.sh preview",
     "up": "bash scripts/with-secrets.sh dev bash scripts/infra.sh up",
     "destroy": "bash scripts/with-secrets.sh dev bash scripts/infra.sh destroy",
@@ -43,10 +43,7 @@
     "trust:up": "bash scripts/with-secrets.sh dev bash scripts/vault-trust.sh up",
     "trust:destroy": "bash scripts/with-secrets.sh dev bash scripts/vault-trust.sh destroy",
     "obs:up": "bash scripts/with-secrets.sh dev docker compose -f observability/docker-compose.yml up -d --wait",
-    "obs:down": "bash scripts/with-secrets.sh dev docker compose -f observability/docker-compose.yml down",
-    "demo:logs": "bash scripts/with-secrets.sh dev node demo/logs.mjs",
-    "demo:metrics": "bash scripts/with-secrets.sh dev node demo/metrics.mjs",
-    "demo:trace": "bash scripts/with-secrets.sh dev node demo/trace.mjs"
+    "obs:down": "bash scripts/with-secrets.sh dev docker compose -f observability/docker-compose.yml down"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "~3.1152.0",
@@ -78,10 +75,12 @@
     "@opentelemetry/instrumentation-ioredis": "0.72.0",
     "@opentelemetry/instrumentation-nestjs-core": "0.71.0",
     "@opentelemetry/instrumentation-pg": "0.77.0",
+    "@opentelemetry/resources": "3.0.0",
     "@opentelemetry/sdk-node": "0.300.0",
     "@rnw-community/log-decorator": "3.0.5",
     "@temporalio/activity": "~1.25.0",
     "@temporalio/client": "~1.25.0",
+    "@temporalio/interceptors-opentelemetry-v2": "~1.25.0",
     "@temporalio/worker": "~1.25.0",
     "@temporalio/workflow": "~1.25.0",
     "argon2": "^0.45.1",
@@ -104,7 +103,7 @@
     "sharp": "^0.35.5",
     "thumbhash": "^0.1.1",
     "typeorm": "^1.1.1",
-    "zod": "^4.5.2"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
@@ -112,6 +111,7 @@
     "@nestjs/schematics": "^12.0.0",
     "@nestjs/testing": "^12.2.0",
     "@opentelemetry/context-async-hooks": "3.0.0",
+    "@opentelemetry/core": "3.0.0",
     "@opentelemetry/sdk-trace": "3.0.0",
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.16.1",
@@ -136,6 +136,15 @@
     "node": ">=24"
   },
   "overrides": {
-    "multer": "2.5.0"
+    "multer": "2.5.0",
+    "@temporalio/interceptors-opentelemetry-v2": {
+      "@opentelemetry/core": "2.12.0",
+      "@opentelemetry/resources": "2.12.0",
+      "@opentelemetry/sdk-trace-base": "2.12.0",
+      "@opentelemetry/sdk-trace": "2.12.0"
+    },
+    "@infisical/sdk": {
+      "zod": "4.6.7"
+    }
   }
 }

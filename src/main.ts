@@ -3,6 +3,7 @@ import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module.js';
 import { EnvironmentService } from './generic/environment/environment.module.js';
 import { missingEnvironmentSecrets } from './generic/secret-manager/missing-environment-secrets.js';
+import { SECURITY_HEADERS } from './generic/http/constant/security-headers.constant.js';
 
 async function bootstrap() {
   const missing = missingEnvironmentSecrets(process.env);
@@ -15,6 +16,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
   app.useLogger(app.get(Logger));
+  app.useSecurityHeaders(SECURITY_HEADERS);
 
   app.enableShutdownHooks([], { useProcessExit: true })
 

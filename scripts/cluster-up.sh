@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLUSTER="${KIND_CLUSTER:-marketplace}"
 IMAGE="${IMAGE:-marketplace-api:hw28}"
 NODE="$CLUSTER-control-plane"
+export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/kind-marketplace}"
 
 source "$ROOT/scripts/lib/image.sh"
 
@@ -26,6 +27,16 @@ if [ "$(docker inspect -f "{{index .NetworkSettings.Networks \"$COMPOSE_NETWORK\
   docker network connect "$COMPOSE_NETWORK" "$NODE"
 fi
 echo "node $NODE is on $COMPOSE_NETWORK"
+
+OBSERVABILITY_NETWORK="${OBSERVABILITY_NETWORK:-marketplace-observability_default}"
+if docker network inspect "$OBSERVABILITY_NETWORK" >/dev/null 2>&1; then
+  if [ "$(docker inspect -f "{{index .NetworkSettings.Networks \"$OBSERVABILITY_NETWORK\"}}" "$NODE")" = "<nil>" ]; then
+    docker network connect "$OBSERVABILITY_NETWORK" "$NODE"
+  fi
+  echo "node $NODE is on $OBSERVABILITY_NETWORK"
+else
+  echo "network $OBSERVABILITY_NETWORK not found: the collector has nowhere to send until npm run obs:up" >&2
+fi
 
 REF="$(image_ref "$IMAGE")"
 docker tag "$IMAGE" "$REF"

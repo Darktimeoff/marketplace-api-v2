@@ -21,7 +21,9 @@ const dependencyPorts = [
   5672, // rabbitmq
   5671, // rabbitmq with TLS
   29092, // kafka, internal listener
+  29093, // kafka, TLS listener for pods
   7233, // temporal
+  7234, // temporal behind the TLS proxy
   6379, // redis-cache, redis-queue
   9000, // minio
   8080, // infisical-backend

@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import * as pulumi from '@pulumi/pulumi';
 import * as k8s from '@pulumi/kubernetes';
 import { VAULT_SECRET_NAMES, missingPodVaultVariables, missingVaultVariables, pickVaultSecrets } from './vault.ts';
@@ -54,6 +56,21 @@ const tracesEndpoint = config.get('tracesEndpoint') ?? 'http://tempo:4318';
 const remoteWriteEndpoint = config.get('remoteWriteEndpoint') ?? 'http://prometheus:9090/api/v1/write';
 const logsEndpoint = config.get('logsEndpoint') ?? 'http://loki:3100/otlp';
 const caDir = config.get('caDir') ?? '../secrets/tls';
+const clusterTlsMode = process.env.CLUSTER_TLS_MODE?.trim() || 'disable';
+
+if (clusterTlsMode !== 'disable' && clusterTlsMode !== 'verify-full') {
+  throw new pulumi.RunError(`CLUSTER_TLS_MODE must be disable or verify-full, got ${clusterTlsMode}`);
+}
+
+const dependenciesTls = clusterTlsMode === 'verify-full';
+const caFile = resolve(caDir, 'ca.crt');
+
+if (!existsSync(caFile)) {
+  throw new pulumi.RunError(`Local CA not found in ${caDir}: run bash scripts/bootstrap-tls.sh`);
+}
+
+const dependenciesCa = readFileSync(caFile, 'utf8');
+const caMountPath = '/etc/marketplace-ca';
 const tlsSecretName = 'marketplace-tls';
 const networkCidrs = { dependenciesCidr: process.env.DEPENDENCIES_CIDR?.trim(), observabilityCidr: process.env.OBSERVABILITY_CIDR?.trim(), apiServerCidr: process.env.API_SERVER_CIDR?.trim() };
 const missingCidrs = Object.entries(networkCidrs).filter(([, value]) => !value).map(([key]) => key);
@@ -82,13 +99,15 @@ const settings: Record<string, string> = {
   DBPORT: '5432',
   DBNAME: 'api',
   RABBITMQ_HOST: 'rabbitmq',
-  RABBITMQ_PORT: '5672',
-  KAFKA_BROKERS: 'kafka:29092',
+  RABBITMQ_PORT: dependenciesTls ? '5671' : '5672',
+  KAFKA_BROKERS: dependenciesTls ? 'kafka:29093' : 'kafka:29092',
   REDIS_CACHE_HOST: 'redis-cache',
   REDIS_CACHE_PORT: '6379',
   REDIS_QUEUE_HOST: 'redis-queue',
   REDIS_QUEUE_PORT: '6379',
-  TEMPORAL_ADDRESS: 'temporal:7233',
+  TEMPORAL_ADDRESS: dependenciesTls ? 'temporal-tls:7234' : 'temporal:7233',
+  TLS_MODE: clusterTlsMode,
+  ...(dependenciesTls ? { TLS_CA_PATH: `${caMountPath}/ca.crt` } : {}),
   TEMPORAL_NAMESPACE: 'default',
   STORAGE_ENDPOINT: 'http://minio:9000',
   STORAGE_REGION: 'us-east-1',
@@ -221,13 +240,21 @@ const podEnv = [
     : []),
 ];
 
+const caConfigMap = new k8s.core.v1.ConfigMap(
+  'dependencies-ca',
+  { metadata: { name: 'dependencies-ca', namespace: namespace.metadata.name }, data: { 'ca.crt': dependenciesCa } },
+  { provider },
+);
+
 const podVolumeMounts = [
   { name: 'tmp', mountPath: '/tmp' },
+  { name: 'dependencies-ca', mountPath: caMountPath, readOnly: true },
   ...(podReadsVault ? [{ name: 'infisical-token', mountPath: tokenDir, readOnly: true }] : []),
 ];
 
 const podVolumes = [
   { name: 'tmp', emptyDir: { sizeLimit: '512Mi' } },
+  { name: 'dependencies-ca', configMap: { name: caConfigMap.metadata.name } },
   ...(podReadsVault
     ? [
         {
@@ -297,6 +324,7 @@ const deployment = new k8s.apps.v1.Deployment(
           annotations: {
             'prometheus.io/scrape': 'true',
             'prometheus.io/port': String(metricsPort),
+            'marketplace/ca-checksum': createHash('sha256').update(dependenciesCa).digest('hex'),
             ...(secret ? { 'marketplace/secrets-checksum': secretsChecksum } : {}),
           },
         },

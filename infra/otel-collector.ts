@@ -6,18 +6,50 @@ const labels = { app: name };
 const image = 'otel/opentelemetry-collector-contrib:0.164.0@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b';
 const otlpPort = 4318;
 const healthPort = 13133;
+const podLogsPath = '/var/log/pods';
+const checkpointsPath = '/var/lib/otelcol/file_storage';
+const chownImage = 'busybox:1.37.0@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec';
+const collectorUser = 10001;
+const pinoSeverity = { trace: '10', debug: '20', info: '30', warn: '40', error: '50', fatal: '60' };
 
 export interface OtelCollectorArgsInterface {
   namespace: pulumi.Input<string>;
   tracesEndpoint: string;
   remoteWriteEndpoint: string;
+  logsEndpoint: string;
 }
 
 function collectorConfig(namespace: string, args: OtelCollectorArgsInterface): string {
   return JSON.stringify({
-    extensions: { health_check: { endpoint: `0.0.0.0:${healthPort}` } },
+    extensions: {
+      health_check: { endpoint: `0.0.0.0:${healthPort}` },
+      file_storage: { directory: checkpointsPath, compaction: { on_start: true, directory: checkpointsPath } },
+    },
     receivers: {
       otlp: { protocols: { http: { endpoint: `0.0.0.0:${otlpPort}` } } },
+      filelog: {
+        include: [`${podLogsPath}/${namespace}_marketplace-api-*/api/*.log`],
+        start_at: 'beginning',
+        storage: 'file_storage',
+        include_file_path: true,
+        operators: [
+          { type: 'container', id: 'cri' },
+          { type: 'add', field: 'resource["service.name"]', value: 'marketplace-api' },
+          { type: 'json_parser', if: 'body matches "^\\\\{"', parse_from: 'body', parse_to: 'attributes' },
+          { type: 'trace_parser', if: 'attributes.trace_id != nil', trace_id: { parse_from: 'attributes.trace_id' } },
+          { type: 'severity_parser', if: 'attributes.level != nil', parse_from: 'attributes.level', mapping: pinoSeverity, overwrite_text: true },
+          { type: 'time_parser', if: 'attributes.time != nil', parse_from: 'attributes.time', layout_type: 'epoch', layout: 'ms' },
+          { type: 'move', if: 'attributes.msg != nil', from: 'attributes.msg', to: 'body' },
+          { type: 'remove', if: 'attributes.trace_id != nil', field: 'attributes.trace_id' },
+          { type: 'remove', if: 'attributes.level != nil', field: 'attributes.level' },
+          { type: 'remove', if: 'attributes.time != nil', field: 'attributes.time' },
+          { type: 'remove', if: 'attributes.hostname != nil', field: 'attributes.hostname' },
+          { type: 'remove', if: 'attributes.pid != nil', field: 'attributes.pid' },
+          { type: 'remove', field: 'attributes.logtag' },
+          { type: 'remove', field: 'attributes["log.file.name"]' },
+          { type: 'remove', field: 'attributes["log.file.path"]' },
+        ],
+      },
       prometheus: {
         config: {
           scrape_configs: [
@@ -44,13 +76,15 @@ function collectorConfig(namespace: string, args: OtelCollectorArgsInterface): s
       batch: {},
     },
     exporters: {
-      otlp_http: { endpoint: args.tracesEndpoint, tls: { insecure: true } },
+      'otlp_http/tempo': { endpoint: args.tracesEndpoint, tls: { insecure: true } },
+      'otlp_http/loki': { endpoint: args.logsEndpoint, tls: { insecure: true } },
       prometheus_remote_write: { endpoint: args.remoteWriteEndpoint, tls: { insecure: true } },
     },
     service: {
-      extensions: ['health_check'],
+      extensions: ['health_check', 'file_storage'],
       pipelines: {
-        traces: { receivers: ['otlp'], processors: ['memory_limiter', 'batch'], exporters: ['otlp_http'] },
+        traces: { receivers: ['otlp'], processors: ['memory_limiter', 'batch'], exporters: ['otlp_http/tempo'] },
+        logs: { receivers: ['filelog'], processors: ['memory_limiter', 'batch'], exporters: ['otlp_http/loki'] },
         metrics: { receivers: ['prometheus'], processors: ['memory_limiter', 'batch'], exporters: ['prometheus_remote_write'] },
       },
     },
@@ -98,7 +132,21 @@ export function otelCollector(args: OtelCollectorArgsInterface, opts: pulumi.Cus
           metadata: { labels },
           spec: {
             serviceAccountName: serviceAccount.metadata.name,
-            securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: { type: 'RuntimeDefault' } },
+            securityContext: { seccompProfile: { type: 'RuntimeDefault' } },
+            initContainers: [
+              {
+                name: 'own-checkpoints',
+                image: chownImage,
+                command: ['chown', `${collectorUser}:0`, checkpointsPath],
+                securityContext: {
+                  runAsUser: 0,
+                  allowPrivilegeEscalation: false,
+                  readOnlyRootFilesystem: true,
+                  capabilities: { drop: ['ALL'], add: ['CHOWN'] },
+                },
+                volumeMounts: [{ name: 'checkpoints', mountPath: checkpointsPath }],
+              },
+            ],
             containers: [
               {
                 name: 'collector',
@@ -112,11 +160,26 @@ export function otelCollector(args: OtelCollectorArgsInterface, opts: pulumi.Cus
                 resources: { requests: { cpu: '50m', memory: '128Mi' }, limits: { memory: '256Mi' } },
                 readinessProbe: { httpGet: { path: '/', port: 'health' }, periodSeconds: 5 },
                 livenessProbe: { httpGet: { path: '/', port: 'health' }, periodSeconds: 10 },
-                securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
-                volumeMounts: [{ name: 'config', mountPath: '/conf', readOnly: true }],
+                securityContext: {
+                  runAsNonRoot: true,
+                  runAsUser: collectorUser,
+                  runAsGroup: 0,
+                  allowPrivilegeEscalation: false,
+                  readOnlyRootFilesystem: true,
+                  capabilities: { drop: ['ALL'] },
+                },
+                volumeMounts: [
+                  { name: 'config', mountPath: '/conf', readOnly: true },
+                  { name: 'pod-logs', mountPath: podLogsPath, readOnly: true },
+                  { name: 'checkpoints', mountPath: checkpointsPath },
+                ],
               },
             ],
-            volumes: [{ name: 'config', configMap: { name: config.metadata.name } }],
+            volumes: [
+              { name: 'config', configMap: { name: config.metadata.name } },
+              { name: 'pod-logs', hostPath: { path: podLogsPath, type: 'Directory' } },
+              { name: 'checkpoints', hostPath: { path: checkpointsPath, type: 'DirectoryOrCreate' } },
+            ],
           },
         },
       },

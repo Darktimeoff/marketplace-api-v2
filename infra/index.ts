@@ -48,6 +48,7 @@ const nodePort = config.getNumber('nodePort') ?? 30080;
 const otlpEndpoint = config.get('otlpEndpoint') ?? 'http://otel-collector:4318';
 const tracesEndpoint = config.get('tracesEndpoint') ?? 'http://tempo:4318';
 const remoteWriteEndpoint = config.get('remoteWriteEndpoint') ?? 'http://prometheus:9090/api/v1/write';
+const logsEndpoint = config.get('logsEndpoint') ?? 'http://loki:3100/otlp';
 
 if (terminationGraceSeconds * 1000 <= drainMs) {
   throw new pulumi.RunError(`terminationGraceSeconds (${terminationGraceSeconds}) must be longer than drainMs (${drainMs} ms)`);
@@ -122,7 +123,7 @@ const namespace = new k8s.core.v1.Namespace(
   { provider },
 );
 
-otelCollector({ namespace: namespace.metadata.name, tracesEndpoint, remoteWriteEndpoint }, { provider });
+otelCollector({ namespace: namespace.metadata.name, tracesEndpoint, remoteWriteEndpoint, logsEndpoint }, { provider });
 
 const secret = podReadsVault
   ? undefined

@@ -685,6 +685,29 @@ The default buckets put everything above 100 ms into one bucket (`0.1–0.25`) a
 
 **Stand footprint:** `npm run obs:up` waits 28 s; Grafana 306 MiB, Prometheus 44 MiB, Tempo 22 MiB, about 372 MiB beside the kind node (910 MiB) on a 31 GiB machine. Tempo's image is distroless (no shell, no `wget`), so it has no healthcheck; it answers `/ready` about 16 s after start, so a client reading traces right after `up` has to poll.
 
+**Not observed:** `/healthz`, `/readyz` and `/metrics` get no span, no request log line and no RED sample (`src/generic/telemetry/util/is-unobserved-path.util.ts`, one list for the three). In the cluster the kubelet's probes alone gave about 0.6 req/s per pod with no client, all of it fast answers that pulled p95 down.
+
+### In the cluster
+
+The backends stay in compose with the other dependencies; each kind node runs an agent that ships to them.
+
+```
+pod ──OTLP──▶ otel-collector (same node) ──otlp_http──▶ tempo:4318
+pod ◀─scrape─ otel-collector (same node) ──remote write─▶ prometheus:9090/api/v1/write
+pod ──stdout──▶ kubelet ──▶ kubectl logs
+```
+
+- **Collector:** `otel/opentelemetry-collector-contrib:0.164.0`, pinned by digest, as a DaemonSet (`infra/otel-collector.ts`), one per node. The Service `otel-collector` has `internalTrafficPolicy: Local`: pods send to `http://otel-collector:4318` (`OTEL_EXPORTER_OTLP_ENDPOINT`, stack key `otlpEndpoint`) and kube-proxy keeps the traffic on their own node. Component names are the 0.164 ones (`otlp_http`, `prometheus_remote_write`); the older `otlphttp` / `prometheusremotewrite` no longer exist, and `docker run … validate` catches it.
+- **Which pod:** the Downward API puts `POD_NAME`, `POD_NAMESPACE` and `NODE_NAME` into the pod's env, and `OTEL_RESOURCE_ATTRIBUTES=k8s.pod.name=$(POD_NAME),…` turns them into resource attributes. Kubernetes expands `$(VAR)` only for variables declared earlier in the list, so these come first. `src/generic/telemetry/span-export.ts` builds the one resource (`defaultResource()` + env, process and host detectors + `service.name`) that both `NodeSDK` and the Temporal plugin use, so saga spans carry the pod too.
+- **Metrics:** the collector scrapes pods through `kubernetes_sd`, kept by the `prometheus.io/scrape: 'true'` annotation and the container port named `metrics`, and labels them `pod`, `namespace`, `node`. The selector `spec.nodeName=${env:NODE_NAME}` makes each collector scrape only its own node: without it N collectors would scrape every pod N times and `sum(rate(...))` would show N times the traffic. It reads pods through a namespaced `Role` (`get`, `list`, `watch` on `pods`), not a `ClusterRole`. Prometheus runs with `--web.enable-remote-write-receiver`; the series keep their names (`http_requests_total`, `http_request_duration_seconds_*`), so the RED dashboard works unchanged.
+- **Network:** `cluster:up` connects the kind node to `marketplace-observability_default`, as it does with the dependencies' network, so pods resolve `tempo` and `prometheus`. Without the stand running it warns and goes on; spans and samples are then dropped.
+- **Logs:** pino JSON on stdout, read with `kubectl logs`. There is no log shipper, so a deleted pod's logs are gone; a collector `filelog` receiver to Loki would be the next step.
+
+Measured in kind with two pods:
+- 30 requests each to `/.well-known/jwks.json` and to an unknown product split 17 + 13 and 14 + 16 between the pods, and Prometheus got the same counts per pod.
+- Tempo finds the trace by `{ resource.k8s.pod.name =~ "marketplace-api-.*" }`, and `kubectl logs` of that pod has the line with the same `trace_id`.
+- A `POST /order` gave one trace of 65 spans, 0 orphans and 0 spans without a pod. The request ran on one pod, the outbox relay and the saga on the other, and the final event was published from the first again.
+
 ## Secrets
 
 Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_PASSWORD`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` (see `SecretsInterface`). Like Postgres, a Redis instance is a setting for where it runs (`REDIS_CACHE_HOST`/`REDIS_CACHE_PORT`, `REDIS_QUEUE_HOST`/`REDIS_QUEUE_PORT`) and a secret for who may use it (`REDIS_PASSWORD`, one for both instances): the host differs between the host machine (`localhost:6380`) and a pod (`redis-cache:6379`), the password doesn't, so a pod reading the vault itself gets a value that works there. `npm run bootstrap:secrets` writes `REDIS_PASSWORD` to `secrets/redis_password.txt` for compose, so it lives in one place. Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.

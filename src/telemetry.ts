@@ -10,17 +10,17 @@ import { AmqplibInstrumentation } from '@opentelemetry/instrumentation-amqplib';
 import { NestInstrumentation } from '@opentelemetry/instrumentation-nestjs-core';
 import { BatchSpanProcessor, NoopSpanProcessor } from '@opentelemetry/sdk-trace';
 import { exportSpansWith, serviceName } from './generic/telemetry/span-export.js';
+import { isUnobservedPath } from './generic/telemetry/util/is-unobserved-path.util.js';
 
 register('@opentelemetry/instrumentation/hook.mjs', import.meta.url);
 
 process.env.OTEL_METRICS_EXPORTER ??= 'none';
 process.env.OTEL_LOGS_EXPORTER ??= 'none';
 
-const untracedPaths = ['/healthz', '/readyz', '/metrics'];
 const nestVersions = ['>=4.0.0 <13'];
 
 function isUntraced(request: IncomingMessage): boolean {
-  return untracedPaths.includes((request.url ?? '').split('?')[0]);
+  return isUnobservedPath(request.url);
 }
 
 class Nest12Instrumentation extends NestInstrumentation {

@@ -4,7 +4,7 @@ import * as k8s from '@pulumi/kubernetes';
 import { VAULT_SECRET_NAMES, missingPodVaultVariables, missingVaultVariables, pickVaultSecrets } from './vault.ts';
 import { otelCollector } from './otel-collector.ts';
 import { networkPolicies } from './network-policies.ts';
-import { envoyGateway } from './gateway.ts';
+import { apiGateway, envoyGateway } from './gateway.ts';
 import { tls } from './tls.ts';
 
 const podReadsVault = process.env.SKIP_VAULT !== '1';
@@ -135,7 +135,7 @@ const namespace = new k8s.core.v1.Namespace(
 );
 
 otelCollector({ namespace: namespace.metadata.name, tracesEndpoint, remoteWriteEndpoint, logsEndpoint }, { provider });
-envoyGateway({ provider });
+const gatewayController = envoyGateway({ provider });
 tls({ caDir, namespace: namespace.metadata.name, secretName: tlsSecretName, dnsNames: ['marketplace.localhost', 'localhost'] }, { provider });
 networkPolicies({ namespace: namespace.metadata.name, ...(networkCidrs as Record<keyof typeof networkCidrs, string>) }, { provider });
 
@@ -328,13 +328,15 @@ const service = new k8s.core.v1.Service(
   {
     metadata: { name, namespace: namespace.metadata.name, labels },
     spec: {
-      type: 'NodePort',
+      type: 'ClusterIP',
       selector: labels,
-      ports: [{ name: 'http', port: 80, targetPort: 'http', nodePort }],
+      ports: [{ name: 'http', port: 80, targetPort: 'http' }],
     },
   },
   { provider },
 );
+
+apiGateway({ namespace: namespace.metadata.name, name, nodePort, tlsSecretName, service }, gatewayController, { provider });
 
 new k8s.policy.v1.PodDisruptionBudget(
   name,
@@ -368,5 +370,5 @@ new k8s.autoscaling.v2.HorizontalPodAutoscaler(
 );
 
 export const migrateJobName = migrateJob.metadata.name;
-export const url = pulumi.interpolate`http://localhost:${service.spec.ports[0].nodePort}`;
+export const url = `https://marketplace.localhost:${nodePort}`;
 export const deployedRev = rev;

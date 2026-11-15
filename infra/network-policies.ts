@@ -6,6 +6,15 @@ type PortType = k8s.types.input.networking.v1.NetworkPolicyPort;
 
 const privateRanges = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
 const apiServerServiceCidr = '10.96.0.1/32';
+const gatewayNamespace = 'envoy-gateway-system';
+const gatewayProxy: PeerType = {
+  namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': gatewayNamespace } },
+  podSelector: { matchLabels: { 'app.kubernetes.io/component': 'proxy' } },
+};
+const gatewayController: PeerType = {
+  namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': gatewayNamespace } },
+  podSelector: { matchLabels: { 'app.kubernetes.io/name': 'gateway-helm' } },
+};
 
 const dependencyPorts = [
   5432, // db-bouncer
@@ -65,13 +74,37 @@ export function networkPolicies(args: NetworkPoliciesArgsInterface, opts: pulumi
   policy('marketplace-api', {
     podSelector: { matchLabels: { app: 'marketplace-api' } },
     policyTypes: ['Ingress', 'Egress'],
-    ingress: [{ ports: tcp('http') }, { from: [pods('otel-collector')], ports: tcp('metrics') }],
+    ingress: [{ from: [gatewayProxy], ports: tcp('http') }, { from: [pods('otel-collector')], ports: tcp('metrics') }],
     egress: [
       { to: [cidr(args.dependenciesCidr)], ports: tcp(...dependencyPorts) },
       { to: [pods('otel-collector')], ports: tcp(4318) },
       { to: [cidr('0.0.0.0/0', privateRanges)], ports: tcp(443) },
     ],
   });
+
+  new k8s.networking.v1.NetworkPolicy(
+    'envoy-proxy',
+    {
+      metadata: { name: 'envoy-proxy', namespace: gatewayNamespace },
+      spec: {
+        podSelector: { matchLabels: { 'app.kubernetes.io/component': 'proxy' } },
+        policyTypes: ['Ingress', 'Egress'],
+        ingress: [{ ports: tcp(10443, 19003) }],
+        egress: [
+          { to: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': args.namespace } }, podSelector: { matchLabels: { app: 'marketplace-api' } } }], ports: tcp(3000) },
+          { to: [gatewayController], ports: tcp(18000, 18001, 18002) },
+          {
+            to: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'kube-system' } }, podSelector: { matchLabels: { 'k8s-app': 'kube-dns' } } }],
+            ports: [
+              { protocol: 'UDP', port: 53 },
+              { protocol: 'TCP', port: 53 },
+            ],
+          },
+        ],
+      },
+    },
+    opts,
+  );
 
   policy('marketplace-api-migrate', {
     podSelector: { matchLabels: { app: 'marketplace-api-migrate' } },

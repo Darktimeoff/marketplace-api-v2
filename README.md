@@ -694,19 +694,32 @@ The backends stay in compose with the other dependencies; each kind node runs an
 ```
 pod ──OTLP──▶ otel-collector (same node) ──otlp_http──▶ tempo:4318
 pod ◀─scrape─ otel-collector (same node) ──remote write─▶ prometheus:9090/api/v1/write
-pod ──stdout──▶ kubelet ──▶ kubectl logs
+pod ──stdout──▶ /var/log/pods on the node ◀─filelog─ otel-collector (same node) ──otlp_http──▶ loki:3100/otlp
 ```
 
 - **Collector:** `otel/opentelemetry-collector-contrib:0.164.0`, pinned by digest, as a DaemonSet (`infra/otel-collector.ts`), one per node. The Service `otel-collector` has `internalTrafficPolicy: Local`: pods send to `http://otel-collector:4318` (`OTEL_EXPORTER_OTLP_ENDPOINT`, stack key `otlpEndpoint`) and kube-proxy keeps the traffic on their own node. Component names are the 0.164 ones (`otlp_http`, `prometheus_remote_write`); the older `otlphttp` / `prometheusremotewrite` no longer exist, and `docker run … validate` catches it.
 - **Which pod:** the Downward API puts `POD_NAME`, `POD_NAMESPACE` and `NODE_NAME` into the pod's env, and `OTEL_RESOURCE_ATTRIBUTES=k8s.pod.name=$(POD_NAME),…` turns them into resource attributes. Kubernetes expands `$(VAR)` only for variables declared earlier in the list, so these come first. `src/generic/telemetry/span-export.ts` builds the one resource (`defaultResource()` + env, process and host detectors + `service.name`) that both `NodeSDK` and the Temporal plugin use, so saga spans carry the pod too.
 - **Metrics:** the collector scrapes pods through `kubernetes_sd`, kept by the `prometheus.io/scrape: 'true'` annotation and the container port named `metrics`, and labels them `pod`, `namespace`, `node`. The selector `spec.nodeName=${env:NODE_NAME}` makes each collector scrape only its own node: without it N collectors would scrape every pod N times and `sum(rate(...))` would show N times the traffic. It reads pods through a namespaced `Role` (`get`, `list`, `watch` on `pods`), not a `ClusterRole`. Prometheus runs with `--web.enable-remote-write-receiver`; the series keep their names (`http_requests_total`, `http_request_duration_seconds_*`), so the RED dashboard works unchanged.
 - **Network:** `cluster:up` connects the kind node to `marketplace-observability_default`, as it does with the dependencies' network, so pods resolve `tempo` and `prometheus`. Without the stand running it warns and goes on; spans and samples are then dropped.
-- **Logs:** pino JSON on stdout, read with `kubectl logs`. There is no log shipper, so a deleted pod's logs are gone; a collector `filelog` receiver to Loki would be the next step.
+- **Logs:** the container runtime writes each pod's stdout and stderr to `/var/log/pods/<namespace>_<pod>_<uid>/<container>/<n>.log`, and the collector's `filelog` receiver reads them from a read-only `hostPath`. It takes only `marketplace-api-*/api`, so each collector reads its own node's pods, as with metrics. The operators:
+  1. `container` parses the CRI line (`time stream flag body`), joins split lines and takes `k8s.pod.name`, `k8s.namespace.name` and `k8s.container.name` from the path.
+  2. A body starting with `{` is parsed as pino JSON. Plain text, such as a `DeprecationWarning` on stderr, stays a string.
+  3. `trace_id` becomes the record's `TraceId`.
+  4. The pino level (10–60) becomes the OTel severity, with `overwrite_text` giving `INFO`.
+  5. `time` becomes the record's time, so it is the event's time and not the time the line was written.
+  6. `msg` becomes the body, and `hostname`, `pid`, `logtag` and the file path are dropped.
+
+  The records go to Loki's native OTLP endpoint (stack key `logsEndpoint`). Loki makes the resource attributes with few values into index labels (`service_name`, `k8s_pod_name`, `k8s_namespace_name`, `k8s_container_name`). `trace_id` and the pino fields (`layer`, `req_path`, `res_statusCode`, …) become structured metadata. You can filter on them (`{service_name="marketplace-api"} | trace_id = "…"`), and they add no stream: a label per trace id would create a stream per request.
+- **Reading root's files without root:** `/var/log/pods` is `0750 root:root` and the files `0640 root:root`, so the group `root` can read them. The collector runs as user `10001` with `runAsGroup: 0`, all capabilities dropped and no privilege escalation.
+- **Read positions:** the `file_storage` extension keeps each file's offset and fingerprint in `/var/lib/otelcol/file_storage`, a `hostPath` on the node, so they survive a replaced collector pod, not only a restarted container (an `emptyDir` goes with the pod). With them `start_at: beginning` is safe: only a file with no position, such as a new pod's, is read from the start. An init container gives the directory to `10001:0` with only `CAP_CHOWN`. A `chmod` after the `chown` failed with `Operation not permitted`, because root may change the mode of a file it doesn't own only with `CAP_FOWNER`, so the init container only runs `chown`, which can safely run again.
+- **Grafana:** the Loki datasource turns `trace_id` into a link to Tempo (a derived field matching that metadata), and the Tempo datasource opens a span's logs in Loki (`tracesToLogsV2`, filtered by trace id, ±5 min). Grafana reads provisioning only at start, so after changing a datasource it needs `docker restart marketplace-observability-grafana-1`; `obs:up` recreates only the services whose own definition changed.
 
 Measured in kind with two pods:
 - 30 requests each to `/.well-known/jwks.json` and to an unknown product split 17 + 13 and 14 + 16 between the pods, and Prometheus got the same counts per pod.
 - Tempo finds the trace by `{ resource.k8s.pod.name =~ "marketplace-api-.*" }`, and `kubectl logs` of that pod has the line with the same `trace_id`.
 - A `POST /order` gave one trace of 65 spans, 0 orphans and 0 spans without a pod. The request ran on one pod, the outbox relay and the saga on the other, and the final event was published from the first again.
+- That kind of trace's `trace_id` finds 7 log lines in Loki, from both pods. After `kubectl delete pod`, `kubectl logs` answers `NotFound` and Loki still returns the deleted pod's 6 lines.
+- 10 requests before a collector restart and 10 during it gave exactly 10 + 10 lines in Loki: no line read twice, no line lost while the collector was down.
 
 ## Secrets
 

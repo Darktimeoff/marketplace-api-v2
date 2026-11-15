@@ -34,92 +34,76 @@ const backendPorts = [
 
 export interface NetworkPoliciesArgsInterface {
   namespace: pulumi.Input<string>;
+  observabilityNamespace: pulumi.Input<string>;
   dependenciesCidr: string;
   observabilityCidr: string;
   apiServerCidr: string;
 }
 
+type PolicySpecType = k8s.types.input.networking.v1.NetworkPolicySpec;
+
+const dnsEgress = {
+  to: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'kube-system' } }, podSelector: { matchLabels: { 'k8s-app': 'kube-dns' } } }],
+  ports: [
+    { protocol: 'UDP', port: 53 },
+    { protocol: 'TCP', port: 53 },
+  ],
+};
+
 function tcp(...ports: (number | string)[]): PortType[] {
   return ports.map(port => ({ protocol: 'TCP', port }));
-}
-
-function pods(app: string): PeerType {
-  return { podSelector: { matchLabels: { app } } };
 }
 
 function cidr(block: string, except?: string[]): PeerType {
   return { ipBlock: { cidr: block, ...(except ? { except } : {}) } };
 }
 
+function podsIn(namespace: pulumi.Input<string>, app: string): PeerType {
+  return { namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': namespace } }, podSelector: { matchLabels: { app } } };
+}
+
 export function networkPolicies(args: NetworkPoliciesArgsInterface, opts: pulumi.CustomResourceOptions): void {
-  const policy = (name: string, spec: k8s.types.input.networking.v1.NetworkPolicySpec): k8s.networking.v1.NetworkPolicy =>
-    new k8s.networking.v1.NetworkPolicy(name, { metadata: { name, namespace: args.namespace }, spec }, opts);
+  const policy = (resourceName: string, namespace: pulumi.Input<string>, name: string, spec: PolicySpecType): k8s.networking.v1.NetworkPolicy =>
+    new k8s.networking.v1.NetworkPolicy(resourceName, { metadata: { name, namespace }, spec }, opts);
+  const api = podsIn(args.namespace, 'marketplace-api');
+  const collector = podsIn(args.observabilityNamespace, 'otel-collector');
 
-  policy('default-deny', { podSelector: {}, policyTypes: ['Ingress', 'Egress'] });
+  for (const [prefix, namespace] of [['', args.namespace], ['observability-', args.observabilityNamespace]] as const) {
+    policy(`${prefix}default-deny`, namespace, 'default-deny', { podSelector: {}, policyTypes: ['Ingress', 'Egress'] });
+    policy(`${prefix}allow-dns`, namespace, 'allow-dns', { podSelector: {}, policyTypes: ['Egress'], egress: [dnsEgress] });
+  }
 
-  policy('allow-dns', {
-    podSelector: {},
-    policyTypes: ['Egress'],
-    egress: [
-      {
-        to: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'kube-system' } }, podSelector: { matchLabels: { 'k8s-app': 'kube-dns' } } }],
-        ports: [
-          { protocol: 'UDP', port: 53 },
-          { protocol: 'TCP', port: 53 },
-        ],
-      },
-    ],
-  });
-
-  policy('marketplace-api', {
+  policy('marketplace-api', args.namespace, 'marketplace-api', {
     podSelector: { matchLabels: { app: 'marketplace-api' } },
     policyTypes: ['Ingress', 'Egress'],
-    ingress: [{ from: [gatewayProxy], ports: tcp('http') }, { from: [pods('otel-collector')], ports: tcp('metrics') }],
+    ingress: [{ from: [gatewayProxy], ports: tcp('http') }, { from: [collector], ports: tcp('metrics') }],
     egress: [
       { to: [cidr(args.dependenciesCidr)], ports: tcp(...dependencyPorts) },
-      { to: [pods('otel-collector')], ports: tcp(4318) },
+      { to: [collector], ports: tcp(4318) },
       { to: [cidr('0.0.0.0/0', privateRanges)], ports: tcp(443) },
     ],
   });
 
-  new k8s.networking.v1.NetworkPolicy(
-    'envoy-proxy',
-    {
-      metadata: { name: 'envoy-proxy', namespace: gatewayNamespace },
-      spec: {
-        podSelector: { matchLabels: { 'app.kubernetes.io/component': 'proxy' } },
-        policyTypes: ['Ingress', 'Egress'],
-        ingress: [{ ports: tcp(10443, 19003) }],
-        egress: [
-          { to: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': args.namespace } }, podSelector: { matchLabels: { app: 'marketplace-api' } } }], ports: tcp(3000) },
-          { to: [gatewayController], ports: tcp(18000, 18001, 18002) },
-          { to: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': args.namespace } }, podSelector: { matchLabels: { app: 'otel-collector' } } }], ports: tcp(4317) },
-          {
-            to: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'kube-system' } }, podSelector: { matchLabels: { 'k8s-app': 'kube-dns' } } }],
-            ports: [
-              { protocol: 'UDP', port: 53 },
-              { protocol: 'TCP', port: 53 },
-            ],
-          },
-        ],
-      },
-    },
-    opts,
-  );
-
-  policy('marketplace-api-migrate', {
+  policy('marketplace-api-migrate', args.namespace, 'marketplace-api-migrate', {
     podSelector: { matchLabels: { app: 'marketplace-api-migrate' } },
     policyTypes: ['Ingress', 'Egress'],
     egress: [{ to: [cidr(args.dependenciesCidr)], ports: tcp(5432, 8080) }],
   });
 
-  policy('otel-collector', {
+  policy('envoy-proxy', gatewayNamespace, 'envoy-proxy', {
+    podSelector: { matchLabels: { 'app.kubernetes.io/component': 'proxy' } },
+    policyTypes: ['Ingress', 'Egress'],
+    ingress: [{ ports: tcp(10443, 19003) }],
+    egress: [{ to: [api], ports: tcp(3000) }, { to: [gatewayController], ports: tcp(18000, 18001, 18002) }, { to: [collector], ports: tcp(4317) }, dnsEgress],
+  });
+
+  policy('otel-collector', args.observabilityNamespace, 'otel-collector', {
     podSelector: { matchLabels: { app: 'otel-collector' } },
     policyTypes: ['Ingress', 'Egress'],
-    ingress: [{ from: [pods('marketplace-api')], ports: tcp('otlp-http') }, { from: [gatewayProxy], ports: tcp('otlp-grpc') }, { ports: tcp('health') }],
+    ingress: [{ from: [api], ports: tcp('otlp-http') }, { from: [gatewayProxy], ports: tcp('otlp-grpc') }, { ports: tcp('health') }],
     egress: [
       { to: [cidr(args.observabilityCidr)], ports: tcp(...backendPorts) },
-      { to: [pods('marketplace-api')], ports: tcp(9464) },
+      { to: [api], ports: tcp(9464) },
       { to: [cidr(args.apiServerCidr), cidr(apiServerServiceCidr)], ports: tcp(6443, 443) },
     ],
   });

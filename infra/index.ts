@@ -48,7 +48,8 @@ const terminationGraceSeconds = config.getNumber('terminationGraceSeconds') ?? M
 const minReplicas = config.getNumber('minReplicas') ?? 2;
 const maxReplicas = config.getNumber('maxReplicas') ?? 4;
 const nodePort = config.getNumber('nodePort') ?? 30080;
-const otlpEndpoint = config.get('otlpEndpoint') ?? 'http://otel-collector:4318';
+const observabilityNamespaceName = config.get('observabilityNamespace') ?? 'observability';
+const otlpEndpoint = config.get('otlpEndpoint') ?? `http://otel-collector.${observabilityNamespaceName}:4318`;
 const tracesEndpoint = config.get('tracesEndpoint') ?? 'http://tempo:4318';
 const remoteWriteEndpoint = config.get('remoteWriteEndpoint') ?? 'http://prometheus:9090/api/v1/write';
 const logsEndpoint = config.get('logsEndpoint') ?? 'http://loki:3100/otlp';
@@ -129,16 +130,30 @@ const secretsChecksum = createHash('sha256')
 
 const provider = new k8s.Provider('kind', { context: kubeContext });
 
+function podSecurity(level: 'restricted' | 'baseline' | 'privileged'): Record<string, string> {
+  return {
+    'pod-security.kubernetes.io/enforce': level,
+    'pod-security.kubernetes.io/warn': level,
+    'pod-security.kubernetes.io/audit': level,
+  };
+}
+
 const namespace = new k8s.core.v1.Namespace(
   namespaceName,
-  { metadata: { name: namespaceName } },
+  { metadata: { name: namespaceName, labels: podSecurity('restricted') } },
   { provider },
 );
 
-otelCollector({ namespace: namespace.metadata.name, tracesEndpoint, remoteWriteEndpoint, logsEndpoint }, { provider });
+const observabilityNamespace = new k8s.core.v1.Namespace(
+  observabilityNamespaceName,
+  { metadata: { name: observabilityNamespaceName, labels: podSecurity('privileged') } },
+  { provider },
+);
+
+otelCollector({ namespace: observabilityNamespace.metadata.name, appNamespace: namespace.metadata.name, tracesEndpoint, remoteWriteEndpoint, logsEndpoint }, { provider });
 const gatewayController = envoyGateway({ provider });
 tls({ caDir, namespace: namespace.metadata.name, secretName: tlsSecretName, dnsNames: ['marketplace.localhost', 'localhost'] }, { provider });
-networkPolicies({ namespace: namespace.metadata.name, ...(networkCidrs as Record<keyof typeof networkCidrs, string>) }, { provider });
+networkPolicies({ namespace: namespace.metadata.name, observabilityNamespace: observabilityNamespace.metadata.name, ...(networkCidrs as Record<keyof typeof networkCidrs, string>) }, { provider });
 
 const secret = podReadsVault
   ? undefined
@@ -337,7 +352,7 @@ const service = new k8s.core.v1.Service(
   { provider },
 );
 
-apiGateway({ namespace: namespace.metadata.name, name, nodePort, tlsSecretName, service }, gatewayController, { provider });
+apiGateway({ namespace: namespace.metadata.name, collectorNamespace: observabilityNamespace.metadata.name, name, nodePort, tlsSecretName, service }, gatewayController, { provider });
 
 new k8s.policy.v1.PodDisruptionBudget(
   name,

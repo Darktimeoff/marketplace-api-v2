@@ -26,6 +26,7 @@ const accessLogFields = {
 
 export interface GatewayArgsInterface {
   namespace: pulumi.Input<string>;
+  collectorNamespace: pulumi.Input<string>;
   name: string;
   nodePort: number;
   tlsSecretName: string;
@@ -56,7 +57,7 @@ export function apiGateway(args: GatewayArgsInterface, controller: k8s.helm.v3.R
       apiVersion: 'gateway.envoyproxy.io/v1alpha1',
       kind: 'Backend',
       metadata: { name: collectorService, namespace: args.namespace },
-      spec: { endpoints: [{ fqdn: { hostname: pulumi.interpolate`${collectorService}.${args.namespace}.svc.cluster.local`, port: collectorGrpcPort } }] },
+      spec: { endpoints: [{ fqdn: { hostname: pulumi.interpolate`${collectorService}.${args.collectorNamespace}.svc.cluster.local`, port: collectorGrpcPort } }] },
     },
     { ...opts, dependsOn: [controller] },
   );

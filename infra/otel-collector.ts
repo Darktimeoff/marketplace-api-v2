@@ -15,12 +15,13 @@ const pinoSeverity = { trace: '10', debug: '20', info: '30', warn: '40', error: 
 
 export interface OtelCollectorArgsInterface {
   namespace: pulumi.Input<string>;
+  appNamespace: pulumi.Input<string>;
   tracesEndpoint: string;
   remoteWriteEndpoint: string;
   logsEndpoint: string;
 }
 
-function collectorConfig(namespace: string, args: OtelCollectorArgsInterface): string {
+function collectorConfig(appNamespace: string, args: OtelCollectorArgsInterface): string {
   return JSON.stringify({
     extensions: {
       health_check: { endpoint: `0.0.0.0:${healthPort}` },
@@ -29,7 +30,7 @@ function collectorConfig(namespace: string, args: OtelCollectorArgsInterface): s
     receivers: {
       otlp: { protocols: { http: { endpoint: `0.0.0.0:${otlpPort}` }, grpc: { endpoint: `0.0.0.0:${otlpGrpcPort}` } } },
       filelog: {
-        include: [`${podLogsPath}/${namespace}_marketplace-api-*/api/*.log`],
+        include: [`${podLogsPath}/${appNamespace}_marketplace-api-*/api/*.log`],
         start_at: 'beginning',
         storage: 'file_storage',
         include_file_path: true,
@@ -58,7 +59,7 @@ function collectorConfig(namespace: string, args: OtelCollectorArgsInterface): s
               job_name: 'marketplace-api',
               scrape_interval: '5s',
               kubernetes_sd_configs: [
-                { role: 'pod', namespaces: { names: [namespace] }, selectors: [{ role: 'pod', field: 'spec.nodeName=${env:NODE_NAME}' }] },
+                { role: 'pod', namespaces: { names: [appNamespace] }, selectors: [{ role: 'pod', field: 'spec.nodeName=${env:NODE_NAME}' }] },
               ],
               relabel_configs: [
                 { source_labels: ['__meta_kubernetes_pod_annotation_prometheus_io_scrape'], action: 'keep', regex: 'true' },
@@ -114,7 +115,7 @@ export function otelCollector(args: OtelCollectorArgsInterface, opts: pulumi.Cus
   const role = new k8s.rbac.v1.Role(
     name,
     {
-      metadata: { name, namespace: args.namespace },
+      metadata: { name, namespace: args.appNamespace },
       rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list', 'watch'] }],
     },
     opts,
@@ -123,7 +124,7 @@ export function otelCollector(args: OtelCollectorArgsInterface, opts: pulumi.Cus
   new k8s.rbac.v1.RoleBinding(
     name,
     {
-      metadata: { name, namespace: args.namespace },
+      metadata: { name, namespace: args.appNamespace },
       roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: role.metadata.name },
       subjects: [{ kind: 'ServiceAccount', name: serviceAccount.metadata.name, namespace: args.namespace }],
     },
@@ -134,7 +135,7 @@ export function otelCollector(args: OtelCollectorArgsInterface, opts: pulumi.Cus
     name,
     {
       metadata: { name, namespace: args.namespace },
-      data: { 'config.json': pulumi.output(args.namespace).apply(namespace => collectorConfig(namespace, args)) },
+      data: { 'config.json': pulumi.output(args.appNamespace).apply(appNamespace => collectorConfig(appNamespace, args)) },
     },
     opts,
   );
@@ -202,7 +203,7 @@ export function otelCollector(args: OtelCollectorArgsInterface, opts: pulumi.Cus
         },
       },
     },
-    opts,
+    { ...opts, deleteBeforeReplace: true },
   );
 
   return new k8s.core.v1.Service(

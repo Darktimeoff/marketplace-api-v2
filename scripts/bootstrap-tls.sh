@@ -9,10 +9,20 @@ NAMES="DNS:localhost,IP:127.0.0.1,DNS:db-bouncer,DNS:redis-cache,DNS:redis-queue
 mkdir -p "$DIR"
 cd "$DIR"
 
+# The CA may sign only these names: a browser or client that trusts it accepts nothing it signs for any other host,
+# so a leaked key can't impersonate google.com. A DNS constraint also covers subdomains (localhost -> marketplace.localhost).
+CONSTRAINTS="$(printf '%s' "$NAMES" | tr ',' '\n' | sed -e 's|^IP:\(.*\)$|permitted;IP:\1/255.255.255.255|' -e 's|^DNS:|permitted;DNS:|' | paste -sd, -)"
+
+if [ -f ca.crt ] && ! openssl x509 -in ca.crt -noout -ext nameConstraints 2>/dev/null | grep -q Permitted; then
+  echo "secrets/tls: the CA has no name constraints, replacing it; reissue everything it signed" >&2
+  shred -u ca.key ca.crt 2>/dev/null || rm -f ca.key ca.crt
+fi
+
 if [ ! -f ca.key ]; then
   openssl ecparam -name prime256v1 -genkey -noout -out ca.key
   openssl req -x509 -new -key ca.key -sha256 -days "$DAYS" -subj "/CN=marketplace local CA" \
-    -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" -out ca.crt
+    -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" \
+    -addext "nameConstraints=critical,$CONSTRAINTS" -out ca.crt
 fi
 
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out server.key

@@ -130,9 +130,11 @@ const secretsChecksum = createHash('sha256')
 
 const provider = new k8s.Provider('kind', { context: kubeContext });
 
-function podSecurity(level: 'restricted' | 'baseline' | 'privileged'): Record<string, string> {
+type PodSecurityLevelType = 'restricted' | 'baseline' | 'privileged';
+
+function podSecurity(level: PodSecurityLevelType, enforce: PodSecurityLevelType | null = level): Record<string, string> {
   return {
-    'pod-security.kubernetes.io/enforce': level,
+    ...(enforce ? { 'pod-security.kubernetes.io/enforce': enforce } : {}),
     'pod-security.kubernetes.io/warn': level,
     'pod-security.kubernetes.io/audit': level,
   };
@@ -152,6 +154,14 @@ const observabilityNamespace = new k8s.core.v1.Namespace(
 
 otelCollector({ namespace: observabilityNamespace.metadata.name, appNamespace: namespace.metadata.name, tracesEndpoint, remoteWriteEndpoint, logsEndpoint }, { provider });
 const gatewayController = envoyGateway({ provider });
+for (const platformNamespace of ['envoy-gateway-system', 'cert-manager']) {
+  new k8s.core.v1.NamespacePatch(
+    `${platformNamespace}-pod-security`,
+    { metadata: { name: platformNamespace, labels: podSecurity('restricted') } },
+    { provider, dependsOn: [gatewayController] },
+  );
+}
+
 tls({ caDir, namespace: namespace.metadata.name, secretName: tlsSecretName, dnsNames: ['marketplace.localhost', 'localhost'] }, { provider });
 networkPolicies({ namespace: namespace.metadata.name, observabilityNamespace: observabilityNamespace.metadata.name, ...(networkCidrs as Record<keyof typeof networkCidrs, string>) }, { provider });
 

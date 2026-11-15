@@ -4,6 +4,7 @@ import * as k8s from '@pulumi/kubernetes';
 import { VAULT_SECRET_NAMES, missingPodVaultVariables, missingVaultVariables, pickVaultSecrets } from './vault.ts';
 import { otelCollector } from './otel-collector.ts';
 import { networkPolicies } from './network-policies.ts';
+import { envoyGateway } from './gateway.ts';
 
 const podReadsVault = process.env.SKIP_VAULT !== '1';
 
@@ -131,6 +132,7 @@ const namespace = new k8s.core.v1.Namespace(
 );
 
 otelCollector({ namespace: namespace.metadata.name, tracesEndpoint, remoteWriteEndpoint, logsEndpoint }, { provider });
+envoyGateway({ provider });
 networkPolicies({ namespace: namespace.metadata.name, ...(networkCidrs as Record<keyof typeof networkCidrs, string>) }, { provider });
 
 const secret = podReadsVault

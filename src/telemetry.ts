@@ -8,7 +8,7 @@ import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
 import { IORedisInstrumentation } from '@opentelemetry/instrumentation-ioredis';
 import { AmqplibInstrumentation } from '@opentelemetry/instrumentation-amqplib';
 import { NestInstrumentation } from '@opentelemetry/instrumentation-nestjs-core';
-import { BatchSpanProcessor } from '@opentelemetry/sdk-trace';
+import { BatchSpanProcessor, NoopSpanProcessor } from '@opentelemetry/sdk-trace';
 import { exportSpansWith, serviceName } from './generic/telemetry/span-export.js';
 
 register('@opentelemetry/instrumentation/hook.mjs', import.meta.url);
@@ -38,7 +38,7 @@ class Nest12Instrumentation extends NestInstrumentation {
 
 const spanProcessors = process.env.OTEL_EXPORTER_OTLP_ENDPOINT
   ? [new BatchSpanProcessor({ exporter: new OTLPTraceExporter(), scheduledDelayMillis: Number(process.env.OTEL_BSP_SCHEDULE_DELAY) || undefined })]
-  : [];
+  : [new NoopSpanProcessor()];
 
 spanProcessors.forEach(exportSpansWith);
 

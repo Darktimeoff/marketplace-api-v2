@@ -1,6 +1,9 @@
+import { defaultResource, detectResources, envDetector, hostDetector, processDetector, resourceFromAttributes } from '@opentelemetry/resources';
 import { NoopSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace';
 
-export const serviceName = process.env.OTEL_SERVICE_NAME || 'marketplace-api';
+export const resource = defaultResource()
+  .merge(detectResources({ detectors: [envDetector, processDetector, hostDetector] }))
+  .merge(resourceFromAttributes({ 'service.name': process.env.OTEL_SERVICE_NAME || 'marketplace-api' }));
 
 let processor: SpanProcessor = new NoopSpanProcessor();
 

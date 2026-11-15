@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReadableSpan, SpanProcessor } from '@opentelemetry/sdk-trace';
 import { exportedSpans, exportSpansWith } from '../../../src/generic/telemetry/span-export.js';
 
@@ -21,5 +21,25 @@ describe('span export', () => {
     expect(processor.onEnd).toHaveBeenCalledWith(workflowSpan);
     expect(processor.forceFlush).toHaveBeenCalledOnce();
     expect(processor.shutdown).not.toHaveBeenCalled();
+  });
+});
+
+describe('telemetry resource', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('carries the pod identity the Downward API puts into OTEL_RESOURCE_ATTRIBUTES, for the app and the Temporal plugin alike', async () => {
+    vi.stubEnv('OTEL_RESOURCE_ATTRIBUTES', 'k8s.pod.name=marketplace-api-78757d496c-567zl,k8s.namespace.name=marketplace');
+    vi.stubEnv('OTEL_SERVICE_NAME', '');
+    vi.resetModules();
+    const { resource } = await import('../../../src/generic/telemetry/span-export.js');
+
+    expect(resource.attributes).toMatchObject({
+      'service.name': 'marketplace-api',
+      'k8s.pod.name': 'marketplace-api-78757d496c-567zl',
+      'k8s.namespace.name': 'marketplace',
+    });
   });
 });

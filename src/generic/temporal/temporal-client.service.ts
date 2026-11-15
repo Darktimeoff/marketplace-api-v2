@@ -1,11 +1,10 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Client, Connection, type TLSConfig } from '@temporalio/client';
 import { OpenTelemetryPlugin, type OpenTelemetryPluginOptions } from '@temporalio/interceptors-opentelemetry-v2';
-import { resourceFromAttributes } from '@opentelemetry/resources';
 import { EnvironmentService } from '../environment/environment.module.js';
 import { SecretManagerService } from '../secret-manager/secret-manager.service.js';
 import { getTlsOptions } from '../tls/util/get-tls-options.util.js';
-import { exportedSpans, serviceName } from '../telemetry/span-export.js';
+import { exportedSpans, resource } from '../telemetry/span-export.js';
 
 @Injectable()
 export class TemporalClientService implements OnModuleInit, OnModuleDestroy {
@@ -39,7 +38,7 @@ export class TemporalClientService implements OnModuleInit, OnModuleDestroy {
   }
 
   private telemetryOptions(): OpenTelemetryPluginOptions {
-    return { resource: resourceFromAttributes({ 'service.name': serviceName }), spanProcessor: exportedSpans } as unknown as OpenTelemetryPluginOptions;
+    return { resource, spanProcessor: exportedSpans } as unknown as OpenTelemetryPluginOptions;
   }
 
   async onModuleDestroy(): Promise<void> {

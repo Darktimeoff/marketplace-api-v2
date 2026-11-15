@@ -9,7 +9,7 @@ import { IORedisInstrumentation } from '@opentelemetry/instrumentation-ioredis';
 import { AmqplibInstrumentation } from '@opentelemetry/instrumentation-amqplib';
 import { NestInstrumentation } from '@opentelemetry/instrumentation-nestjs-core';
 import { BatchSpanProcessor, NoopSpanProcessor } from '@opentelemetry/sdk-trace';
-import { exportSpansWith, serviceName } from './generic/telemetry/span-export.js';
+import { exportSpansWith, resource } from './generic/telemetry/span-export.js';
 import { isUnobservedPath } from './generic/telemetry/util/is-unobserved-path.util.js';
 
 register('@opentelemetry/instrumentation/hook.mjs', import.meta.url);
@@ -43,7 +43,8 @@ const spanProcessors = process.env.OTEL_EXPORTER_OTLP_ENDPOINT
 spanProcessors.forEach(exportSpansWith);
 
 export const telemetry = new NodeSDK({
-  serviceName,
+  resource,
+  autoDetectResources: false,
   spanProcessors,
   instrumentations: [
     new HttpInstrumentation({ ignoreIncomingRequestHook: isUntraced }),

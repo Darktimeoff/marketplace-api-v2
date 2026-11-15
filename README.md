@@ -618,9 +618,9 @@ A request that answered 500 at 03:15 should take a minute to explain, not an eve
 | `METRICS_PORT` | `.env`, default `9464` | internal port that serves `/metrics`, never exposed through the API port or a Service; `0` in tests |
 | `LOG_LEVEL` | environment, default `info` | pino level; the tests set `silent` |
 | `OTEL_SDK_DISABLED` | environment | `true` turns tracing off. An empty `OTEL_EXPORTER_OTLP_ENDPOINT` does not: the wrapper fills empty values from `.env` |
-| `GRAFANA_PORT`, `PROMETHEUS_PORT`, `TEMPO_API_PORT`, `TEMPO_OTLP_PORT` | environment, defaults `22900`, `22901`, `22904`, `22918` | stand ports |
+| `GRAFANA_PORT`, `PROMETHEUS_PORT`, `TEMPO_API_PORT`, `LOKI_PORT`, `TEMPO_OTLP_PORT` | environment, defaults `22900`, `22901`, `22904`, `22905`, `22918` | stand ports |
 
-Addresses are settings and only the password is a secret, the same split as `DBHOST` / `DBPASSWORD`; the wrapper loads `.env` first and the vault on top. The stand: `npm run obs:up` / `npm run obs:down` (`observability/docker-compose.yml`: Prometheus `v3.15.1`, Tempo `2.10.10`, Grafana `13.3.0`).
+Addresses are settings and only the password is a secret, the same split as `DBHOST` / `DBPASSWORD`; the wrapper loads `.env` first and the vault on top. The stand: `npm run obs:up` / `npm run obs:down` (`observability/docker-compose.yml`: Prometheus `v3.15.1`, Tempo `2.10.10`, Loki `3.7.9`, Grafana `13.3.0`).
 
 ### Logs
 

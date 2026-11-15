@@ -31,12 +31,24 @@ services:
     tmpfs:
       - /var/tempo:uid=10001,gid=10001
 
+  loki:
+    image: grafana/loki:3.7.9
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    ports:
+      - "${LOKI_PORT:-22905}:3100"
+    volumes:
+      - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
+    tmpfs:
+      - /loki:uid=10001,gid=10001
+
   grafana:
     image: grafana/grafana:13.3.0
     depends_on:
       prometheus:
         condition: service_healthy
       tempo:
+        condition: service_started
+      loki:
         condition: service_started
     ports:
       - "${GRAFANA_PORT:-22900}:3000"

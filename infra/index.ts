@@ -5,6 +5,7 @@ import { VAULT_SECRET_NAMES, missingPodVaultVariables, missingVaultVariables, pi
 import { otelCollector } from './otel-collector.ts';
 import { networkPolicies } from './network-policies.ts';
 import { envoyGateway } from './gateway.ts';
+import { tls } from './tls.ts';
 
 const podReadsVault = process.env.SKIP_VAULT !== '1';
 
@@ -51,6 +52,8 @@ const otlpEndpoint = config.get('otlpEndpoint') ?? 'http://otel-collector:4318';
 const tracesEndpoint = config.get('tracesEndpoint') ?? 'http://tempo:4318';
 const remoteWriteEndpoint = config.get('remoteWriteEndpoint') ?? 'http://prometheus:9090/api/v1/write';
 const logsEndpoint = config.get('logsEndpoint') ?? 'http://loki:3100/otlp';
+const caDir = config.get('caDir') ?? '../secrets/tls';
+const tlsSecretName = 'marketplace-tls';
 const networkCidrs = { dependenciesCidr: process.env.DEPENDENCIES_CIDR?.trim(), observabilityCidr: process.env.OBSERVABILITY_CIDR?.trim(), apiServerCidr: process.env.API_SERVER_CIDR?.trim() };
 const missingCidrs = Object.entries(networkCidrs).filter(([, value]) => !value).map(([key]) => key);
 
@@ -133,6 +136,7 @@ const namespace = new k8s.core.v1.Namespace(
 
 otelCollector({ namespace: namespace.metadata.name, tracesEndpoint, remoteWriteEndpoint, logsEndpoint }, { provider });
 envoyGateway({ provider });
+tls({ caDir, namespace: namespace.metadata.name, secretName: tlsSecretName, dnsNames: ['marketplace.localhost', 'localhost'] }, { provider });
 networkPolicies({ namespace: namespace.metadata.name, ...(networkCidrs as Record<keyof typeof networkCidrs, string>) }, { provider });
 
 const secret = podReadsVault

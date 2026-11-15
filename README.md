@@ -506,7 +506,7 @@ kind `v0.33.0`, one node `kindest/node:v1.36.4` (pinned by digest in `k8s/kind-c
 - `cluster:up` also applies metrics-server `v0.9.0` (`kubectl apply -k k8s/metrics-server`): `components.yaml` is the release manifest unchanged, the kustomization pins the image by digest and adds `--kubelet-insecure-tls`, because kind's kubelets serve a self-signed certificate without IP SANs and metrics-server would refuse to scrape them. On a real cluster the kubelet certificates are signed by the cluster CA and the flag goes away. Without it the HPA has no CPU numbers (`cpu: <unknown>/70%`) and can only hold `minReplicas`.
 - `npm run cluster:down` deletes it.
 - Only the API runs in the cluster. Postgres (through pgbouncer), Kafka, RabbitMQ, Temporal, both Redis instances and MinIO stay in compose, as managed services would stay outside a production cluster. With the node on the compose network, pods resolve the compose service names through CoreDNS and Docker's DNS (checked from a pod: `db-bouncer:5432`, `kafka:29092`, `rabbitmq:5672`, `temporal:7233`, `redis-cache:6379`, `redis-queue:6379`, `minio:9000` all open), so Kafka's internal listener, which already advertises `kafka:29092`, works without another listener.
-- The scripts use `$KUBECONFIG` when it is set; locally the cluster lives in `~/.kube/kind-marketplace`, so creating it doesn't switch the default context of another kubeconfig.
+- The scripts (`cluster:up`, `cluster:down`, `up`, `preview`, `destroy`) use `$KUBECONFIG` and default it to `~/.kube/kind-marketplace`. Without that default, `kind create cluster` would write its context into `~/.kube/config` and make it the current one, and the next `kubectl` meant for another cluster would hit kind.
 
 ### Variables
 
@@ -538,7 +538,7 @@ With `SKIP_VAULT=1`:
 | `GOOGLE_CLIENT_ID` | `.env` (not a secret: it is in every Google sign-in URL) | Sign in with Google; plain env in the pod |
 | `IMAGE_REF` | `scripts/infra.sh` (computed) | the immutable image tag `cluster:up` loaded |
 | `PULUMI_BACKEND_URL` | environment, default `file://<repo>/infra/.pulumi-state` | local file backend, no `pulumi login` |
-| `KUBECONFIG` | environment, optional | which kubeconfig holds the `kind-marketplace` context |
+| `KUBECONFIG` | environment, default `~/.kube/kind-marketplace` | which kubeconfig holds the `kind-marketplace` context |
 | `SKIP_VAULT` | environment | `1` deploys with a K8s Secret instead of pods reading the vault: the values above must then be exported |
 
 The non-secret settings of the pod (`db-bouncer:5432`, `kafka:29092`, `DRAIN_MS`, …) are written in the program, see below.

@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLUSTER="${KIND_CLUSTER:-marketplace}"
 IMAGE="${IMAGE:-marketplace-api:hw28}"
 NODE="$CLUSTER-control-plane"
+export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/kind-marketplace}"
 
 source "$ROOT/scripts/lib/image.sh"
 

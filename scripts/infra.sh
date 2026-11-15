@@ -8,6 +8,7 @@ COMMAND="${1:?usage: infra.sh preview|up|destroy [pulumi flags...]}"; shift
 command -v pulumi >/dev/null 2>&1 || { echo "pulumi CLI not found: see README, section Kubernetes" >&2; exit 1; }
 
 export PULUMI_BACKEND_URL="${PULUMI_BACKEND_URL:-file://$ROOT/infra/.pulumi-state}"
+export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/kind-marketplace}"
 export PULUMI_SKIP_UPDATE_CHECK=1
 export PULUMI_DIY_BACKEND_NO_LEGACY_WARNING=1
 

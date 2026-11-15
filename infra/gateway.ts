@@ -10,6 +10,11 @@ const hstsMaxAgeSeconds = 31536000;
 const collectorService = 'otel-collector';
 const collectorGrpcPort = 4317;
 const proxyServiceName = 'envoy-gateway';
+const everyClient = { sourceCIDR: { type: 'Distinct', value: '0.0.0.0/0' } };
+const rateLimits = [
+  { clientSelectors: [everyClient], limit: { requests: 50, unit: 'Second' } },
+  { clientSelectors: [{ ...everyClient, path: { type: 'PathPrefix', value: '/auth/' } }], limit: { requests: 20, unit: 'Minute' } },
+];
 const accessLogFields = {
   method: '%REQ(:METHOD)%',
   path: '%PATH(NQ)%',
@@ -123,7 +128,7 @@ export function apiGateway(args: GatewayArgsInterface, controller: k8s.helm.v3.R
     opts,
   );
 
-  new k8s.apiextensions.CustomResource(
+  const route = new k8s.apiextensions.CustomResource(
     args.name,
     {
       apiVersion: 'gateway.networking.k8s.io/v1',
@@ -138,6 +143,20 @@ export function apiGateway(args: GatewayArgsInterface, controller: k8s.helm.v3.R
             backendRefs: [{ name: args.service.metadata.name, port: 80 }],
           },
         ],
+      },
+    },
+    opts,
+  );
+
+  new k8s.apiextensions.CustomResource(
+    `${args.name}-rate-limit`,
+    {
+      apiVersion: 'gateway.envoyproxy.io/v1alpha1',
+      kind: 'BackendTrafficPolicy',
+      metadata: { name: `${args.name}-rate-limit`, namespace: args.namespace },
+      spec: {
+        targetRefs: [{ group: 'gateway.networking.k8s.io', kind: 'HTTPRoute', name: route.metadata.name }],
+        rateLimit: { type: 'Local', local: { rules: rateLimits } },
       },
     },
     opts,

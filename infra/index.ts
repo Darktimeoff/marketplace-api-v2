@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import * as pulumi from '@pulumi/pulumi';
 import * as k8s from '@pulumi/kubernetes';
 import { VAULT_SECRET_NAMES, missingPodVaultVariables, missingVaultVariables, pickVaultSecrets } from './vault.ts';
+import { otelCollector } from './otel-collector.ts';
 
 const podReadsVault = process.env.SKIP_VAULT !== '1';
 
@@ -45,6 +46,8 @@ const minReplicas = config.getNumber('minReplicas') ?? 2;
 const maxReplicas = config.getNumber('maxReplicas') ?? 4;
 const nodePort = config.getNumber('nodePort') ?? 30080;
 const otlpEndpoint = config.get('otlpEndpoint') ?? 'http://otel-collector:4318';
+const tracesEndpoint = config.get('tracesEndpoint') ?? 'http://tempo:4318';
+const remoteWriteEndpoint = config.get('remoteWriteEndpoint') ?? 'http://prometheus:9090/api/v1/write';
 
 if (terminationGraceSeconds * 1000 <= drainMs) {
   throw new pulumi.RunError(`terminationGraceSeconds (${terminationGraceSeconds}) must be longer than drainMs (${drainMs} ms)`);
@@ -118,6 +121,8 @@ const namespace = new k8s.core.v1.Namespace(
   { metadata: { name: namespaceName } },
   { provider },
 );
+
+otelCollector({ namespace: namespace.metadata.name, tracesEndpoint, remoteWriteEndpoint }, { provider });
 
 const secret = podReadsVault
   ? undefined

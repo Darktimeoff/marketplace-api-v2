@@ -93,6 +93,7 @@ export function networkPolicies(args: NetworkPoliciesArgsInterface, opts: pulumi
         egress: [
           { to: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': args.namespace } }, podSelector: { matchLabels: { app: 'marketplace-api' } } }], ports: tcp(3000) },
           { to: [gatewayController], ports: tcp(18000, 18001, 18002) },
+          { to: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': args.namespace } }, podSelector: { matchLabels: { app: 'otel-collector' } } }], ports: tcp(4317) },
           {
             to: [{ namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'kube-system' } }, podSelector: { matchLabels: { 'k8s-app': 'kube-dns' } } }],
             ports: [
@@ -115,7 +116,7 @@ export function networkPolicies(args: NetworkPoliciesArgsInterface, opts: pulumi
   policy('otel-collector', {
     podSelector: { matchLabels: { app: 'otel-collector' } },
     policyTypes: ['Ingress', 'Egress'],
-    ingress: [{ from: [pods('marketplace-api')], ports: tcp('otlp-http') }, { ports: tcp('health') }],
+    ingress: [{ from: [pods('marketplace-api')], ports: tcp('otlp-http') }, { from: [gatewayProxy], ports: tcp('otlp-grpc') }, { ports: tcp('health') }],
     egress: [
       { to: [cidr(args.observabilityCidr)], ports: tcp(...backendPorts) },
       { to: [pods('marketplace-api')], ports: tcp(9464) },

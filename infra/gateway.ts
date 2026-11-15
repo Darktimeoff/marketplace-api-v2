@@ -7,6 +7,22 @@ const chartVersion = 'v1.9.3';
 const className = 'envoy';
 const httpsPort = 443;
 const hstsMaxAgeSeconds = 31536000;
+const collectorService = 'otel-collector';
+const collectorGrpcPort = 4317;
+const proxyServiceName = 'envoy-gateway';
+const accessLogFields = {
+  method: '%REQ(:METHOD)%',
+  path: '%PATH(NQ)%',
+  status: '%RESPONSE_CODE%',
+  flags: '%RESPONSE_FLAGS%',
+  duration_ms: '%DURATION%',
+  bytes_sent: '%BYTES_SENT%',
+  protocol: '%PROTOCOL%',
+  client: '%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%',
+  upstream: '%UPSTREAM_HOST%',
+  route: '%ROUTE_NAME%',
+  request_id: '%REQ(X-REQUEST-ID)%',
+};
 
 export interface GatewayArgsInterface {
   namespace: pulumi.Input<string>;
@@ -19,12 +35,33 @@ export interface GatewayArgsInterface {
 export function envoyGateway(opts: pulumi.CustomResourceOptions): k8s.helm.v3.Release {
   return new k8s.helm.v3.Release(
     'envoy-gateway',
-    { name: 'envoy-gateway', chart, version: chartVersion, namespace: controllerNamespace, createNamespace: true, atomic: true, timeout: 300 },
+    {
+      name: 'envoy-gateway',
+      chart,
+      version: chartVersion,
+      namespace: controllerNamespace,
+      createNamespace: true,
+      atomic: true,
+      timeout: 300,
+      values: { config: { envoyGateway: { extensionApis: { enableBackend: true } } } },
+    },
     opts,
   );
 }
 
 export function apiGateway(args: GatewayArgsInterface, controller: k8s.helm.v3.Release, opts: pulumi.CustomResourceOptions): void {
+  const collector = new k8s.apiextensions.CustomResource(
+    collectorService,
+    {
+      apiVersion: 'gateway.envoyproxy.io/v1alpha1',
+      kind: 'Backend',
+      metadata: { name: collectorService, namespace: args.namespace },
+      spec: { endpoints: [{ fqdn: { hostname: pulumi.interpolate`${collectorService}.${args.namespace}.svc.cluster.local`, port: collectorGrpcPort } }] },
+    },
+    { ...opts, dependsOn: [controller] },
+  );
+  const collectorRefs = [{ group: 'gateway.envoyproxy.io', kind: 'Backend', name: collector.metadata.name, namespace: args.namespace }];
+
   const proxy = new k8s.apiextensions.CustomResource(
     className,
     {
@@ -32,6 +69,20 @@ export function apiGateway(args: GatewayArgsInterface, controller: k8s.helm.v3.R
       kind: 'EnvoyProxy',
       metadata: { name: className, namespace: controllerNamespace },
       spec: {
+        telemetry: {
+          tracing: {
+            samplingRate: 100,
+            provider: { type: 'OpenTelemetry', serviceName: proxyServiceName, backendRefs: collectorRefs },
+          },
+          accessLog: {
+            settings: [
+              {
+                format: { type: 'JSON', json: accessLogFields },
+                sinks: [{ type: 'OpenTelemetry', openTelemetry: { backendRefs: collectorRefs, resources: { 'service.name': proxyServiceName } } }],
+              },
+            ],
+          },
+        },
         provider: {
           type: 'Kubernetes',
           kubernetes: {

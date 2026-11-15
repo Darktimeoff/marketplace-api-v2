@@ -5,6 +5,7 @@ const name = 'otel-collector';
 const labels = { app: name };
 const image = 'otel/opentelemetry-collector-contrib:0.164.0@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b';
 const otlpPort = 4318;
+const otlpGrpcPort = 4317;
 const healthPort = 13133;
 const podLogsPath = '/var/log/pods';
 const checkpointsPath = '/var/lib/otelcol/file_storage';
@@ -26,7 +27,7 @@ function collectorConfig(namespace: string, args: OtelCollectorArgsInterface): s
       file_storage: { directory: checkpointsPath, compaction: { on_start: true, directory: checkpointsPath } },
     },
     receivers: {
-      otlp: { protocols: { http: { endpoint: `0.0.0.0:${otlpPort}` } } },
+      otlp: { protocols: { http: { endpoint: `0.0.0.0:${otlpPort}` }, grpc: { endpoint: `0.0.0.0:${otlpGrpcPort}` } } },
       filelog: {
         include: [`${podLogsPath}/${namespace}_marketplace-api-*/api/*.log`],
         start_at: 'beginning',
@@ -74,6 +75,22 @@ function collectorConfig(namespace: string, args: OtelCollectorArgsInterface): s
     processors: {
       memory_limiter: { check_interval: '1s', limit_percentage: 80, spike_limit_percentage: 20 },
       batch: {},
+      'transform/envoy-access-log': {
+        log_statements: [
+          {
+            conditions: ['resource.attributes["service.name"] == "envoy-gateway"'],
+            statements: [
+              'set(log.body, Concat([log.attributes["method"], log.attributes["path"], log.attributes["status"]], " "))',
+              'set(log.severity_number, SEVERITY_NUMBER_INFO)',
+              'set(log.severity_number, SEVERITY_NUMBER_WARN) where Int(log.attributes["status"]) >= 400',
+              'set(log.severity_number, SEVERITY_NUMBER_ERROR) where Int(log.attributes["status"]) >= 500',
+              'set(log.severity_text, "INFO") where log.severity_number == SEVERITY_NUMBER_INFO',
+              'set(log.severity_text, "WARN") where log.severity_number == SEVERITY_NUMBER_WARN',
+              'set(log.severity_text, "ERROR") where log.severity_number == SEVERITY_NUMBER_ERROR',
+            ],
+          },
+        ],
+      },
     },
     exporters: {
       'otlp_http/tempo': { endpoint: args.tracesEndpoint, tls: { insecure: true } },
@@ -84,7 +101,7 @@ function collectorConfig(namespace: string, args: OtelCollectorArgsInterface): s
       extensions: ['health_check', 'file_storage'],
       pipelines: {
         traces: { receivers: ['otlp'], processors: ['memory_limiter', 'batch'], exporters: ['otlp_http/tempo'] },
-        logs: { receivers: ['filelog'], processors: ['memory_limiter', 'batch'], exporters: ['otlp_http/loki'] },
+        logs: { receivers: ['filelog', 'otlp'], processors: ['memory_limiter', 'transform/envoy-access-log', 'batch'], exporters: ['otlp_http/loki'] },
         metrics: { receivers: ['prometheus'], processors: ['memory_limiter', 'batch'], exporters: ['prometheus_remote_write'] },
       },
     },
@@ -155,6 +172,7 @@ export function otelCollector(args: OtelCollectorArgsInterface, opts: pulumi.Cus
                 env: [{ name: 'NODE_NAME', valueFrom: { fieldRef: { fieldPath: 'spec.nodeName' } } }],
                 ports: [
                   { name: 'otlp-http', containerPort: otlpPort },
+                  { name: 'otlp-grpc', containerPort: otlpGrpcPort },
                   { name: 'health', containerPort: healthPort },
                 ],
                 resources: { requests: { cpu: '50m', memory: '128Mi' }, limits: { memory: '256Mi' } },
@@ -194,7 +212,10 @@ export function otelCollector(args: OtelCollectorArgsInterface, opts: pulumi.Cus
       spec: {
         selector: labels,
         internalTrafficPolicy: 'Local',
-        ports: [{ name: 'otlp-http', port: otlpPort, targetPort: 'otlp-http' }],
+        ports: [
+          { name: 'otlp-http', port: otlpPort, targetPort: 'otlp-http' },
+          { name: 'otlp-grpc', port: otlpGrpcPort, targetPort: 'otlp-grpc' },
+        ],
       },
     },
     opts,

@@ -44,6 +44,7 @@ const terminationGraceSeconds = config.getNumber('terminationGraceSeconds') ?? M
 const minReplicas = config.getNumber('minReplicas') ?? 2;
 const maxReplicas = config.getNumber('maxReplicas') ?? 4;
 const nodePort = config.getNumber('nodePort') ?? 30080;
+const otlpEndpoint = config.get('otlpEndpoint') ?? 'http://otel-collector:4318';
 
 if (terminationGraceSeconds * 1000 <= drainMs) {
   throw new pulumi.RunError(`terminationGraceSeconds (${terminationGraceSeconds}) must be longer than drainMs (${drainMs} ms)`);
@@ -56,6 +57,7 @@ if (minReplicas < 2) {
 const name = 'marketplace-api';
 const labels = { app: name };
 const port = 3000;
+const metricsPort = 9464;
 
 const settings: Record<string, string> = {
   NODE_ENV: 'production',
@@ -79,6 +81,8 @@ const settings: Record<string, string> = {
   OIDC_REDIRECT_BASE_URL: `http://localhost:${nodePort}`,
   GOOGLE_CLIENT_ID: googleClientId,
   DRAIN_MS: String(drainMs),
+  METRICS_PORT: String(metricsPort),
+  OTEL_EXPORTER_OTLP_ENDPOINT: otlpEndpoint,
   REV: rev,
 };
 
@@ -153,7 +157,15 @@ const containerSecurityContext = {
   capabilities: { drop: ['ALL'] },
 };
 
+const podIdentityEnv = [
+  { name: 'POD_NAME', valueFrom: { fieldRef: { fieldPath: 'metadata.name' } } },
+  { name: 'POD_NAMESPACE', valueFrom: { fieldRef: { fieldPath: 'metadata.namespace' } } },
+  { name: 'NODE_NAME', valueFrom: { fieldRef: { fieldPath: 'spec.nodeName' } } },
+  { name: 'OTEL_RESOURCE_ATTRIBUTES', value: 'k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME)' },
+];
+
 const podEnv = [
+  ...podIdentityEnv,
   ...Object.entries({ ...settings, ...vaultSettings }).map(([key, value]) => ({ name: key, value })),
   ...(secret
     ? VAULT_SECRET_NAMES.map((key) => ({
@@ -236,7 +248,11 @@ const deployment = new k8s.apps.v1.Deployment(
       template: {
         metadata: {
           labels,
-          annotations: secret ? { 'marketplace/secrets-checksum': secretsChecksum } : {},
+          annotations: {
+            'prometheus.io/scrape': 'true',
+            'prometheus.io/port': String(metricsPort),
+            ...(secret ? { 'marketplace/secrets-checksum': secretsChecksum } : {}),
+          },
         },
         spec: {
           terminationGracePeriodSeconds: terminationGraceSeconds,
@@ -248,7 +264,10 @@ const deployment = new k8s.apps.v1.Deployment(
               name: 'api',
               image,
               imagePullPolicy: 'IfNotPresent',
-              ports: [{ name: 'http', containerPort: port }],
+              ports: [
+                { name: 'http', containerPort: port },
+                { name: 'metrics', containerPort: metricsPort },
+              ],
               env: podEnv,
               resources: {
                 requests: { cpu: '250m', memory: '384Mi' },

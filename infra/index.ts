@@ -93,7 +93,8 @@ const settings: Record<string, string> = {
   STORAGE_REGION: 'us-east-1',
   STORAGE_BUCKET: 'marketplace-media',
   MEDIA_PUBLIC_BASE_URL: 'http://localhost:8088',
-  OIDC_REDIRECT_BASE_URL: `http://localhost:${nodePort}`,
+  OIDC_REDIRECT_BASE_URL: `https://localhost:${nodePort}`,
+  TRUST_PROXY_HOPS: '1',
   GOOGLE_CLIENT_ID: googleClientId,
   DRAIN_MS: String(drainMs),
   METRICS_PORT: String(metricsPort),
@@ -370,5 +371,5 @@ new k8s.autoscaling.v2.HorizontalPodAutoscaler(
 );
 
 export const migrateJobName = migrateJob.metadata.name;
-export const url = `https://marketplace.localhost:${nodePort}`;
+export const url = `https://localhost:${nodePort}`;
 export const deployedRev = rev;

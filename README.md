@@ -721,6 +721,44 @@ Measured in kind with two pods:
 - That kind of trace's `trace_id` finds 7 log lines in Loki, from both pods. After `kubectl delete pod`, `kubectl logs` answers `NotFound` and Loki still returns the deleted pod's 6 lines.
 - 10 requests before a collector restart and 10 during it gave exactly 10 + 10 lines in Loki: no line read twice, no line lost while the collector was down.
 
+## Security boundaries
+
+Only the API is public. Everything else is reachable from this machine or from inside the cluster, and the observability backends are closed even there except for the paths that feed them.
+
+| Zone | What | Reachable from |
+|---|---|---|
+| Public | API through the NodePort, `127.0.0.1:30080` locally (an Ingress or load balancer with TLS in production) | clients; JWT, rate limits |
+| Host only | every published compose port: Postgres through `db-bouncer` 5500, RabbitMQ 5672/15672, Kafka 9092, Kafka UI 8090, Temporal 7233/8233, Redis 6380/6381, MinIO 9010/9011, edge 8088, Infisical 4010, Grafana 22900, Prometheus 22901, Tempo 22904/22918, Loki 22905 | `127.0.0.1` |
+| Docker networks | the same services by name (`kafka:29092`, `tempo:4318`, …) | other containers and the kind node, which is attached to both networks |
+| Cluster | pods in `marketplace`, under the NetworkPolicies below | each other, only as the policies allow |
+
+- **Bound to `127.0.0.1`.** Every `ports:` entry in `docker-compose.yml`, `docker-compose.tls.yml` and `observability/docker-compose.yml` names the address: a bare `5500:5432` publishes on `0.0.0.0`, every interface, so any device on the same Wi-Fi reached Temporal, Kafka, Loki and Prometheus, which have no authentication. A host firewall would not have helped: Docker writes its own iptables rules ahead of `ufw`. Checked from the machine's LAN address: Temporal UI, Kafka, Loki, Prometheus, PgBouncer and Infisical are `closed`, and the same ports are open on `127.0.0.1`. The kind node and the collector use the docker networks, not the published ports, so nothing in the cluster changed.
+- **Grafana has no anonymous access** and no sign-up (`GF_AUTH_ANONYMOUS_ENABLED: "false"`, `GF_USERS_ALLOW_SIGN_UP: "false"`). Logs and traces carry user ids, request paths and the system's shape. Without a login the API answers `401` and a dashboard redirects to the login page. The admin password is `GRAFANA_ADMIN_PASSWORD` in the vault.
+- **Prometheus has no lifecycle API.** Without `--web.enable-lifecycle`, `POST /-/quit` and `POST /-/reload` answer `403`. `127.0.0.1` keeps the network out, but not a process on this machine or a web page that posts to `localhost`; a reload is `docker restart marketplace-observability-prometheus-1`.
+- **NetworkPolicies** (`infra/network-policies.ts`). kind's kindnet enforces them: a deny-all policy cut a test pod's traffic, and removing it restored the traffic. Policies only add permissions, and a pod no policy selects is fully open, so the first one denies everything:
+  1. `default-deny` — every pod in the namespace, ingress and egress.
+  2. `allow-dns` — every pod to kube-dns on 53/udp and 53/tcp.
+  3. `marketplace-api` — in: port 3000 from anywhere, 9464 only from the collector. Out: the dependencies' network on their ports, the collector on 4318, and the internet on 443 only (Google OIDC), private ranges excluded.
+  4. `marketplace-api-migrate` — the migration Job to Postgres and Infisical only.
+  5. `otel-collector` — in: 4318 only from the API pods, plus the health port. Out: the stand (Tempo, Loki, Prometheus), the API pods' 9464, and the Kubernetes API for `kubernetes_sd`.
+
+  The docker subnets and the API server's address differ per machine, so `scripts/infra.sh` reads them with `docker inspect` (`DEPENDENCIES_CIDR`, `OBSERVABILITY_CIDR`, `API_SERVER_CIDR`, overridable). Without them the program stops instead of creating policies with empty ranges. Measured after restarting the pods, so no connection opened before the policies survived in conntrack:
+  - An order went through the whole saga: Temporal, the RabbitMQ RPC, Kafka.
+  - From an API pod, the following opened: `db-bouncer:5432`, the collector, `accounts.google.com:443`.
+  - From an API pod, the following were blocked: Loki, `example.com:80` and the Kubernetes API.
+  - A pod with open egress reached the API's 3000 but not its 9464 or the collector's 4318.
+  - A pod no policy allows reached nothing.
+
+**In production:**
+- The dependencies sit in private subnets with no public address, and security groups admit only the API's nodes. A password is the second line of defence, the network is the first.
+- Grafana is behind SSO or a VPN, and the backends accept writes only from the collector, with authentication.
+- Egress to the internet is narrowed to host names with FQDN policies (Cilium, Calico). A plain NetworkPolicy matches IP ranges only, so here it is "any public address on 443".
+
+**Still open:**
+- **The API run on the host** (`npm run start:dev`) listens on `0.0.0.0` for 3000 and 9464 (`app.listen(PORT)`, the metrics server). Prometheus in a container reaches 9464 through `host.docker.internal`, so binding it to `127.0.0.1` would need the docker bridge address instead.
+- **The edge shim** listens on `0.0.0.0:8787`, so the bridge network can reach it (see "CDN: chosen form and the AWS variant").
+- **Unauthenticated writes.** Prometheus remote write, Loki and Tempo accept writes without authentication from anything on this machine or the docker networks. Basic auth or mTLS between them and the collector would close that.
+
 ## Secrets
 
 Secrets live in Infisical, not in env files. `scripts/with-secrets.sh <env> <command>` loads `.env` (non-secret settings) and runs the command under `infisical run`, which injects `DBPASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `REDIS_PASSWORD`, `REFRESH_TOKEN_PEPPER`, `GOOGLE_CLIENT_SECRET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` (see `SecretsInterface`). Like Postgres, a Redis instance is a setting for where it runs (`REDIS_CACHE_HOST`/`REDIS_CACHE_PORT`, `REDIS_QUEUE_HOST`/`REDIS_QUEUE_PORT`) and a secret for who may use it (`REDIS_PASSWORD`, one for both instances): the host differs between the host machine (`localhost:6380`) and a pod (`redis-cache:6379`), the password doesn't, so a pod reading the vault itself gets a value that works there. `npm run bootstrap:secrets` writes `REDIS_PASSWORD` to `secrets/redis_password.txt` for compose, so it lives in one place. Every npm script that needs the database goes through it. With `SKIP_VAULT=1` the wrapper runs the command directly and expects the values in the environment.

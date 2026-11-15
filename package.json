@@ -33,7 +33,7 @@
     "seed": "bash scripts/with-secrets.sh dev node dist/seed.js",
     "edge": "bash scripts/with-secrets.sh dev node dist/edge.js",
     "image:build": "DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile --secret id=npm_token,src=.npm_token -t marketplace-api:hw28 .",
-    "scan": "SCAN_MAX=${SCAN_MAX:-2} bash scripts/scan.sh",
+    "scan": "SCAN_MAX=${SCAN_MAX:-0} bash scripts/scan.sh",
     "cluster:up": "bash scripts/cluster-up.sh",
     "cluster:down": "KUBECONFIG=${KUBECONFIG:-$HOME/.kube/kind-marketplace} kind delete cluster --name ${KIND_CLUSTER:-marketplace}",
     "preview": "bash scripts/with-secrets.sh dev bash scripts/infra.sh preview",
@@ -103,7 +103,7 @@
     "sharp": "^0.35.5",
     "thumbhash": "^0.1.1",
     "typeorm": "^1.1.1",
-    "zod": "^4.5.2"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
@@ -142,6 +142,9 @@
       "@opentelemetry/resources": "2.12.0",
       "@opentelemetry/sdk-trace-base": "2.12.0",
       "@opentelemetry/sdk-trace": "2.12.0"
+    },
+    "@infisical/sdk": {
+      "zod": "4.6.7"
     }
   }
 }

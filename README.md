@@ -613,7 +613,7 @@ A request that answered 500 at 03:15 should take a minute to explain, not an eve
 | Variable | Source | What |
 |---|---|---|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `.env` through `scripts/with-secrets.sh` | OTLP/HTTP base of the trace backend (`http://127.0.0.1:22918`, Tempo); the SDK appends `/v1/traces`. Unset: spans are still created (logs need the `trace_id`) but not exported |
-| `GRAFANA_ADMIN_PASSWORD` | vault (Infisical, #11) | Grafana admin; compose refuses to start without it. Anonymous users get Viewer only, so the dashboard opens without a login |
+| `GRAFANA_ADMIN_PASSWORD` | vault (Infisical, #11) | Grafana admin; compose refuses to start without it. There is no anonymous access and no sign-up: Grafana shows logs and traces with user ids and request paths, so it is closed like every other service |
 | `OTEL_BSP_SCHEDULE_DELAY` | environment, default `5000` | ms between span exports. `telemetry.ts` builds the batch processor itself, shared with the Temporal plugin, so it reads only this one of the `OTEL_BSP_*` settings |
 | `METRICS_PORT` | `.env`, default `9464` | internal port that serves `/metrics`, never exposed through the API port or a Service; `0` in tests |
 | `LOG_LEVEL` | environment, default `info` | pino level; the tests set `silent` |

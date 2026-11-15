@@ -9,7 +9,7 @@ services:
       - --web.enable-lifecycle
       - --web.enable-remote-write-receiver
     ports:
-      - "${PROMETHEUS_PORT:-22901}:9090"
+      - "127.0.0.1:${PROMETHEUS_PORT:-22901}:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     extra_hosts:
@@ -24,8 +24,8 @@ services:
     image: grafana/tempo:2.10.10
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     ports:
-      - "${TEMPO_API_PORT:-22904}:3200"
-      - "${TEMPO_OTLP_PORT:-22918}:4318"
+      - "127.0.0.1:${TEMPO_API_PORT:-22904}:3200"
+      - "127.0.0.1:${TEMPO_OTLP_PORT:-22918}:4318"
     volumes:
       - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
     tmpfs:
@@ -35,7 +35,7 @@ services:
     image: grafana/loki:3.7.9
     command: ["-config.file=/etc/loki/loki.yaml"]
     ports:
-      - "${LOKI_PORT:-22905}:3100"
+      - "127.0.0.1:${LOKI_PORT:-22905}:3100"
     volumes:
       - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
     tmpfs:
@@ -51,12 +51,12 @@ services:
       loki:
         condition: service_started
     ports:
-      - "${GRAFANA_PORT:-22900}:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-22900}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD comes from the vault through scripts/with-secrets.sh, or export it}
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
     volumes:

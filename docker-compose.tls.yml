@@ -65,7 +65,7 @@ services:
 
   rabbitmq:
     ports:
-      - "${RABBITMQ_TLS_PORT:-5671}:5671"
+      - "127.0.0.1:${RABBITMQ_TLS_PORT:-5671}:5671"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
       - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
@@ -85,7 +85,7 @@ services:
     depends_on:
       - temporal
     ports:
-      - "${TEMPORAL_TLS_PORT:-7234}:7234"
+      - "127.0.0.1:${TEMPORAL_TLS_PORT:-7234}:7234"
     volumes:
       - ./haproxy.tls.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
       - ./secrets/tls:/run/tls:ro

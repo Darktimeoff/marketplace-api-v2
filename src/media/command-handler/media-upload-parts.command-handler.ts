@@ -1,4 +1,5 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
 import { MediaStatusEnum, type MediaUploadPartsResponseInterface } from '@marketplace/contracts-core';
 import { MediaRepository } from '../repository/media.repository.js';
 import { MediaStorageService } from '../service/media-storage.service.js';
@@ -8,7 +9,6 @@ import { MEDIA_PART_URLS_PER_REQUEST, MEDIA_UPLOAD_URL_TTL_SECONDS } from '../co
 
 @Injectable()
 export class MediaUploadPartsCommandHandler {
-  private readonly logger = new Logger(MediaUploadPartsCommandHandler.name);
 
   constructor(
     private readonly media: MediaRepository,
@@ -17,6 +17,7 @@ export class MediaUploadPartsCommandHandler {
     private readonly plan: MediaPartPlanService,
   ) {}
 
+  @Log(undefined, response => `parts signed media=${response.id} uploaded=${response.uploadedPartCount}/${response.partCount} signed=[${response.parts.map(({ partNumber }) => partNumber).join(',')}]`)
   async execute(publicId: string, ownerPublicId: string): Promise<MediaUploadPartsResponseInterface> {
     const media = await this.media.findOwned(publicId, ownerPublicId);
 
@@ -46,7 +47,6 @@ export class MediaUploadPartsCommandHandler {
       parts.push({ partNumber, url });
     }
 
-    this.logger.log(`parts signed media=${media.publicId} uploaded=${uploaded.size}/${partCount} signed=[${missing.join(',')}]`);
     return this.responses.toParts(media, this.plan.partSize(media.sizeBytes), partCount, uploaded.size, parts, expiresAt);
   }
 }

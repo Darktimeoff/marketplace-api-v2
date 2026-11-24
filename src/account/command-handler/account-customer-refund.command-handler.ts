@@ -1,5 +1,6 @@
 import { AccountCustomerRefundRpc } from "@marketplace/messaging-contracts";
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
+import { Log } from "../../generic/logging/decorator/log.decorator.js";
 import { Transactional } from "@nestjs-cls/transactional";
 import { AccountRepository } from "../repository/account.repository.js";
 import { AccountInboxService } from "../service/account-inbox.service.js";
@@ -9,7 +10,6 @@ import { TransactionTypeEnum } from '../enum/transaction-type.enum.js';
 
 @Injectable()
 export class AccountCustomerRefundCommandHandler {
-  private readonly logger = new Logger(AccountCustomerRefundCommandHandler.name)
 
   constructor(
     private readonly repository: AccountRepository,
@@ -17,12 +17,17 @@ export class AccountCustomerRefundCommandHandler {
   ) {}
 
   async execute(request: AccountCustomerRefundRpc.RequestInterface): Promise<AccountCustomerRefundRpc.ResponseType> {
+    const { refunded } = await this.refundOnce(request)
+    return { status: refunded ? 'refunded' : 'not_charged' }
+  }
+
+  @Log(undefined, ({ applied, refunded }, request) => `${applied ? (refunded ? 'refunded' : 'fenced uncharged') : 'skipped refund'} id=${request.chargeId}`)
+  private async refundOnce(request: AccountCustomerRefundRpc.RequestInterface): Promise<{ applied: boolean; refunded: boolean }> {
     let refunded = true
     const applied = await this.inbox.processOnce(AccountInboxConsumerEnum.CUSTOMER_REFUND, request.chargeId, async () => {
       refunded = await this.refund(request)
     })
-    this.logger.log(`${applied ? (refunded ? 'refunded' : 'fenced uncharged') : 'skipped refund'} id=${request.chargeId}`)
-    return { status: refunded ? 'refunded' : 'not_charged' }
+    return { applied, refunded }
   }
 
   @Transactional()

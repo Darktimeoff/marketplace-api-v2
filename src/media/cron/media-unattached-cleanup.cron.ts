@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
 import { CronExpression } from '@nestjs/schedule';
 import { subHours } from 'date-fns';
 import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-job-registry.service.js';
@@ -7,7 +8,6 @@ import { MediaStorageService } from '../service/media-storage.service.js';
 
 @Injectable()
 export class MediaUnattachedCleanupCron implements OnModuleInit {
-  private readonly logger = new Logger(MediaUnattachedCleanupCron.name);
   private readonly cleanupJobName = 'media-unattached-cleanup';
   private readonly unattachedTtlHours = 24;
   private readonly batchSize = 100;
@@ -26,7 +26,8 @@ export class MediaUnattachedCleanupCron implements OnModuleInit {
     });
   }
 
-  async deleteUnattached(): Promise<void> {
+  @Log(undefined, ({ deleted, skipped, createdBefore }) => `deleted ${deleted} media never attached since before ${createdBefore.toISOString()}, skipped ${skipped} claimed meanwhile`)
+  async deleteUnattached(): Promise<{ deleted: number; skipped: number; createdBefore: Date }> {
     const createdBefore = subHours(new Date(), this.unattachedTtlHours);
     let deleted = 0;
     let skipped = 0;
@@ -50,6 +51,6 @@ export class MediaUnattachedCleanupCron implements OnModuleInit {
       }
     }
 
-    this.logger.log(`deleted ${deleted} media never attached since before ${createdBefore.toISOString()}, skipped ${skipped} claimed meanwhile`);
+    return { deleted, skipped, createdBefore };
   }
 }

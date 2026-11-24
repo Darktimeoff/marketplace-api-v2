@@ -9,6 +9,8 @@ import { JwtVerificationKeysService } from '../../../src/generic/auth/jwt-verifi
 import type { SecretManagerService } from '../../../src/generic/secret-manager/secret-manager.service.js';
 import type { AccessTokenDenylistService } from '../../../src/generic/auth/access-token-denylist.service.js';
 import type { AuthenticatedRequestInterface } from '../../../src/generic/auth/interface/authenticated-request.interface.js';
+import type { ClsService } from 'nestjs-cls';
+import type { RequestContextInterface } from '../../../src/generic/logging/interface/request-context.interface.js';
 
 function aKeyPair() {
   return generateKeyPairSync('ec', {
@@ -40,6 +42,7 @@ describe('AccessTokenGuard', () => {
   const deniedFamilies = new Set(['7c1d9e4a-3b2f-4a6e-8d0c-5f9b1a2e3c4d']);
   let signingKey: CryptoKey;
   let guard: AccessTokenGuard;
+  const context = new Map<string, unknown>();
 
   beforeAll(async () => {
     const secrets = { get: async () => keys.publicKey } as unknown as SecretManagerService;
@@ -47,7 +50,8 @@ describe('AccessTokenGuard', () => {
     const verificationKeys = new JwtVerificationKeysService(secrets);
     await verificationKeys.onModuleInit();
     const verifier = new AccessTokenVerifierService(verificationKeys, denylist);
-    guard = new AccessTokenGuard(verifier, { getAllAndOverride: () => false } as unknown as Reflector);
+    const cls = { set: (key: string, value: unknown) => context.set(key, value) } as unknown as ClsService<RequestContextInterface>;
+    guard = new AccessTokenGuard(verifier, { getAllAndOverride: () => false } as unknown as Reflector, cls);
     signingKey = await importPKCS8(keys.privateKey, 'ES256');
   });
 
@@ -71,6 +75,13 @@ describe('AccessTokenGuard', () => {
     const request = await activate(`Bearer ${await aToken()}`);
 
     expect(request.identity).toEqual({ identityPublicId: '5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d', tokenId, familyId, role: 'user', email: 'jane@example.com', phoneNumber: '+380501234567' });
+  });
+
+  it('puts the person id into the request context as userId, so every later log line carries it', async () => {
+    context.clear();
+    await activate(`Bearer ${await aToken()}`);
+
+    expect(context.get('userId')).toBe('5f0c8a5e-2b7d-4c1e-9a43-0d6f1e2b3c4d');
   });
 
   it('rejects a token without a jti', async () => {

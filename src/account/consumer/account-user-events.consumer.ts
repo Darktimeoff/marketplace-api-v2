@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
 import { TopicEnum, UserCreatedEvent } from '@marketplace/messaging-contracts';
 import { EVENT_SUBSCRIBER } from '../../generic/messaging/constant/messaging.constant.js';
 import { EventRejectedException } from '../../generic/messaging/exception/event-rejected.exception.js';
@@ -42,7 +43,11 @@ export class AccountUserEventsConsumer implements OnModuleInit {
       return;
     }
 
-    const created = await this.accountCreate.execute(publicId);
-    this.logger.log(`${created ? 'created' : 'skipped existing'} account for person=${publicId} id=${parsed.data.id}`);
+    await this.createAccount(publicId, parsed.data.id);
+  }
+
+  @Log(undefined, (created, publicId, eventId) => `${created ? 'created' : 'skipped existing'} account for person=${publicId} id=${eventId}`)
+  private createAccount(publicId: string, _eventId: string): Promise<boolean> {
+    return this.accountCreate.execute(publicId);
   }
 }

@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
 import { CronExpression } from '@nestjs/schedule';
 import { subDays } from 'date-fns';
 import { MaintenanceJobRegistryService } from '../../generic/queue/maintenance-job-registry.service.js';
@@ -6,7 +7,6 @@ import { ProductOutboxRepository } from '../repository/product-outbox.repository
 
 @Injectable()
 export class ProductOutboxCleanupCron implements OnModuleInit {
-  private readonly logger = new Logger(ProductOutboxCleanupCron.name);
   private readonly jobName = 'product-outbox-cleanup';
   private readonly publishedRetentionDays = 7;
 
@@ -23,8 +23,8 @@ export class ProductOutboxCleanupCron implements OnModuleInit {
     });
   }
 
-  async deletePublished(): Promise<void> {
-    const deleted = await this.outbox.deletePublishedBefore(subDays(new Date(), this.publishedRetentionDays));
-    this.logger.log(`deleted ${deleted} published outbox rows`);
+  @Log(undefined, deleted => `deleted ${deleted} published outbox rows`)
+  async deletePublished(): Promise<number> {
+    return this.outbox.deletePublishedBefore(subDays(new Date(), this.publishedRetentionDays));
   }
 }

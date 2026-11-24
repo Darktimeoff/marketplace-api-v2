@@ -2,6 +2,7 @@ import * as z from "zod";
 
 const environmentSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  METRICS_PORT: z.coerce.number().int().min(0).max(65535).default(9464),
   DBPORT: z.coerce.number().int().min(1).max(65535).default(3000),
   DBHOST: z.string().min(1),
   DBNAME: z.string().min(1),

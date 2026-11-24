@@ -1,15 +1,18 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Response } from 'express';
+import { ClsService } from 'nestjs-cls';
 import { AccessTokenVerifierService } from './access-token-verifier.service.js';
 import { IS_PUBLIC_METADATA } from './decorator/public.decorator.js';
 import type { AuthenticatedRequestInterface } from './interface/authenticated-request.interface.js';
+import type { RequestContextInterface } from '../logging/interface/request-context.interface.js';
 
 @Injectable()
 export class AccessTokenGuard implements CanActivate {
   constructor(
     private readonly verifier: AccessTokenVerifierService,
     private readonly reflector: Reflector,
+    private readonly cls: ClsService<RequestContextInterface>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -32,6 +35,7 @@ export class AccessTokenGuard implements CanActivate {
 
     try {
       request.identity = await this.verifier.verify(token);
+      this.cls.set('userId', request.identity.identityPublicId);
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         response.setHeader?.('WWW-Authenticate', 'Bearer error="invalid_token"');

@@ -1,5 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Transactional } from '@nestjs-cls/transactional';
+import { Log } from '../../generic/logging/decorator/log.decorator.js';
+import { Traced } from '../../generic/telemetry/decorator/traced.decorator.js';
 import { CurrencyEnum, OrderStatusEnum, type OrderResponseInterface } from '@marketplace/contracts-core';
 import { OrderRepository } from '../repository/order.repository.js';
 import { OrderRecipientRepository } from '../repository/order-recipient.repository.js';
@@ -45,6 +47,8 @@ export class OrderPlaceCommandHandler {
     private readonly responses: OrderResponse,
   ) {}
 
+  @Traced()
+  @Log((input) => `pricing ${input.items.length} item(s)`, (order) => `placed order=${order.id} total=${order.totalAmount} ${order.currency}`)
   async execute(input: OrderCreateInput, identityPublicId: string, idempotencyKey: string | null = null): Promise<OrderResponseInterface> {
     const buyer = await this.buyers.findByPublicId(identityPublicId);
 

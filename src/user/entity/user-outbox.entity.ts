@@ -41,6 +41,9 @@ export class UserOutbox {
 
   @Column({ type: 'text', nullable: true })
   lastError: string | null;
+
+  @Column({ type: 'varchar', length: 55, nullable: true })
+  traceparent: string | null;
 }
 
 export interface UserOutboxCreateEntityInterface

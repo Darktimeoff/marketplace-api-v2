@@ -14,6 +14,7 @@ export class RabbitMqRpcService {
       exchange: call.exchange,
       routingKey: call.method,
       payload: this.toEnvelope(call),
+      correlationId: call.id,
       timeout: this.timeoutMs,
       expiration: this.timeoutMs,
     })
@@ -30,7 +31,6 @@ export class RabbitMqRpcService {
       time: new Date().toISOString(),
       datacontenttype: 'application/json',
       subject: call.id,
-      correlationid: call.id,
       data: call.data,
     }
   }

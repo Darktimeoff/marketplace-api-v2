@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { trace } from '@opentelemetry/api';
 import { requestContextFields } from './request-context.js';
+import { isUnobservedPath } from '../telemetry/util/is-unobserved-path.util.js';
 
 export const REDACTED_PATHS = [
   'req.headers.authorization',
@@ -25,8 +26,6 @@ export const REDACTED_PATHS = [
   '*.id_token',
 ];
 
-const unloggedPaths = ['/healthz', '/readyz', '/metrics'];
-
 function contextFields(): object {
   const traceId = trace.getActiveSpan()?.spanContext().traceId;
 
@@ -43,7 +42,7 @@ function pathOf(request: IncomingMessage): string {
       renameContext: 'layer',
       pinoHttp: {
         level: process.env.LOG_LEVEL || 'info',
-        autoLogging: { ignore: (request) => unloggedPaths.includes(pathOf(request)) },
+        autoLogging: { ignore: request => isUnobservedPath(request.url) },
         mixin: contextFields,
         redact: REDACTED_PATHS,
         serializers: {

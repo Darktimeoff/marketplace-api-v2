@@ -6,6 +6,7 @@ import { WorkflowExecutionAlreadyStartedError } from '@temporalio/client';
 import { OrderWorkflowOutboxRepository } from '../repository/order-workflow-outbox.repository.js';
 import { OrderWorkflowOutbox } from '../entity/order-workflow-outbox.entity.js';
 import { TemporalClientService } from '../../generic/temporal/temporal-client.service.js';
+import { Traced } from '../../generic/telemetry/decorator/traced.decorator.js';
 
 @Injectable()
 export class OrderWorkflowOutboxRelay implements OnApplicationBootstrap {
@@ -64,6 +65,7 @@ export class OrderWorkflowOutboxRelay implements OnApplicationBootstrap {
     }
   }
 
+  @Traced({ name: row => `start ${row.workflowType}`, parent: row => row.traceparent })
   private async start(row: OrderWorkflowOutbox): Promise<void> {
     try {
       await this.temporal.client.withDeadline(Date.now() + this.startTimeoutMs, () =>

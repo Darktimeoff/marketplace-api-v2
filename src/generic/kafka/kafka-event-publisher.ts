@@ -34,7 +34,7 @@ export class KafkaEventPublisher implements EventPublisherInterface, OnModuleIni
     await this.send(topic, {
       key: event.subject,
       value: JSON.stringify(event),
-      headers: { 'content-type': CLOUD_EVENT_CONTENT_TYPE, ce_type: event.type },
+      headers: { 'content-type': CLOUD_EVENT_CONTENT_TYPE, ce_type: event.type, ...(event.traceparent ? { traceparent: event.traceparent } : {}) },
     });
   }
 

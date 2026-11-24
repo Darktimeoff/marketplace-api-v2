@@ -99,7 +99,6 @@ describe('Identity events (e2e)', () => {
       time: identity.createdAt.toISOString(),
       datacontenttype: 'application/json',
       subject: identity.publicId,
-      correlationid: identity.publicId,
       data: {
         publicId: identity.publicId,
         email,

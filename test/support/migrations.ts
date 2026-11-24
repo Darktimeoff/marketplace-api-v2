@@ -46,6 +46,7 @@ import { AddMediaVariant1794000000000 } from '../../src/migrations/1794000000000
 import { AddMediaOutbox1794000000100 } from '../../src/migrations/1794000000100-AddMediaOutbox.js';
 import { AddOutboxBroker1794000000200 } from '../../src/migrations/1794000000200-AddOutboxBroker.js';
 import { AddProductMediaVariant1794000000300 } from '../../src/migrations/1794000000300-AddProductMediaVariant.js';
+import { AddOutboxTraceparent1795000000000 } from '../../src/migrations/1795000000000-AddOutboxTraceparent.js';
 import { Identity } from '../../src/identity/entity/identity.entity.js';
 import { IdentitySession } from '../../src/identity/entity/identity-session.entity.js';
 import { IdentityOutbox } from '../../src/identity/entity/identity-outbox.entity.js';
@@ -126,6 +127,7 @@ export const testMigrations: (new () => MigrationInterface)[] = [
   AddMediaOutbox1794000000100,
   AddOutboxBroker1794000000200,
   AddProductMediaVariant1794000000300,
+  AddOutboxTraceparent1795000000000,
 ];
 
 export const testEntities = [

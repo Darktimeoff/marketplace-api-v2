@@ -3,13 +3,14 @@ import { TransactionHost } from '@nestjs-cls/transactional';
 import { TransactionalAdapterTypeOrm } from '@nestjs-cls/transactional-adapter-typeorm';
 import { In, LessThan } from 'typeorm';
 import { UserOutbox, type UserOutboxCreateEntityInterface } from '../entity/user-outbox.entity.js';
+import { currentTraceparent } from '../../generic/telemetry/util/current-traceparent.util.js';
 
 @Injectable()
 export class UserOutboxRepository {
   constructor(private readonly txHost: TransactionHost<TransactionalAdapterTypeOrm>) {}
 
   async create(input: UserOutboxCreateEntityInterface): Promise<void> {
-    await this.txHost.tx.getRepository(UserOutbox).insert(input);
+    await this.txHost.tx.getRepository(UserOutbox).insert({ ...input, traceparent: currentTraceparent() });
   }
 
   claimUnpublished(limit: number): Promise<UserOutbox[]> {

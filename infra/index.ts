@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import * as pulumi from '@pulumi/pulumi';
 import * as k8s from '@pulumi/kubernetes';
 import { VAULT_SECRET_NAMES, missingPodVaultVariables, missingVaultVariables, pickVaultSecrets } from './vault.ts';
+import { otelCollector } from './otel-collector.ts';
+import { networkPolicies } from './network-policies.ts';
+import { apiGateway, envoyGateway } from './gateway.ts';
+import { tls } from './tls.ts';
 
 const podReadsVault = process.env.SKIP_VAULT !== '1';
 
@@ -44,6 +50,34 @@ const terminationGraceSeconds = config.getNumber('terminationGraceSeconds') ?? M
 const minReplicas = config.getNumber('minReplicas') ?? 2;
 const maxReplicas = config.getNumber('maxReplicas') ?? 4;
 const nodePort = config.getNumber('nodePort') ?? 30080;
+const observabilityNamespaceName = config.get('observabilityNamespace') ?? 'observability';
+const otlpEndpoint = config.get('otlpEndpoint') ?? `http://otel-collector.${observabilityNamespaceName}:4318`;
+const tracesEndpoint = config.get('tracesEndpoint') ?? 'http://tempo:4318';
+const remoteWriteEndpoint = config.get('remoteWriteEndpoint') ?? 'http://prometheus:9090/api/v1/write';
+const logsEndpoint = config.get('logsEndpoint') ?? 'http://loki:3100/otlp';
+const caDir = config.get('caDir') ?? '../secrets/tls';
+const clusterTlsMode = process.env.CLUSTER_TLS_MODE?.trim() || 'disable';
+
+if (clusterTlsMode !== 'disable' && clusterTlsMode !== 'verify-full') {
+  throw new pulumi.RunError(`CLUSTER_TLS_MODE must be disable or verify-full, got ${clusterTlsMode}`);
+}
+
+const dependenciesTls = clusterTlsMode === 'verify-full';
+const caFile = resolve(caDir, 'ca.crt');
+
+if (!existsSync(caFile)) {
+  throw new pulumi.RunError(`Local CA not found in ${caDir}: run bash scripts/bootstrap-tls.sh`);
+}
+
+const dependenciesCa = readFileSync(caFile, 'utf8');
+const caMountPath = '/etc/marketplace-ca';
+const tlsSecretName = 'marketplace-tls';
+const networkCidrs = { dependenciesCidr: process.env.DEPENDENCIES_CIDR?.trim(), observabilityCidr: process.env.OBSERVABILITY_CIDR?.trim(), apiServerCidr: process.env.API_SERVER_CIDR?.trim() };
+const missingCidrs = Object.entries(networkCidrs).filter(([, value]) => !value).map(([key]) => key);
+
+if (missingCidrs.length > 0) {
+  throw new pulumi.RunError(`Missing network ranges: ${missingCidrs.join(', ')}. scripts/infra.sh reads them from docker; export them when running pulumi directly.`);
+}
 
 if (terminationGraceSeconds * 1000 <= drainMs) {
   throw new pulumi.RunError(`terminationGraceSeconds (${terminationGraceSeconds}) must be longer than drainMs (${drainMs} ms)`);
@@ -56,6 +90,7 @@ if (minReplicas < 2) {
 const name = 'marketplace-api';
 const labels = { app: name };
 const port = 3000;
+const metricsPort = 9464;
 
 const settings: Record<string, string> = {
   NODE_ENV: 'production',
@@ -64,21 +99,26 @@ const settings: Record<string, string> = {
   DBPORT: '5432',
   DBNAME: 'api',
   RABBITMQ_HOST: 'rabbitmq',
-  RABBITMQ_PORT: '5672',
-  KAFKA_BROKERS: 'kafka:29092',
+  RABBITMQ_PORT: dependenciesTls ? '5671' : '5672',
+  KAFKA_BROKERS: dependenciesTls ? 'kafka:29093' : 'kafka:29092',
   REDIS_CACHE_HOST: 'redis-cache',
   REDIS_CACHE_PORT: '6379',
   REDIS_QUEUE_HOST: 'redis-queue',
   REDIS_QUEUE_PORT: '6379',
-  TEMPORAL_ADDRESS: 'temporal:7233',
+  TEMPORAL_ADDRESS: dependenciesTls ? 'temporal-tls:7234' : 'temporal:7233',
+  TLS_MODE: clusterTlsMode,
+  ...(dependenciesTls ? { TLS_CA_PATH: `${caMountPath}/ca.crt` } : {}),
   TEMPORAL_NAMESPACE: 'default',
   STORAGE_ENDPOINT: 'http://minio:9000',
   STORAGE_REGION: 'us-east-1',
   STORAGE_BUCKET: 'marketplace-media',
   MEDIA_PUBLIC_BASE_URL: 'http://localhost:8088',
-  OIDC_REDIRECT_BASE_URL: `http://localhost:${nodePort}`,
+  OIDC_REDIRECT_BASE_URL: `https://localhost:${nodePort}`,
+  TRUST_PROXY_HOPS: '1',
   GOOGLE_CLIENT_ID: googleClientId,
   DRAIN_MS: String(drainMs),
+  METRICS_PORT: String(metricsPort),
+  OTEL_EXPORTER_OTLP_ENDPOINT: otlpEndpoint,
   REV: rev,
 };
 
@@ -109,11 +149,40 @@ const secretsChecksum = createHash('sha256')
 
 const provider = new k8s.Provider('kind', { context: kubeContext });
 
+type PodSecurityLevelType = 'restricted' | 'baseline' | 'privileged';
+
+function podSecurity(level: PodSecurityLevelType, enforce: PodSecurityLevelType | null = level): Record<string, string> {
+  return {
+    ...(enforce ? { 'pod-security.kubernetes.io/enforce': enforce } : {}),
+    'pod-security.kubernetes.io/warn': level,
+    'pod-security.kubernetes.io/audit': level,
+  };
+}
+
 const namespace = new k8s.core.v1.Namespace(
   namespaceName,
-  { metadata: { name: namespaceName } },
+  { metadata: { name: namespaceName, labels: podSecurity('restricted') } },
   { provider },
 );
+
+const observabilityNamespace = new k8s.core.v1.Namespace(
+  observabilityNamespaceName,
+  { metadata: { name: observabilityNamespaceName, labels: podSecurity('privileged') } },
+  { provider },
+);
+
+otelCollector({ namespace: observabilityNamespace.metadata.name, appNamespace: namespace.metadata.name, tracesEndpoint, remoteWriteEndpoint, logsEndpoint }, { provider });
+const gatewayController = envoyGateway({ provider });
+for (const platformNamespace of ['envoy-gateway-system', 'cert-manager']) {
+  new k8s.core.v1.NamespacePatch(
+    `${platformNamespace}-pod-security`,
+    { metadata: { name: platformNamespace, labels: podSecurity('restricted') } },
+    { provider, dependsOn: [gatewayController] },
+  );
+}
+
+tls({ caDir, namespace: namespace.metadata.name, secretName: tlsSecretName, dnsNames: ['marketplace.localhost', 'localhost'] }, { provider });
+networkPolicies({ namespace: namespace.metadata.name, observabilityNamespace: observabilityNamespace.metadata.name, ...(networkCidrs as Record<keyof typeof networkCidrs, string>) }, { provider });
 
 const secret = podReadsVault
   ? undefined
@@ -153,7 +222,15 @@ const containerSecurityContext = {
   capabilities: { drop: ['ALL'] },
 };
 
+const podIdentityEnv = [
+  { name: 'POD_NAME', valueFrom: { fieldRef: { fieldPath: 'metadata.name' } } },
+  { name: 'POD_NAMESPACE', valueFrom: { fieldRef: { fieldPath: 'metadata.namespace' } } },
+  { name: 'NODE_NAME', valueFrom: { fieldRef: { fieldPath: 'spec.nodeName' } } },
+  { name: 'OTEL_RESOURCE_ATTRIBUTES', value: 'k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME)' },
+];
+
 const podEnv = [
+  ...podIdentityEnv,
   ...Object.entries({ ...settings, ...vaultSettings }).map(([key, value]) => ({ name: key, value })),
   ...(secret
     ? VAULT_SECRET_NAMES.map((key) => ({
@@ -163,13 +240,21 @@ const podEnv = [
     : []),
 ];
 
+const caConfigMap = new k8s.core.v1.ConfigMap(
+  'dependencies-ca',
+  { metadata: { name: 'dependencies-ca', namespace: namespace.metadata.name }, data: { 'ca.crt': dependenciesCa } },
+  { provider },
+);
+
 const podVolumeMounts = [
   { name: 'tmp', mountPath: '/tmp' },
+  { name: 'dependencies-ca', mountPath: caMountPath, readOnly: true },
   ...(podReadsVault ? [{ name: 'infisical-token', mountPath: tokenDir, readOnly: true }] : []),
 ];
 
 const podVolumes = [
   { name: 'tmp', emptyDir: { sizeLimit: '512Mi' } },
+  { name: 'dependencies-ca', configMap: { name: caConfigMap.metadata.name } },
   ...(podReadsVault
     ? [
         {
@@ -236,7 +321,12 @@ const deployment = new k8s.apps.v1.Deployment(
       template: {
         metadata: {
           labels,
-          annotations: secret ? { 'marketplace/secrets-checksum': secretsChecksum } : {},
+          annotations: {
+            'prometheus.io/scrape': 'true',
+            'prometheus.io/port': String(metricsPort),
+            'marketplace/ca-checksum': createHash('sha256').update(dependenciesCa).digest('hex'),
+            ...(secret ? { 'marketplace/secrets-checksum': secretsChecksum } : {}),
+          },
         },
         spec: {
           terminationGracePeriodSeconds: terminationGraceSeconds,
@@ -248,7 +338,10 @@ const deployment = new k8s.apps.v1.Deployment(
               name: 'api',
               image,
               imagePullPolicy: 'IfNotPresent',
-              ports: [{ name: 'http', containerPort: port }],
+              ports: [
+                { name: 'http', containerPort: port },
+                { name: 'metrics', containerPort: metricsPort },
+              ],
               env: podEnv,
               resources: {
                 requests: { cpu: '250m', memory: '384Mi' },
@@ -289,13 +382,15 @@ const service = new k8s.core.v1.Service(
   {
     metadata: { name, namespace: namespace.metadata.name, labels },
     spec: {
-      type: 'NodePort',
+      type: 'ClusterIP',
       selector: labels,
-      ports: [{ name: 'http', port: 80, targetPort: 'http', nodePort }],
+      ports: [{ name: 'http', port: 80, targetPort: 'http' }],
     },
   },
   { provider },
 );
+
+apiGateway({ namespace: namespace.metadata.name, collectorNamespace: observabilityNamespace.metadata.name, name, nodePort, tlsSecretName, service }, gatewayController, { provider });
 
 new k8s.policy.v1.PodDisruptionBudget(
   name,
@@ -329,5 +424,5 @@ new k8s.autoscaling.v2.HorizontalPodAutoscaler(
 );
 
 export const migrateJobName = migrateJob.metadata.name;
-export const url = pulumi.interpolate`http://localhost:${service.spec.ports[0].nodePort}`;
+export const url = `https://localhost:${nodePort}`;
 export const deployedRev = rev;

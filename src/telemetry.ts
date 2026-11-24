@@ -8,17 +8,19 @@ import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
 import { IORedisInstrumentation } from '@opentelemetry/instrumentation-ioredis';
 import { AmqplibInstrumentation } from '@opentelemetry/instrumentation-amqplib';
 import { NestInstrumentation } from '@opentelemetry/instrumentation-nestjs-core';
+import { BatchSpanProcessor, NoopSpanProcessor } from '@opentelemetry/sdk-trace';
+import { exportSpansWith, resource } from './generic/telemetry/span-export.js';
+import { isUnobservedPath } from './generic/telemetry/util/is-unobserved-path.util.js';
 
 register('@opentelemetry/instrumentation/hook.mjs', import.meta.url);
 
 process.env.OTEL_METRICS_EXPORTER ??= 'none';
 process.env.OTEL_LOGS_EXPORTER ??= 'none';
 
-const untracedPaths = ['/healthz', '/readyz', '/metrics'];
 const nestVersions = ['>=4.0.0 <13'];
 
 function isUntraced(request: IncomingMessage): boolean {
-  return untracedPaths.includes((request.url ?? '').split('?')[0]);
+  return isUnobservedPath(request.url);
 }
 
 class Nest12Instrumentation extends NestInstrumentation {
@@ -34,9 +36,16 @@ class Nest12Instrumentation extends NestInstrumentation {
   }
 }
 
+const spanProcessors = process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+  ? [new BatchSpanProcessor({ exporter: new OTLPTraceExporter(), scheduledDelayMillis: Number(process.env.OTEL_BSP_SCHEDULE_DELAY) || undefined })]
+  : [new NoopSpanProcessor()];
+
+spanProcessors.forEach(exportSpansWith);
+
 export const telemetry = new NodeSDK({
-  serviceName: process.env.OTEL_SERVICE_NAME || 'marketplace-api',
-  ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT ? { traceExporter: new OTLPTraceExporter() } : { spanProcessors: [] }),
+  resource,
+  autoDetectResources: false,
+  spanProcessors,
   instrumentations: [
     new HttpInstrumentation({ ignoreIncomingRequestHook: isUntraced }),
     new ExpressInstrumentation({ ignoreLayersType: [ExpressLayerType.MIDDLEWARE], ignoreLayers: [/\*splat/] }),

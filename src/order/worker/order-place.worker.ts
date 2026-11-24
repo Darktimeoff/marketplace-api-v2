@@ -31,6 +31,7 @@ export class OrderPlaceWorker implements OnApplicationBootstrap, OnModuleDestroy
       taskQueue: this.taskQueue,
       workflowsPath: this.workflowsPath,
       activities: this.toActivities(),
+      plugins: this.temporal.plugins,
     });
 
     this.running = this.worker.run().catch((error) => {

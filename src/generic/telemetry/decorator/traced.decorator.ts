@@ -1,15 +1,37 @@
-import { SpanStatusCode, trace } from '@opentelemetry/api';
+import { context, propagation, ROOT_CONTEXT, SpanKind, SpanStatusCode, trace, type Attributes, type Link } from '@opentelemetry/api';
 import { keepMethodIdentity } from '../../decorator/util/keep-method-identity.util.js';
 
 const tracer = trace.getTracer('marketplace-api');
 
-export function Traced(): MethodDecorator {
-  return (target, propertyKey, descriptor: PropertyDescriptor) => {
-    const original: (...args: unknown[]) => Promise<unknown> = descriptor.value;
-    const spanName = `${target.constructor.name}.${String(propertyKey)}`;
+type AsyncMethodType = (...args: any[]) => Promise<unknown>;
 
-    function traced(this: unknown, ...args: unknown[]): Promise<unknown> {
-      return tracer.startActiveSpan(spanName, async (span) => {
+export interface TracedOptionsInterface<TArgs extends unknown[]> {
+  name?: (...args: TArgs) => string;
+  kind?: SpanKind;
+  parent?: (...args: TArgs) => string | null | undefined;
+  attributes?: (...args: TArgs) => Attributes;
+  link?: (...args: TArgs) => string | null | undefined;
+}
+
+function linkTo(traceparent: string | null | undefined): Link[] {
+  const linked = traceparent ? trace.getSpanContext(propagation.extract(ROOT_CONTEXT, { traceparent })) : undefined;
+
+  return linked ? [{ context: linked }] : [];
+}
+
+export function Traced<K extends AsyncMethodType, TArgs extends Parameters<K> = Parameters<K>>(
+  options: TracedOptionsInterface<TArgs> = {},
+): (target: object, propertyKey: string | symbol, descriptor: TypedPropertyDescriptor<K>) => void {
+  return (target, propertyKey, descriptor) => {
+    const original = descriptor.value as unknown as AsyncMethodType;
+    const defaultName = `${target.constructor.name}.${String(propertyKey)}`;
+
+    function traced(this: unknown, ...args: TArgs): Promise<unknown> {
+      const traceparent = options.parent?.(...args);
+      const parentContext = traceparent ? propagation.extract(context.active(), { traceparent }) : context.active();
+      const spanOptions = { kind: options.kind ?? SpanKind.INTERNAL, attributes: options.attributes?.(...args), links: linkTo(options.link?.(...args)) };
+
+      return tracer.startActiveSpan(options.name?.(...args) ?? defaultName, spanOptions, parentContext, async (span) => {
         try {
           return await original.apply(this, args);
         } catch (error) {
@@ -23,6 +45,6 @@ export function Traced(): MethodDecorator {
     }
 
     keepMethodIdentity(original, traced);
-    descriptor.value = traced;
+    descriptor.value = traced as unknown as K;
   };
 }

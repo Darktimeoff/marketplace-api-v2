@@ -5,9 +5,9 @@ import { MetricsMiddleware } from '../../../src/generic/metrics/metrics.middlewa
 import { MetricsService } from '../../../src/generic/metrics/metrics.service.js';
 
 describe('MetricsMiddleware', () => {
-  function handle(metrics: MetricsService, method: string, route: string | undefined, statusCode: number): void {
+  function handle(metrics: MetricsService, method: string, route: string | undefined, statusCode: number, originalUrl = route ?? '/'): void {
     const response = Object.assign(new EventEmitter(), { statusCode });
-    const request = { method, route: route === undefined ? undefined : { path: route } };
+    const request = { method, originalUrl, route: route === undefined ? undefined : { path: route } };
     new MetricsMiddleware(metrics).use(request as unknown as Request, response as unknown as Response, (() => undefined) as NextFunction);
     response.emit('finish');
   }
@@ -42,5 +42,15 @@ describe('MetricsMiddleware', () => {
 
     expect(await counterSeries(metrics)).toEqual(['http_requests_total{method="POST",route="/order",status="500"} 1']);
     expect(await metrics.registry.metrics()).toContain('http_request_duration_seconds_count{method="POST",route="/order"} 1');
+  });
+
+  it('leaves out the kubelet probes and the scrape itself, which would show traffic and fast answers with no client', async () => {
+    const metrics = new MetricsService();
+
+    handle(metrics, 'GET', '/healthz', 200);
+    handle(metrics, 'GET', '/readyz', 200, '/readyz?verbose');
+    handle(metrics, 'GET', '/order/:id', 200, '/order/42');
+
+    expect(await counterSeries(metrics)).toEqual(['http_requests_total{method="GET",route="/order/:id",status="200"} 1']);
   });
 });
